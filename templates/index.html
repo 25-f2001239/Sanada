@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EchoCount — Audio Source Estimator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">∿</span><span>EchoCount</span></div>
+      <div class="side-label">WORKSPACE</div>
+      <div class="nav-item active"><span>◉</span> Source estimator</div>
+      <div class="nav-item"><span>▤</span> Analysis history <small>Coming soon</small></div>
+      <div class="sidebar-bottom">
+        <div class="status-dot"></div>
+        <div><strong>Local processing</strong><p>Your audio stays on this machine.</p></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><p class="eyebrow">AUDIO INTELLIGENCE / 01</p><h1>Audio source count estimator</h1></div>
+        <div class="model-pill"><span class="pulse"></span> {{ 'Model ready' if status.trained else 'Model setup required' }}</div>
+      </header>
+
+      <section class="intro">
+        <div class="intro-copy">
+          <div class="tag">MONAURAL · VARIABLE SOURCE COUNT</div>
+          <h2>How many sounds are<br><em>happening at once?</em></h2>
+          <p>Upload a recording to estimate the number of overlapping audio sources. The pipeline converts audio to mono, resamples it to 16 kHz, and analyses an 8-second window.</p>
+        </div>
+        <div class="wave-visual" aria-hidden="true">
+          <div class="wave-caption">SIGNAL / MIXTURE</div>
+          <svg viewBox="0 0 440 130" role="img" aria-label="Decorative audio waveform">
+            <path d="M0 65 L14 65 L22 45 L30 88 L38 26 L47 104 L56 52 L65 65 L76 65 L84 38 L92 83 L101 13 L110 111 L119 45 L128 65 L139 65 L148 30 L157 96 L166 50 L175 65 L186 65 L195 19 L204 109 L213 38 L222 65 L233 65 L242 48 L251 82 L260 30 L269 96 L278 65 L289 65 L298 16 L307 114 L316 46 L325 65 L336 65 L345 34 L354 90 L363 44 L372 65 L383 65 L392 23 L401 106 L410 50 L419 65 L440 65" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M0 65 L440 65" stroke="currentColor" stroke-opacity=".18" stroke-dasharray="3 7"/>
+          </svg>
+          <div class="wave-footer"><span>16,000 Hz</span><span>MONO SIGNAL</span><span>8.0 SEC WINDOW</span></div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <div class="panel upload-panel">
+          <div class="panel-heading"><div><span class="step">01</span><h3>Upload audio</h3></div><span class="optional">WAV recommended</span></div>
+          <form id="uploadForm">
+            <label class="dropzone" id="dropzone" for="audioInput">
+              <input id="audioInput" name="audio" type="file" accept=".wav,.flac,.mp3,.ogg,.m4a,audio/*" hidden>
+              <div class="upload-icon">↑</div>
+              <strong id="fileTitle">Drop your audio file here</strong>
+              <span id="fileSubtitle">or <u>browse files</u> from your computer</span>
+              <span class="file-types">WAV · FLAC · MP3 · OGG · M4A · MAX 40 MB</span>
+            </label>
+            <div id="fileMeta" class="file-meta hidden"></div>
+            <button id="analyzeBtn" class="primary-btn" type="submit" disabled><span>Analyze mixture</span><span>↗</span></button>
+          </form>
+          <p class="privacy-note"><span>♧</span> Audio is processed locally by this app and the temporary upload is removed after analysis.</p>
+        </div>
+
+        <div class="panel result-panel">
+          <div class="panel-heading"><div><span class="step">02</span><h3>Analysis result</h3></div><span class="live-label"><i></i> LIVE OUTPUT</span></div>
+          <div id="emptyState" class="empty-state">
+            <div class="empty-orbit"><div class="orbit-dot"></div><span>∿</span></div>
+            <h4>Awaiting audio input</h4>
+            <p>Your estimated source count and signal details will appear here.</p>
+            <div class="result-placeholder"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+          <div id="loadingState" class="loading-state hidden"><div class="spinner"></div><h4>Analyzing audio…</h4><p>Preparing signal features and running inference.</p></div>
+          <div id="resultState" class="result-state hidden"></div>
+        </div>
+      </section>
+
+      <section class="bottom-grid">
+        <div class="info-card"><div class="info-icon">⌁</div><div><h4>Built for overlapping audio</h4><p>Designed for speech mixtures and environmental sound mixtures with an unknown number of sources.</p></div></div>
+        <div class="info-card"><div class="info-icon">◈</div><div><h4>Model status</h4><p id="modelStatusText">{{ 'A checkpoint was found. Predictions are available.' if status.trained else 'No trained checkpoint yet. The interface is ready; train the model after you receive labelled audio.' }}</p></div></div>
+      </section>
+      <footer><span>ECHОCOUNT / RESEARCH PROTOTYPE</span><span>COUNTING ≠ SOURCE SEPARATION</span></footer>
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
