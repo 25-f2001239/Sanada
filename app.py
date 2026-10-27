@@ -3,7 +3,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 from flask import Flask, render_template, request, jsonify
+<<<<<<< HEAD
 from flask_cors import CORS
+=======
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
 from werkzeug.utils import secure_filename
 
 from model import SourceCountCNN, load_audio, predict_source_count, MODEL_PATH, SAMPLE_RATE, CLIP_SECONDS
@@ -15,7 +18,10 @@ ALLOWED_EXTENSIONS = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
 MAX_CONTENT_LENGTH = 40 * 1024 * 1024
 
 app = Flask(__name__)
+<<<<<<< HEAD
 CORS(app)
+=======
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 def allowed_file(filename):
@@ -52,14 +58,21 @@ def predict():
     path = UPLOAD_DIR / safe_name
     audio_file.save(path)
     try:
+<<<<<<< HEAD
         print(f"Processing file: {safe_name}...")
         waveform, sample_rate = load_audio(path)
         print(f"Audio loaded. Duration: {len(waveform)/SAMPLE_RATE:.2f}s")
+=======
+        waveform, sample_rate = load_audio(path)
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
         duration = len(waveform) / SAMPLE_RATE
         peak = float(np.max(np.abs(waveform))) if len(waveform) else 0.0
         rms = float(np.sqrt(np.mean(np.square(waveform)))) if len(waveform) else 0.0
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
         if not MODEL_PATH.exists():
             return jsonify({
                 "trained": False,
@@ -78,9 +91,13 @@ def predict():
                 "prediction": None
             })
 
+<<<<<<< HEAD
         print("Running prediction...")
         result = predict_source_count(waveform)
         print(f"Prediction result: {result['estimated_sources']}")
+=======
+        result = predict_source_count(waveform)
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
         return jsonify({
             "trained": True,
             "status": "ok",
@@ -106,5 +123,9 @@ def predict():
             pass
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     # debug=False prevents the server from restarting when files are uploaded to the uploads folder
     app.run(debug=False, host="127.0.0.1", port=5000)
+=======
+    app.run(debug=True, host="127.0.0.1", port=5000)
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df

@@ -81,6 +81,7 @@ def predict_source_count(waveform):
     model = SourceCountCNN(max_sources=max_sources).to(DEVICE)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+<<<<<<< HEAD
 
     # To provide a timeline, we analyze the audio in sliding windows
     # Window size: 2 seconds, Hop size: 1 second
@@ -123,4 +124,21 @@ def predict_source_count(waveform):
         "estimated_sources": final_count,
         "timeline": timeline,
         "model_type": "CNN sliding-window classifier",
+=======
+    features = waveform_to_logmel(waveform).to(DEVICE)
+    with torch.no_grad():
+        logits = model(features)
+        probs = torch.softmax(logits, dim=1)[0]
+        confidence, idx = torch.max(probs, dim=0)
+        topk = min(3, len(probs))
+        values, indices = torch.topk(probs, k=topk)
+    return {
+        "estimated_sources": int(idx.item()) + 1,
+        "confidence": round(float(confidence.item()), 4),
+        "top_predictions": [
+            {"sources": int(i.item()) + 1, "probability": round(float(p.item()), 4)}
+            for p, i in zip(values, indices)
+        ],
+        "model_type": "CNN classifier over normalised log-mel spectrogram",
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
     }

@@ -29,6 +29,7 @@
         <div class="intro-copy">
           <div class="tag">MONAURAL · VARIABLE SOURCE COUNT</div>
           <h2>How many sounds are<br><em>happening at once?</em></h2>
+<<<<<<< HEAD
           <p>Upload a recording to estimate the number of overlapping audio sources. The pipeline converts audio to mono, resamples it to 16 kHz, and analyses the signal over time.</p>
         </div>
         <div class="wave-visual">
@@ -43,6 +44,20 @@
       </section>
 
 
+=======
+          <p>Upload a recording to estimate the number of overlapping audio sources. The pipeline converts audio to mono, resamples it to 16 kHz, and analyses an 8-second window.</p>
+        </div>
+        <div class="wave-visual" aria-hidden="true">
+          <div class="wave-caption">SIGNAL / MIXTURE</div>
+          <svg viewBox="0 0 440 130" role="img" aria-label="Decorative audio waveform">
+            <path d="M0 65 L14 65 L22 45 L30 88 L38 26 L47 104 L56 52 L65 65 L76 65 L84 38 L92 83 L101 13 L110 111 L119 45 L128 65 L139 65 L148 30 L157 96 L166 50 L175 65 L186 65 L195 19 L204 109 L213 38 L222 65 L233 65 L242 48 L251 82 L260 30 L269 96 L278 65 L289 65 L298 16 L307 114 L316 46 L325 65 L336 65 L345 34 L354 90 L363 44 L372 65 L383 65 L392 23 L401 106 L410 50 L419 65 L440 65" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M0 65 L440 65" stroke="currentColor" stroke-opacity=".18" stroke-dasharray="3 7"/>
+          </svg>
+          <div class="wave-footer"><span>16,000 Hz</span><span>MONO SIGNAL</span><span>8.0 SEC WINDOW</span></div>
+        </div>
+      </section>
+
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
       <section class="content-grid">
         <div class="panel upload-panel">
           <div class="panel-heading"><div><span class="step">01</span><h3>Upload audio</h3></div><span class="optional">WAV recommended</span></div>
@@ -80,8 +95,11 @@
       <footer><span>ECHОCOUNT / RESEARCH PROTOTYPE</span><span>COUNTING ≠ SOURCE SEPARATION</span></footer>
     </main>
   </div>
+<<<<<<< HEAD
   <script src="https://unpkg.com/wavesurfer.js@7"></script>
   <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+=======
+>>>>>>> 08a62205b52c1c4eebefeaeee8f6e36d972cc3df
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
