@@ -33,7 +33,21 @@ def model_status():
 @app.get("/")
 def index():
     return render_template("index.html", status=model_status())
+@app.get("/analyze")
+def analyze_page():
+    return render_template("analyze.html", status=model_status())
 
+@app.get("/history")
+def history_page():
+    return render_template("history.html", status=model_status())
+
+@app.get("/how")
+def how_page():
+    return render_template("how.html", status=model_status())
+
+@app.get("/docs")
+def docs_page():
+    return render_template("docs.html", status=model_status())
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True, "model": model_status()})
