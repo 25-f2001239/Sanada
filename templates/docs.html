@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Docs{% endblock %}
+{% block page %}docs{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="page-head"><h1>Docs</h1><p class="lead">Set up, train, call the API and understand the limits.</p></div>
+  <div class="docs">
+    <nav class="toc" aria-label="On this page">
+      <a href="#setup">Set up</a><a href="#data">Dataset</a><a href="#train">Train</a><a href="#api">API</a><a href="#limits">Limits</a>
+    </nav>
+    <div class="doc">
+      <section id="setup">
+        <h2>Set up</h2>
+        <p>Python 3.10 or 3.11 is recommended. From the project folder:</p>
+        <div class="tabs" data-tabs>
+          <div class="tab-list" role="tablist"><button role="tab" data-tab="win" aria-selected="true" type="button">Windows</button><button role="tab" data-tab="mac" aria-selected="false" type="button">macOS and Linux</button></div>
+          <div class="tab-panel" data-panel="win"><div class="code"><pre id="c-setup">py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python app.py</pre><button class="btn sm" data-copy="#c-setup" type="button">Copy</button></div></div>
+          <div class="tab-panel" data-panel="mac" hidden><div class="code"><pre id="c-setup2">python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py</pre><button class="btn sm" data-copy="#c-setup2" type="button">Copy</button></div></div>
+        </div>
+        <p>Then open <code>http://127.0.0.1:5000</code>.</p>
+      </section>
+
+      <section id="data">
+        <h2>Dataset format</h2>
+        <p>Create <code>data/metadata.csv</code> with one row per labelled mixture. Paths may be absolute or relative to the CSV.</p>
+        <div class="code"><pre id="c-csv">mixture_path,num_sources,split
+audio/mix_0001.wav,2,train
+audio/mix_0002.wav,3,val
+audio/mix_0003.wav,4,test</pre><button class="btn sm" data-copy="#c-csv" type="button">Copy</button></div>
+        <ul>
+          <li><code>num_sources</code> must be a whole number from 1 to <code>--max-sources</code>.</li>
+          <li>The trainer uses the <code>train</code> and <code>val</code> splits. Keep <code>test</code> for the final evaluation.</li>
+          <li>Split the original recordings before mixing, so the same stems never appear in both train and test.</li>
+        </ul>
+      </section>
+
+      <section id="train">
+        <h2>Train the model</h2>
+        <div class="code"><pre id="c-train">python train.py --metadata data/metadata.csv --epochs 25 --max-sources 32</pre><button class="btn sm" data-copy="#c-train" type="button">Copy</button></div>
+        <p>The best checkpoint by validation loss is saved to <code>checkpoints/source_count_cnn.pt</code>. The app finds it on the next request, so no restart is needed. Current status: <strong>{{ 'checkpoint found' if status.trained else 'no checkpoint yet' }}</strong>.</p>
+      </section>
+
+      <section id="api">
+        <h2>API</h2>
+        <div class="table-wrap"><table class="kv">
+          <tr><th>Route</th><th>What it does</th></tr>
+          <tr><td><code>GET /api/health</code></td><td>Reports that the server is up and whether a checkpoint exists.</td></tr>
+          <tr><td><code>POST /api/predict</code></td><td>Multipart upload in the field <code>audio</code>. Returns signal details and, when trained, the estimate with a per-window timeline.</td></tr>
+        </table></div>
+        <div class="code"><pre id="c-curl">curl -X POST -F "audio=@example.wav" http://127.0.0.1:5000/api/predict</pre><button class="btn sm" data-copy="#c-curl" type="button">Copy</button></div>
+        <div class="actions"><button class="btn sm" id="pingBtn" type="button">Test /api/health now</button></div>
+        <div class="code"><pre id="pingOut">Press the button to call the server.</pre></div>
+      </section>
+
+      <section id="limits">
+        <h2>Known limits</h2>
+        <ul>
+          <li>Without a trained checkpoint the app reports signal statistics only.</li>
+          <li>One 8-second window is analysed. Long files are centre-cropped and short files are padded.</li>
+          <li>Softmax confidence is not a guarantee of correctness.</li>
+          <li>The training clips are 8 seconds long but inference uses 2-second windows. Check accuracy on held-out data, or train on matching window lengths.</li>
+          <li>The app is for local development and is not hardened for public hosting.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const out = document.getElementById('pingOut');
+  document.getElementById('pingBtn').addEventListener('click', async () => {
+    out.textContent = 'Calling the server…';
+    try { const r = await fetch('/api/health'); out.textContent = JSON.stringify(await r.json(), null, 2); }
+    catch { out.textContent = 'The server did not respond. Check that python app.py is running.'; }
+  });
+  const links = [...document.querySelectorAll('.toc a')];
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) links.forEach(a => a.classList.toggle('on', a.hash === '#' + e.target.id)); }), { rootMargin: '-30% 0px -60% 0px' });
+  document.querySelectorAll('.doc section').forEach(s => io.observe(s));
+})();
+</script>
+{% endblock %}

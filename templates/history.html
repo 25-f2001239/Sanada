@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+{% block page %}history{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="page-head">
+    <h1>History</h1>
+    <p class="lead">Your past results, stored only in this browser.</p>
+  </div>
+  <div class="hstats" id="hstats"></div>
+  <div class="toolbar">
+    <input class="search" id="q" type="search" placeholder="Search by file name" aria-label="Search history">
+    <button class="btn sm" id="exportBtn" type="button"><svg class="ic"><use href="#i-download"/></svg>Export CSV</button>
+    <button class="btn sm danger" id="clearAll" type="button"><svg class="ic"><use href="#i-trash"/></svg>Clear all</button>
+  </div>
+  <div class="hlist" id="hlist"></div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='history.js') }}"></script>{% endblock %}

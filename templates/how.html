@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}How it works{% endblock %}
+{% block page %}how{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="page-head">
+    <h1>How it works</h1>
+    <p class="lead">A recording goes in, a whole number comes out. Here is what happens in between.</p>
+  </div>
+
+  <section class="section" style="padding-top:24px">
+    <div class="two">
+      <div class="stack"><h2>The model reads a picture of sound</h2>
+        <p>The audio is turned into a log-mel spectrogram: time runs left to right, pitch runs bottom to top, and brightness shows energy. Overlapping sources leave overlapping streaks in this picture, and the CNN learns to tell how many streaks belong to separate sources. The picture on the right is a decorative stand-in, not your audio.</p>
+      </div>
+      <div class="stack" style="gap:10px"><span class="eg">Illustration, not your audio</span><canvas class="spec" id="spec" aria-label="Decorative animated spectrogram"></canvas></div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0">
+    <div class="section-head"><h2>Inside SourceCountCNN</h2><p>Three convolution blocks learn the patterns, a pooling layer fixes the size, and two dense layers pick one count class.</p></div>
+    <div class="arch">
+      <div class="layer"><b>Conv 1</b><small>1 to 16 channels, BatchNorm, ReLU, max-pool</small><div class="bar" style="--w:25%"></div></div>
+      <div class="layer"><b>Conv 2</b><small>16 to 32 channels, BatchNorm, ReLU, max-pool</small><div class="bar" style="--w:50%"></div></div>
+      <div class="layer"><b>Conv 3</b><small>32 to 64 channels, BatchNorm, ReLU</small><div class="bar" style="--w:75%"></div></div>
+      <div class="layer"><b>Adaptive pool</b><small>Any input size becomes a 4 x 8 map</small><div class="bar" style="--w:40%"></div></div>
+      <div class="layer"><b>Dense 128</b><small>Flatten, linear, ReLU, dropout 0.25</small><div class="bar" style="--w:60%"></div></div>
+      <div class="layer"><b>Output</b><small>{{ status.max_sources }} classes. Index 0 means one source.</small><div class="bar" style="--w:100%"></div></div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0">
+    <div class="section-head"><h2>Sliding-window voting</h2>
+      <p>The server analyses an {{ status.clip_seconds|int }}-second clip as seven overlapping 2-second windows. Each window predicts a count. The most common prediction is reported. This animation uses made-up predictions to show the idea.</p></div>
+    <div class="demo panel">
+      <span class="eg">Example with made-up predictions</span>
+      <div class="strip" id="strip"><canvas id="stripCv"></canvas><div class="win" id="win"></div></div>
+      <div class="ticks"><span>0 s</span><span>2 s</span><span>4 s</span><span>6 s</span><span>8 s</span></div>
+      <div class="chips" id="chips" aria-label="Example window predictions"></div>
+      <p id="demoNote" class="fine">Windows vote one at a time.</p>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0">
+    <div class="section-head"><h2>What to keep in mind</h2></div>
+    <div class="ledger">
+      <div><h3>Counting is not separating</h3><p>The model says how many sources are present. It does not produce a separate audio file for each one.</p></div>
+      <div><h3>Long files are cropped</h3><p>Only the central 8 seconds are analysed. Shorter files are padded with silence. The analyzer marks the analysed part on the waveform.</p></div>
+      <div><h3>Confidence is not accuracy</h3><p>The softmax score shows how decisive the network was, not whether it was right. Judge the model on a held-out test set.</p></div>
+      <div><h3>This is a baseline</h3><p>The research paper behind the dataset uses a Conformer regressor. This CNN is a lighter classifier that is easier to train and change.</p></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='how.js') }}"></script>{% endblock %}

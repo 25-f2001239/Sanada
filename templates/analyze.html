@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Analyze{% endblock %}
+{% block page %}analyze{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="page-head">
+    <h1>Analyze a recording</h1>
+    <p class="lead">Choose a file, check it by ear, then run the estimate.</p>
+  </div>
+  <div class="split">
+    <section class="panel stack" aria-label="Upload">
+      <label class="dropzone" id="dropzone" for="audioInput" tabindex="0" aria-describedby="dzHelp">
+        <input id="audioInput" type="file" accept=".wav,.flac,.mp3,.ogg,.m4a,audio/*" hidden>
+        <span class="dz-ico"><svg class="ic"><use href="#i-upload"/></svg></span>
+        <strong id="dzTitle">Drop an audio file here</strong>
+        <span id="dzHelp">or click to browse. WAV, FLAC, MP3, OGG, M4A up to 40 MB.</span>
+      </label>
+      <div class="filecard hidden" id="fileCard">
+        <div><strong id="fName"></strong><small id="fMeta"></small></div>
+        <button class="icon-btn" id="clearBtn" aria-label="Remove file" type="button"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="player hidden" id="player">
+        <div class="wave-box"><canvas id="wave" aria-label="Waveform. Click to seek."></canvas></div>
+        <div class="player-bar">
+          <button class="btn sm" id="playBtn" type="button"><svg class="ic"><use href="#i-play"/></svg><span>Play</span></button>
+          <span class="time"><span id="tNow">0:00</span> / <span id="tTot">0:00</span></span>
+          <span class="legend"><span><i style="background:#FF5A1F"></i>Played</span><span><i style="background:#F2F0EB;box-shadow:inset 0 0 0 1px rgba(12,12,14,.3)"></i>Analysed</span><span><i style="background:#b9b7b1"></i>Not analysed</span><span><i style="background:#C8F04A;box-shadow:inset 0 0 0 1px rgba(12,12,14,.3)"></i>Selected window</span></span>
+        </div>
+      </div>
+      <div class="stack" style="gap:8px"><span class="fine">No audio handy? Make a synthetic mixture to test the pipeline.</span>
+        <div class="seg" role="group" aria-label="Synthetic mixture">{% for n in range(1,5) %}<button type="button" data-synth="{{ n }}">{{ n }} {{ 'source' if n == 1 else 'sources' }}</button>{% endfor %}</div></div>
+      <button class="btn primary block" id="goBtn" type="button" disabled>Analyze mixture</button>
+      <p class="fine">The file is sent to the Flask server on this computer. The temporary copy is deleted after analysis.</p>
+    </section>
+
+    <section class="panel" aria-live="polite" aria-label="Result">
+      <div class="state" id="sEmpty">
+        <div class="orbit"><svg class="ic"><use href="#i-wave"/></svg></div>
+        <h3>No result yet</h3>
+        <p>Add a recording on the left. The estimated count, its confidence and the window-by-window votes will appear here.</p>
+      </div>
+      <div class="state hidden" id="sLoad" role="status">
+        <div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h3 id="loadTxt">Uploading</h3>
+        <div class="progress" role="progressbar" aria-label="Upload progress"><div id="loadBar"></div></div>
+        <button class="btn sm" id="cancelBtn" type="button">Cancel</button>
+      </div>
+      <div class="state err hidden" id="sErr" role="alert">
+        <h4>The analysis failed</h4>
+        <p id="errTxt"></p>
+        <button class="btn" id="retryBtn" type="button">Try again</button>
+      </div>
+      <div class="hidden" id="sRes"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='analyze.js') }}"></script>{% endblock %}
