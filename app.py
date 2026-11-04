@@ -6,7 +6,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-from model import SourceCountCNN, load_audio, predict_source_count, MODEL_PATH, SAMPLE_RATE, CLIP_SECONDS
+from model import SourceCountMLP, load_audio, predict_source_count, MODEL_PATH, SAMPLE_RATE, CLIP_SECONDS
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -23,8 +23,8 @@ def allowed_file(filename):
 
 def model_status():
     return {
-        "trained": MODEL_PATH.exists(),
-        "model_name": "CNN log-mel source-count classifier",
+        "trained": os.path.exists(MODEL_PATH),
+        "model_name": "SANADA-Net (Transfer Learning)",
         "sample_rate": SAMPLE_RATE,
         "clip_seconds": CLIP_SECONDS,
         "max_sources": int(os.getenv("MAX_SOURCES", "32")),
@@ -73,7 +73,7 @@ def predict():
         peak = float(np.max(np.abs(waveform))) if len(waveform) else 0.0
         rms = float(np.sqrt(np.mean(np.square(waveform)))) if len(waveform) else 0.0
 
-        if not MODEL_PATH.exists():
+        if not os.path.exists(MODEL_PATH):
             return jsonify({
                 "trained": False,
                 "status": "model_not_trained",
@@ -94,6 +94,12 @@ def predict():
         print("Running prediction...")
         result = predict_source_count(waveform)
         print(f"Prediction result: {result['estimated_sources']}")
+
+        # Format duration for frontend (e.g., "0:08")
+        total_seconds = int(duration)
+        mins, secs = divmod(total_seconds, 60)
+        duration_formatted = f"{mins}:{secs:02d}"
+
         return jsonify({
             "trained": True,
             "status": "ok",
@@ -101,6 +107,7 @@ def predict():
             "audio": {
                 "filename": safe_name,
                 "duration_seconds": round(duration, 2),
+                "duration_formatted": duration_formatted,
                 "original_sample_rate": sample_rate,
                 "processed_sample_rate": SAMPLE_RATE,
                 "channels_processed": 1,
@@ -108,7 +115,13 @@ def predict():
                 "rms_energy": round(rms, 4),
                 "model_window_seconds": CLIP_SECONDS,
             },
-            "prediction": result
+            "prediction": {
+                "estimated_sources": result["estimated_sources"],
+                "confidence": round(result["confidence"], 1),
+                "agreement": round(result["agreement"], 1),
+                "windows_voted": result["windows_voted"],
+                "total_windows": result["total_windows"]
+            }
         })
     except Exception as exc:
         return jsonify({"error": f"Could not process this audio: {exc}"}), 500

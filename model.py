@@ -1,110 +1,117 @@
-"""CNN source-count model. Training requires labelled mixture audio."""
-import os
-from pathlib import Path
-import numpy as np
-import soundfile as sf
-import librosa
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+import librosa
+import os
+import tensorflow_hub as hub
 
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "checkpoints" / "source_count_cnn.pt"
-SAMPLE_RATE = 16000
-CLIP_SECONDS = 8.0
-N_MELS = 64
-N_FFT = 1024
-HOP_LENGTH = 256
-MAX_SOURCES = int(os.getenv("MAX_SOURCES", "32"))
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-class SourceCountCNN(nn.Module):
-    """Predicts a discrete source count from a log-mel spectrogram."""
-    def __init__(self, max_sources=MAX_SOURCES, n_mels=N_MELS):
-        super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((4, 8)),
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(64 * 4 * 8, 128), nn.ReLU(), nn.Dropout(0.25),
-            nn.Linear(128, max_sources)
+# --- MODEL ARCHITECTURE ---
+class SourceCountMLP(nn.Module):
+    def __init__(self, input_dim=1024, num_classes=32):
+        super(SourceCountMLP, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.5),
+            nn.Linear(256, 64),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.5),
+            nn.Linear(64, num_classes)
         )
 
     def forward(self, x):
-        return self.classifier(self.features(x))
+        return self.net(x)
 
+# --- CONSTANTS ---
+MODEL_PATH = 'best_sanada_model.pth'
+SAMPLE_RATE = 16000
+CLIP_SECONDS = 8.0
+
+# Global YAMNet model for fast inference in Flask
+_YAMNET_MODEL = None
+
+def load_yamnet():
+    global _YAMNET_MODEL
+    if _YAMNET_MODEL is None:
+        _YAMNET_MODEL = hub.load('https://tfhub.dev/google/yamnet/1')
+    return _YAMNET_MODEL
 
 def load_audio(path):
-    """Load audio, convert to mono/16 kHz, and return a fixed 8-second window."""
-    audio, sr = librosa.load(str(path), sr=None, mono=True, dtype=np.float32)
-    if sr != SAMPLE_RATE:
-        audio = librosa.resample(audio, orig_sr=sr, target_sr=SAMPLE_RATE)
-    target_len = int(SAMPLE_RATE * CLIP_SECONDS)
-    if len(audio) > target_len:
-        start = max(0, (len(audio) - target_len) // 2)
-        audio = audio[start:start + target_len]
-    elif len(audio) < target_len:
-        audio = np.pad(audio, (0, target_len - len(audio)))
-    return audio.astype(np.float32), sr
+    """Loads audio, resamples, and normalizes to match YAMNet/MLP pipeline."""
+    wav, sr = librosa.load(path, sr=SAMPLE_RATE, mono=True)
 
+    # Standardize length
+    fixed_length = int(SAMPLE_RATE * CLIP_SECONDS)
+    if len(wav) < fixed_length:
+        wav = np.pad(wav, (0, fixed_length - len(wav)))
+    else:
+        wav = wav[:fixed_length]
 
-def waveform_to_logmel(waveform):
-    mel = librosa.feature.melspectrogram(
-        y=np.asarray(waveform, dtype=np.float32),
-        sr=SAMPLE_RATE,
-        n_fft=N_FFT,
-        hop_length=HOP_LENGTH,
-        n_mels=N_MELS,
-        fmin=40,
-        fmax=SAMPLE_RATE // 2,
-        power=2.0,
-    )
-    logmel = librosa.power_to_db(mel, ref=np.max)
-    logmel = (logmel - logmel.mean()) / (logmel.std() + 1e-6)
-    return torch.tensor(logmel, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-
+    return wav, sr
 
 def predict_source_count(waveform):
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
-    max_sources = int(checkpoint.get("max_sources", MAX_SOURCES))
-    model = SourceCountCNN(max_sources=max_sources).to(DEVICE)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    """
+    Takes a raw waveform, extracts YAMNet embeddings, and predicts count
+    with confidence and agreement metrics.
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model = SourceCountMLP().to(device)
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(f"Model file {MODEL_PATH} not found.")
+
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     model.eval()
 
-    window_size = int(SAMPLE_RATE * 2.0)
-    hop_size = int(SAMPLE_RATE * 1.0)
+    yamnet = load_yamnet()
+    wav_tensor = waveform.astype(np.float32)
+
+    # Run YAMNet inference: scores, embeddings, spectrogram
+    _, embeddings, _ = yamnet(wav_tensor)
+
+    # Ensure embeddings is a numpy array and not a tensor before converting to torch
+    if hasattr(embeddings, 'numpy'):
+        embeddings = embeddings.numpy()
+
+    # Process every window instead of averaging first
+    tensor_embs = torch.FloatTensor(embeddings).to(device)
+
+    with torch.no_grad():
+        logits = model(tensor_embs)
+        probs = F.softmax(logits, dim=1)
+
+        # Prediction and confidence per window
+        window_preds = torch.argmax(probs, dim=1).cpu().numpy()
+        window_confidences = torch.max(probs, dim=1)[0].cpu().numpy()
+
+    # Final prediction via majority vote
+    counts = np.bincount(window_preds, minlength=32)
+    winning_idx = np.argmax(counts)
+    final_count = winning_idx + 1
+
+    # Create timeline for the frontend
     timeline = []
-
-    if len(waveform) < window_size:
-        waveform = np.pad(waveform, (0, window_size - len(waveform)))
-
-    for start in range(0, len(waveform) - window_size + 1, hop_size):
-        end = start + window_size
-        chunk = waveform[start:end]
-        features = waveform_to_logmel(chunk).to(DEVICE)
-        with torch.no_grad():
-            logits = model(features)
-            probs = torch.softmax(logits, dim=1)[0]
-            confidence, idx = torch.max(probs, dim=0)
+    for i in range(num_windows):
         timeline.append({
-            "start": start / SAMPLE_RATE,
-            "end": end / SAMPLE_RATE,
-            "count": int(idx.item()) + 1,
-            "confidence": round(float(confidence.item()), 4)
+            "start": i * 0.96,
+            "end": (i + 1) * 0.96,
+            "count": int(window_preds[i] + 1),
+            "confidence": float(window_confidences[i])
         })
 
-    counts = [t["count"] for t in timeline]
-    final_count = max(set(counts), key=counts.count) if counts else 1
+    # Calculate Metrics
+    voted_windows = counts[winning_idx]
+    agreement = (voted_windows / num_windows) * 100
+    avg_confidence = np.mean(window_confidences) * 100
+
     return {
-        "estimated_sources": final_count,
-        "timeline": timeline,
-        "model_type": "CNN sliding-window classifier",
+        "estimated_sources": int(final_count),
+        "confidence": float(avg_confidence),
+        "agreement": float(agreement),
+        "windows_voted": int(voted_windows),
+        "total_windows": num_windows,
+        "timeline": timeline
     }

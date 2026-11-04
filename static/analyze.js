@@ -151,42 +151,36 @@
         <div class="notice info">Add labelled audio and run <code>python train.py --metadata data/metadata.csv --epochs 25 --max-sources 32</code>. The <a href="/docs#train">training guide</a> has the details.</div></div>`;
       show('res'); return;
     }
-    const tl = p.timeline || [], mode = p.estimated_sources, off = a.crop_start_seconds ?? (crop ? crop.start : 0);
-    const avg = tl.length ? tl.reduce((s, t) => s + t.confidence, 0) / tl.length : 0;
-    const agree = tl.length ? tl.filter(t => t.count === mode).length / tl.length : 0;
-    const maxC = Math.max(1, ...tl.map(t => t.count)), tally = {};
-    tl.forEach(t => tally[t.count] = (tally[t.count] || 0) + 1);
-    const rows = Object.entries(tally).sort((x, y) => y[1] - x[1] || x[0] - y[0]);
-    const orig = a.original_duration_seconds || dur;
+    const mode = p.estimated_sources;
+    const avg = p.confidence / 100;
+    const agree = p.agreement / 100;
+    const windows = p.total_windows || 0;
+    const voted = p.windows_voted || 0;
+    const off = a.crop_start_seconds ?? (crop ? crop.start : 0);
+    const orig = a.duration_formatted || (a.original_duration_seconds || dur);
+
     let warn = '';
     if (agree < .6 || avg < .5) warn = `<div class="notice">The windows disagree or the model is unsure (${Math.round(agree * 100)}% agreement, ${Math.round(avg * 100)}% average confidence). Treat this count with care.</div>`;
-    if (orig > WIN + .05) warn += `<div class="notice info">Only the middle ${WIN} seconds (${fmtTime(off)} to ${fmtTime(off + WIN)}) of this ${fmtTime(orig)} recording were analysed.</div>`;
+    if (a.original_duration_seconds > WIN + .05) warn += `<div class="notice info">Only the middle ${WIN} seconds (${fmtTime(off)} to ${fmtTime(off + WIN)}) of this ${fmtTime(a.original_duration_seconds)} recording were analysed.</div>`;
 
     el.res.innerHTML = `<div class="result">
       <div class="result-top">
         <div class="ring"><svg viewBox="0 0 120 120"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5A1F"/><stop offset="1" stop-color="#FF3D8B"/></linearGradient></defs><circle class="bg-c" cx="60" cy="60" r="54"/><circle class="fg-c" id="ringFg" cx="60" cy="60" r="54"/></svg>
           <div><b id="bigN">0</b><span>${mode === 1 ? 'source' : 'sources'}</span></div></div>
-        <div><h3>Estimated source count</h3><p>${tl.length} windows voted. The ring shows average confidence.</p></div>
+        <div><h3>Estimated source count</h3><p>${windows} windows voted. The ring shows average confidence.</p></div>
       </div>
-      <div class="metrics">${metric('Average confidence', (avg * 100).toFixed(1) + '%')}${metric('Window agreement', Math.round(agree * 100) + '%')}${metric('Recording length', fmtTime(orig))}${metric('Loudness (RMS)', a.rms_energy)}</div>
+      <div class="metrics">${metric('Average confidence', (avg * 100).toFixed(1) + '%')}${metric('Window agreement', Math.round(agree * 100) + '%')}${metric('Recording length', orig)}${metric('Loudness (RMS)', a.rms_energy)}</div>
       ${warn}
-      <div><div class="sub">Window by window <small>Hover a bar to mark it on the waveform</small></div>
-        <div class="tl">${tl.map((t, i) => `<div class="tl-bar" tabindex="0" data-i="${i}" title="${(off + t.start).toFixed(1)} to ${(off + t.end).toFixed(1)} s: ${t.count} sources, ${(t.confidence * 100).toFixed(0)}% confident"><b>${t.count}</b><i style="--h:${Math.max(14, t.count / maxC * 82)}%;--o2:${(.45 + t.confidence * .55).toFixed(2)};--d:${i * 70}ms"></i></div>`).join('')}</div>
-        <div class="tl-axis"><span>${fmtTime(off)}</span><span>${fmtTime(off + WIN)}</span></div></div>
-      <div><div class="sub">Votes</div><div class="votes">${rows.map(([c, n], i) => `<div class="vote ${i === 0 ? 'top' : ''}"><span>${c} ${c == 1 ? 'source' : 'sources'}</span><div><i style="--w:${n / tl.length * 100}%"></i></div><span>${n}/${tl.length}</span></div>`).join('')}</div></div>
+      <div class="sub">Overall Distribution</div>
+      <div class="votes"><div class="vote top"><span>${mode} ${mode == 1 ? 'source' : 'sources'}</span><div><i style="--w:${agree * 100}%"></i></div><span>${voted}/${windows}</span></div></div>
       <p class="fine">${esc(data.message || 'The result is an estimate.')}</p></div>`;
     show('res');
 
     requestAnimationFrame(() => requestAnimationFrame(() => { const fg = $('#ringFg'); if (fg) fg.style.strokeDashoffset = 339.3 * (1 - Math.min(1, avg)); }));
     const big = $('#bigN'), t0 = performance.now();
     (function step(n) { const k = Math.min(1, (n - t0) / 900); big.textContent = Math.round(mode * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); })(t0);
-    el.res.querySelectorAll('.tl-bar').forEach(b => {
-      const on = () => { const t = tl[b.dataset.i]; hl = { start: off + t.start, end: off + t.end }; draw(); };
-      const out = () => { hl = null; draw(); };
-      b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', out); b.addEventListener('focus', on); b.addEventListener('blur', out);
-    });
     H.add({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: Date.now(), filename: a.filename || file.name, count: mode,
-      conf: +avg.toFixed(3), agree: +agree.toFixed(3), duration: orig, counts: tl.map(t => t.count) });
+      conf: +avg.toFixed(3), agree: +agree.toFixed(3), duration: a.original_duration_seconds || dur, counts: [] });
   }
   const metric = (l, v) => `<div class="metric"><small>${l}</small><b>${esc(v ?? '—')}</b></div>`;
 })();
