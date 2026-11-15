@@ -18,26 +18,25 @@
   </section>
 
   <section class="section" style="padding-top:0">
-    <div class="section-head"><h2>Inside SourceCountCNN</h2><p>Three convolution blocks learn the patterns, a pooling layer fixes the size, and two dense layers pick one count class.</p></div>
+    <div class="section-head"><h2>Inside SourceCountCNN</h2><p>Three convolution blocks learn the patterns, a pooling layer fixes the size, and dense layers estimate one count class for the complete clip.</p></div>
     <div class="arch">
       <div class="layer"><b>Conv 1</b><small>1 to 16 channels, BatchNorm, ReLU, max-pool</small><div class="bar" style="--w:25%"></div></div>
       <div class="layer"><b>Conv 2</b><small>16 to 32 channels, BatchNorm, ReLU, max-pool</small><div class="bar" style="--w:50%"></div></div>
       <div class="layer"><b>Conv 3</b><small>32 to 64 channels, BatchNorm, ReLU</small><div class="bar" style="--w:75%"></div></div>
-      <div class="layer"><b>Adaptive pool</b><small>Any input size becomes a 4 x 8 map</small><div class="bar" style="--w:40%"></div></div>
-      <div class="layer"><b>Dense 128</b><small>Flatten, linear, ReLU, dropout 0.25</small><div class="bar" style="--w:60%"></div></div>
-      <div class="layer"><b>Output</b><small>{{ status.max_sources }} classes. Index 0 means one source.</small><div class="bar" style="--w:100%"></div></div>
+      <div class="layer"><b>Adaptive pool</b><small>Any input size becomes a 4 x 16 map</small><div class="bar" style="--w:40%"></div></div>
+      <div class="layer"><b>Dense 256</b><small>Flatten, linear, ReLU, dropout 0.4</small><div class="bar" style="--w:60%"></div></div>
+      <div class="layer"><b>Output</b><small>{{ status.max_sources - status.min_sources + 1 }} classes, covering {{ status.min_sources }}–{{ status.max_sources }} sources.</small><div class="bar" style="--w:100%"></div></div>
     </div>
   </section>
 
   <section class="section" style="padding-top:0">
-    <div class="section-head"><h2>Sliding-window voting</h2>
-      <p>The server analyses an {{ status.clip_seconds|int }}-second clip as seven overlapping 2-second windows. Each window predicts a count. The most common prediction is reported. This animation uses made-up predictions to show the idea.</p></div>
+    <div class="section-head"><h2>One full-clip prediction</h2>
+      <p>The server converts the complete {{ status.clip_seconds|int }}-second analysis clip to a spectrogram. The CNN uses the full spectrogram to estimate one source count.</p></div>
     <div class="demo panel">
-      <span class="eg">Example with made-up predictions</span>
+      <span class="eg">Illustration of the analysis interval</span>
       <div class="strip" id="strip"><canvas id="stripCv"></canvas><div class="win" id="win"></div></div>
       <div class="ticks"><span>0 s</span><span>2 s</span><span>4 s</span><span>6 s</span><span>8 s</span></div>
-      <div class="chips" id="chips" aria-label="Example window predictions"></div>
-      <p id="demoNote" class="fine">Windows vote one at a time.</p>
+      <p id="demoNote" class="fine">One full clip produces one count estimate.</p>
     </div>
   </section>
 

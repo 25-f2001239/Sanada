@@ -5,13 +5,14 @@
   const when = ts => new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
   function spark(counts) {
-    if (!counts || !counts.length) return '';
-    const max = Math.max(...counts), min = Math.min(...counts), span = Math.max(1, max - min), w = 120, h = 32;
-    const pts = counts.map((c, i) => `${counts.length === 1 ? w / 2 : (i / (counts.length - 1) * (w - 6) + 3).toFixed(1)},${(h - 4 - (c - min) / span * (h - 8)).toFixed(1)}`).join(' ');
+    const values = Array.isArray(counts) ? counts.map(Number).filter(Number.isFinite).slice(0, 200) : [];
+    if (!values.length) return '';
+    const max = Math.max(...values), min = Math.min(...values), span = Math.max(1, max - min), w = 120, h = 32;
+    const pts = values.map((c, i) => `${values.length === 1 ? w / 2 : (i / (values.length - 1) * (w - 6) + 3).toFixed(1)},${(h - 4 - (c - min) / span * (h - 8)).toFixed(1)}`).join(' ');
     return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="#FF5A1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   }
   function render() {
-    const all = H.all().filter(h => h && typeof h.filename === 'string' && Number.isFinite(+h.count)), term = q.value.trim().toLowerCase(), items = all.filter(h => h.filename.toLowerCase().includes(term));
+    const all = H.all().filter(h => h && typeof h.filename === 'string' && Number.isSafeInteger(h.count) && Number.isFinite(h.ts) && Number.isFinite(h.duration)), term = q.value.trim().toLowerCase(), items = all.filter(h => h.filename.toLowerCase().includes(term));
     const freq = {}; all.forEach(h => freq[h.count] = (freq[h.count] || 0) + 1);
     const common = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
     const avg = all.length ? all.reduce((s, h) => s + h.count, 0) / all.length : 0;
@@ -21,9 +22,9 @@
     if (!items.length) { list.innerHTML = `<div class="panel state"><h3>No match</h3><p>No saved result has “${esc(q.value)}” in its file name.</p></div>`; return; }
     list.innerHTML = items.map((h, i) => `<article class="hrow" style="animation-delay:${Math.min(i, 10) * 40}ms">
       <div class="badge" aria-label="${h.count} sources">${h.count}</div>
-      <div class="hinfo"><strong title="${esc(h.filename)}">${esc(h.filename)}</strong><small>${when(h.ts)} · ${fmtTime(h.duration)} · ${Math.round((h.conf || 0) * 100)}% confident · ${Math.round((h.agree || 0) * 100)}% agreement</small></div>
+      <div class="hinfo"><strong title="${esc(h.filename)}">${esc(h.filename)}</strong><small>${when(h.ts)} · ${fmtTime(h.duration)} · ${Math.round((h.conf || 0) * 100)}% model confidence</small></div>
       ${spark(h.counts)}
-      <button class="icon-btn" data-del="${h.id}" aria-label="Delete ${esc(h.filename)}"><svg class="ic"><use href="#i-trash"/></svg></button></article>`).join('');
+      <button class="icon-btn" data-del="${esc(h.id)}" aria-label="Delete ${esc(h.filename)}"><svg class="ic"><use href="#i-trash"/></svg></button></article>`).join('');
   }
   list.addEventListener('click', e => { const b = e.target.closest('[data-del]'); if (b) { H.remove(b.dataset.del); render(); toast('Result deleted.'); } });
   q.addEventListener('input', render);
@@ -31,8 +32,8 @@
   $('#exportBtn').addEventListener('click', () => {
     const all = H.all(); if (!all.length) return toast('There is nothing to export yet.');
     const cell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return `"${s.replace(/"/g, '""')}"`; };
-    const rows = [['file', 'date', 'estimated_sources', 'avg_confidence', 'window_agreement', 'duration_s', 'window_counts']]
-      .concat(all.map(h => [h.filename, new Date(h.ts).toISOString(), h.count, h.conf, h.agree, h.duration, (h.counts || []).join(' ')]));
+    const rows = [['file', 'date', 'estimated_sources', 'model_confidence', 'duration_s']]
+      .concat(all.map(h => [h.filename, new Date(h.ts).toISOString(), h.count, h.conf, h.duration]));
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(cell).join(',')).join('\n')], { type: 'text/csv' }));
     a.download = 'echocount-history.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });

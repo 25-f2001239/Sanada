@@ -2,6 +2,10 @@
 {% block title %}Count every sound in the mix{% endblock %}
 {% block page %}home{% endblock %}
 {% block content %}
+{# Safe defaults so a missing key in model_status() can never crash the page #}
+{% set sr = status.sample_rate if status.sample_rate else 16000 %}
+{% set clip_s = status.clip_seconds if status.clip_seconds else 8 %}
+{% set max_src = status.max_sources if status.max_sources else 0 %}
 <section class="hero wrap">
   <h1 data-split>Count every <span class="inline-wave" aria-hidden="true">{% for k in range(7) %}<i style="--k:{{ k }}"></i>{% endfor %}</span> sound hiding in the mix.</h1>
   <div class="hero-row">
@@ -28,13 +32,13 @@
 </div>
 
 <section class="section wrap">
-  <div class="section-head rv"><h2>Built around one question</h2><p class="lead">Counting is a different job from separating. EchoCount only answers how many, and it shows how sure it is.</p></div>
+  <div class="section-head rv"><h2>Built around one question</h2><p class="lead">Counting is a different job from separating. EchoCount answers how many first, and it shows how sure it is.</p></div>
   <div class="bento">
     <article class="card span3 rv" data-spot><h3>Hear it, then see it</h3><p>Your upload becomes a waveform you can play and scrub. The part the model analysed is marked, so every result can be checked by ear.</p>
       <div class="viz bars" aria-hidden="true">{% for i in range(34) %}<i style="--i:{{ i }}"></i>{% endfor %}</div></article>
-    <article class="card span3 rv" style="--d:80ms" data-spot><span class="eg">Example</span><h3>Every window votes</h3><p>The clip is cut into overlapping 2-second windows. Each predicts a count and the most common answer wins.</p>
-      <div class="viz votes" aria-hidden="true">{% for n in [3,3,4,3,3,3,2] %}<span class="vc" style="--k:{{ loop.index0 }}">{{ n }}</span>{% endfor %}</div></article>
-    <article class="card span2 rv" data-spot><span class="eg">Example</span><h3>Confidence you can read</h3><p>Window agreement and average confidence sit next to the count.</p>
+    <article class="card span3 rv" style="--d:80ms" data-spot><span class="eg">One prediction per clip</span><h3>The whole clip matters</h3><p>The model reads one complete eight-second spectrogram and estimates one source count.</p>
+      <div class="viz bars" aria-hidden="true">{% for i in range(34) %}<i style="--i:{{ i }}"></i>{% endfor %}</div></article>
+    <article class="card span2 rv" data-spot><span class="eg">Example</span><h3>Confidence you can read</h3><p>The model confidence appears next to the estimated count.</p>
       <div class="mini-ring" aria-hidden="true"><svg viewBox="0 0 100 100"><circle class="a" cx="50" cy="50" r="42"/><circle class="b" cx="50" cy="50" r="42"/></svg><b>87%</b></div></article>
     <article class="card span2 rv" style="--d:80ms" data-spot><h3>Private by default</h3><p>Audio goes to the Flask server on your computer, and the temporary copy is deleted after analysis.</p>
       <div class="term" aria-hidden="true"><em>$</em> python app.py<br>Running on 127.0.0.1:5000<br><em>$</em> <u></u></div></article>
@@ -47,11 +51,21 @@
   <div class="dark rv">
     <h2 style="max-width:18ch">{{ 'The model is ready.' if status.trained else 'The interface is ready. The model needs training.' }}</h2>
     <p style="margin-top:14px">{{ 'A trained checkpoint was found, so predictions are available now.' if status.trained else 'Until labelled audio is added and train.py has run, uploads show signal details only. EchoCount will not invent a count.' }}</p>
+
+    {% if status.trained and status.val_mae is not none %}
+    <p class="fine">Validation results for this checkpoint:
+      MAE {{ '%.2f'|format(status.val_mae) }} sources
+      {%- if status.val_macro_mae is not none %} · macro MAE {{ '%.2f'|format(status.val_macro_mae) }}{% endif %}
+      {%- if status.val_exact_accuracy is not none %} · exact count {{ '%.1f'|format(status.val_exact_accuracy * 100) }}%{% endif %}
+      {%- if status.val_within_one is not none %} · within one source {{ '%.1f'|format(status.val_within_one * 100) }}%{% endif %}.
+    </p>
+    {% endif %}
+
     <div class="facts">
-      <div><b data-count="{{ (status.sample_rate / 1000)|int }}" data-suffix=" kHz">0</b><span>sample rate</span></div>
-      <div><b data-count="{{ status.clip_seconds|int }}" data-suffix=" s">0</b><span>analysis window</span></div>
+      <div><b data-count="{{ (sr / 1000)|int }}" data-suffix=" kHz">0</b><span>sample rate</span></div>
+      <div><b data-count="{{ clip_s|int }}" data-suffix=" s">0</b><span>analysis window</span></div>
       <div><b data-count="64">0</b><span>mel bands</span></div>
-      <div><b data-count="{{ status.max_sources }}">0</b><span>maximum count</span></div>
+      <div><b data-count="{{ max_src }}">0</b><span>maximum count</span></div>
     </div>
   </div>
 </section>
@@ -59,19 +73,18 @@
 <section class="section wrap" style="padding-top:0">
   <div class="section-head rv"><h2>From file to count</h2></div>
   <ol class="seq">
-    <li class="rv"><h3>Load</h3><p>Convert to mono and resample to {{ (status.sample_rate / 1000)|int }} kHz.</p></li>
-    <li class="rv" style="--d:70ms"><h3>Crop or pad</h3><p>Fit the clip to one {{ status.clip_seconds|int }}-second window.</p></li>
-    <li class="rv" style="--d:140ms"><h3>Slide</h3><p>Cut 2-second windows with a 1-second hop.</p></li>
-    <li class="rv" style="--d:210ms"><h3>Classify</h3><p>A small CNN reads each log-mel spectrogram.</p></li>
-    <li class="rv" style="--d:280ms"><h3>Vote</h3><p>The most frequent window count is the answer.</p></li>
+    <li class="rv"><h3>Load</h3><p>Convert to mono and resample to {{ (sr / 1000)|int }} kHz.</p></li>
+    <li class="rv" style="--d:70ms"><h3>Crop or pad</h3><p>Fit the clip to one {{ clip_s|int }}-second window.</p></li>
+    <li class="rv" style="--d:140ms"><h3>Convert</h3><p>Turn the full clip into a 64-band log-mel spectrogram.</p></li>
+    <li class="rv" style="--d:210ms"><h3>Classify</h3><p>A small CNN estimates one source count for the full clip.</p></li>
   </ol>
 </section>
 
 <section class="section wrap" style="padding-top:0">
   <div class="section-head rv"><h2>Questions people ask</h2></div>
   <div class="acc rv">
-    <details open><summary>Does it separate the sources into files?</summary><p>No. It only estimates how many sources overlap. Separation is a different model and a different project component.</p></details>
-    <details><summary>Why does it say the model is not trained?</summary><p>The app needs a checkpoint at checkpoints/source_count_cnn.pt. Train one from labelled mixtures with train.py. The Docs page lists the exact command.</p></details>
+    <details open><summary>Does it separate the sources into files?</summary><p>For sparse mixtures, yes. When the estimated count is 8 or fewer, the separator can write one WAV per source and bundle them into a ZIP. Denser mixtures are counted only, because separating them is not reliable. If the page shows an "Untrained demo weights" banner, the stems are not real separations.</p></details>
+    <details><summary>Why does it say the model is not trained?</summary><p>The app needs a checkpoint at checkpoints/source_count_clip.pt. Train one from labelled mixtures with train.py. The Docs page lists the exact command.</p></details>
     <details><summary>What happens to my audio?</summary><p>It is sent to the Flask server running on your computer, analysed, and the temporary file is deleted. Your history stays in this browser only.</p></details>
     <details><summary>What about recordings longer than 8 seconds?</summary><p>Only the middle 8 seconds are analysed, and the waveform marks which part. Shorter recordings are padded with silence.</p></details>
     <details><summary>Can I trust the confidence number?</summary><p>It shows how decisive the network was, not whether it was right. Check accuracy on a held-out test set before relying on it.</p></details>

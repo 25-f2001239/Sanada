@@ -1,0 +1,319 @@
+{
+  "version": "2.0",
+  "groups": [
+    "Human voice",
+    "Musical instrument",
+    "Animal",
+    "Household/tools",
+    "Environment/other"
+  ],
+  "group_to_fine_classes": {
+    "Human voice": [
+      "Applause",
+      "Cough",
+      "Laughter"
+    ],
+    "Musical instrument": [
+      "Acoustic_guitar",
+      "Cello",
+      "Chime",
+      "Clarinet",
+      "Electric_piano",
+      "Flute",
+      "Glockenspiel",
+      "Gong",
+      "Harmonica",
+      "Oboe",
+      "Saxophone",
+      "Snare_drum",
+      "Trumpet",
+      "Violin_or_fiddle"
+    ],
+    "Animal": [
+      "Bark",
+      "Meow"
+    ],
+    "Household/tools": [
+      "Computer_keyboard",
+      "Drawer_open_or_close",
+      "Keys_jangling",
+      "Microwave_oven",
+      "Scissors",
+      "Shatter",
+      "Squeak",
+      "Tearing",
+      "Telephone",
+      "Writing"
+    ],
+    "Environment/other": [
+      "Bus",
+      "Fireworks",
+      "Gunshot_or_gunfire"
+    ]
+  },
+  "class_to_group": {
+    "Applause": "Human voice",
+    "Cough": "Human voice",
+    "Laughter": "Human voice",
+    "Speech": "Human voice",
+    "Human voice": "Human voice",
+    "Acoustic_guitar": "Musical instrument",
+    "Acoustic guitar": "Musical instrument",
+    "Cello": "Musical instrument",
+    "Chime": "Musical instrument",
+    "Clarinet": "Musical instrument",
+    "Electric_piano": "Musical instrument",
+    "Electric piano": "Musical instrument",
+    "Flute": "Musical instrument",
+    "Glockenspiel": "Musical instrument",
+    "Gong": "Musical instrument",
+    "Harmonica": "Musical instrument",
+    "Oboe": "Musical instrument",
+    "Saxophone": "Musical instrument",
+    "Snare_drum": "Musical instrument",
+    "Snare drum": "Musical instrument",
+    "Trumpet": "Musical instrument",
+    "Violin_or_fiddle": "Musical instrument",
+    "Violin": "Musical instrument",
+    "Bark": "Animal",
+    "Dog": "Animal",
+    "Dog bark": "Animal",
+    "Meow": "Animal",
+    "Cat": "Animal",
+    "Cat meow": "Animal",
+    "Computer_keyboard": "Household/tools",
+    "Keyboard typing": "Household/tools",
+    "Drawer_open_or_close": "Household/tools",
+    "Drawer": "Household/tools",
+    "Keys_jangling": "Household/tools",
+    "Keys jangling": "Household/tools",
+    "Microwave_oven": "Household/tools",
+    "Microwave oven": "Household/tools",
+    "Scissors": "Household/tools",
+    "Shatter": "Household/tools",
+    "Glass shatter": "Household/tools",
+    "Squeak": "Household/tools",
+    "Tearing": "Household/tools",
+    "Paper tearing": "Household/tools",
+    "Telephone": "Household/tools",
+    "Telephone ring": "Household/tools",
+    "Phone vibration": "Household/tools",
+    "Hammer": "Household/tools",
+    "Door knock": "Household/tools",
+    "Knock": "Household/tools",
+    "Writing": "Household/tools",
+    "Bus": "Environment/other",
+    "Car horn": "Environment/other",
+    "Vehicle horn": "Environment/other",
+    "Water": "Environment/other",
+    "Fireworks": "Environment/other",
+    "Gunshot_or_gunfire": "Environment/other",
+    "Gunshot": "Environment/other"
+  },
+  "friendly_names": {
+    "Applause": "Applause",
+    "Cough": "Cough",
+    "Laughter": "Laughter",
+    "Speech": "Human voice",
+    "Acoustic_guitar": "Acoustic guitar",
+    "Cello": "Cello",
+    "Chime": "Chime",
+    "Clarinet": "Clarinet",
+    "Electric_piano": "Electric piano",
+    "Flute": "Flute",
+    "Glockenspiel": "Glockenspiel",
+    "Gong": "Gong",
+    "Harmonica": "Harmonica",
+    "Oboe": "Oboe",
+    "Saxophone": "Saxophone",
+    "Snare_drum": "Snare drum",
+    "Trumpet": "Trumpet",
+    "Violin_or_fiddle": "Violin",
+    "Bark": "Dog bark",
+    "Meow": "Cat meow",
+    "Computer_keyboard": "Keyboard typing",
+    "Drawer_open_or_close": "Drawer",
+    "Keys_jangling": "Keys jangling",
+    "Microwave_oven": "Microwave oven",
+    "Scissors": "Scissors",
+    "Shatter": "Glass shatter",
+    "Squeak": "Squeak",
+    "Tearing": "Paper tearing",
+    "Telephone": "Telephone ring",
+    "Writing": "Writing",
+    "Bus": "Bus",
+    "Fireworks": "Fireworks",
+    "Gunshot_or_gunfire": "Gunshot",
+    "Hammer": "Hammer",
+    "Phone_vibration": "Phone vibration",
+    "Door_knock": "Door knock",
+    "Knock": "Door knock",
+    "Water": "Water",
+    "Car_horn": "Car horn",
+    "Vehicle_horn_and_car_horn_and_honking": "Car horn"
+  },
+  "target_12_sounds": {
+    "hammer": {
+      "friendly_name": "Hammer",
+      "group": "Household/tools",
+      "fsd_class": "Hammer",
+      "audioset_labels": ["Hammer", "Tools", "Wood", "Chop", "Whack, thwack"],
+      "clap_prompts": [
+        "the sound of a hammer hitting nails or wood",
+        "hammering and carpentry tool impacts"
+      ],
+      "freq_band_hz": [120, 4500],
+      "transient": true
+    },
+    "phone vibration": {
+      "friendly_name": "Phone vibration",
+      "group": "Household/tools",
+      "fsd_class": "Phone_vibration",
+      "audioset_labels": ["Vibration", "Buzz", "Hum"],
+      "clap_prompts": [
+        "a smartphone vibrating on a table",
+        "low buzzing phone vibration alert"
+      ],
+      "freq_band_hz": [80, 450],
+      "transient": false
+    },
+    "dog": {
+      "friendly_name": "Dog bark",
+      "group": "Animal",
+      "fsd_class": "Bark",
+      "audioset_labels": ["Bark", "Dog", "Bow-wow", "Yip", "Howl", "Growling"],
+      "clap_prompts": [
+        "a dog barking loudly",
+        "dog bark and animal vocalization"
+      ],
+      "freq_band_hz": [250, 3800],
+      "transient": true
+    },
+    "cat": {
+      "friendly_name": "Cat meow",
+      "group": "Animal",
+      "fsd_class": "Meow",
+      "audioset_labels": ["Meow", "Cat", "Purr", "Caterwaul"],
+      "clap_prompts": [
+        "a cat meowing",
+        "domestic cat meow vocalization"
+      ],
+      "freq_band_hz": [350, 5000],
+      "transient": false
+    },
+    "cello": {
+      "friendly_name": "Cello",
+      "group": "Musical instrument",
+      "fsd_class": "Cello",
+      "audioset_labels": ["Cello", "Bowed string instrument", "String section", "Orchestra"],
+      "clap_prompts": [
+        "a cello playing bowed string music",
+        "solo cello musical instrument"
+      ],
+      "freq_band_hz": [65, 2500],
+      "transient": false
+    },
+    "scissors": {
+      "friendly_name": "Scissors",
+      "group": "Household/tools",
+      "fsd_class": "Scissors",
+      "audioset_labels": ["Scissors", "Cut", "Snip", " Cutlery, silverware"],
+      "clap_prompts": [
+        "metal scissors snipping and cutting paper",
+        "the metallic snip sound of scissors"
+      ],
+      "freq_band_hz": [1800, 7800],
+      "transient": true
+    },
+    "telephone ring": {
+      "friendly_name": "Telephone ring",
+      "group": "Household/tools",
+      "fsd_class": "Telephone",
+      "audioset_labels": ["Telephone", "Telephone bell ringing", "Ringtone", "Dial tone"],
+      "clap_prompts": [
+        "a telephone ringing loudly",
+        "phone ringtone or telephone bell ringing"
+      ],
+      "freq_band_hz": [600, 5500],
+      "transient": false
+    },
+    "speech": {
+      "friendly_name": "Human voice",
+      "group": "Human voice",
+      "fsd_class": "Speech",
+      "audioset_labels": [
+        "Speech",
+        "Male speech, man speaking",
+        "Female speech, woman speaking",
+        "Child speech, kid speaking",
+        "Conversation",
+        "Narration, monologue"
+      ],
+      "clap_prompts": [
+        "a person speaking, human voice conversation",
+        "clear human speech talking"
+      ],
+      "freq_band_hz": [85, 4000],
+      "transient": false
+    },
+    "door knock": {
+      "friendly_name": "Door knock",
+      "group": "Household/tools",
+      "fsd_class": "Knock",
+      "audioset_labels": ["Knock", "Door", "Tap", "Thump, thud"],
+      "clap_prompts": [
+        "someone knocking on a wooden door",
+        "door knock sound"
+      ],
+      "freq_band_hz": [80, 1800],
+      "transient": true
+    },
+    "keyboard typing": {
+      "friendly_name": "Keyboard typing",
+      "group": "Household/tools",
+      "fsd_class": "Computer_keyboard",
+      "audioset_labels": ["Computer keyboard", "Typing", "Typewriter", "Clickety-clack"],
+      "clap_prompts": [
+        "typing on a mechanical computer keyboard",
+        "rapid keyboard key clicks"
+      ],
+      "freq_band_hz": [800, 7000],
+      "transient": true
+    },
+    "water": {
+      "friendly_name": "Water",
+      "group": "Environment/other",
+      "fsd_class": "Water",
+      "audioset_labels": [
+        "Water",
+        "Stream",
+        "Pour",
+        "Trickle, dribble",
+        "Water tap, faucet",
+        "Splash, splatter"
+      ],
+      "clap_prompts": [
+        "running water pouring or flowing from a tap",
+        "splashing and flowing water sound"
+      ],
+      "freq_band_hz": [300, 7500],
+      "transient": false
+    },
+    "car horn": {
+      "friendly_name": "Car horn",
+      "group": "Environment/other",
+      "fsd_class": "Vehicle_horn_and_car_horn_and_honking",
+      "audioset_labels": ["Vehicle horn, car horn, honking", "Toot", "Car", "Air horn, truck horn"],
+      "clap_prompts": [
+        "a car horn honking on the street",
+        "loud vehicle horn beep"
+      ],
+      "freq_band_hz": [350, 4200],
+      "transient": false
+    }
+  },
+  "speech_datasets_map_to_group": "Human voice",
+  "ignore_speaker_identity_patterns": [
+    "Speaker"
+  ]
+}

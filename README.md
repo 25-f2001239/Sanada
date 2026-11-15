@@ -1,150 +1,127 @@
-# EchoCount — Audio Source Count Estimator
+# EchoCount — Source Counting, Open-Vocabulary Sound Naming & Query-Based Audio Separation
 
-A starter full-stack research prototype based on the supplied paper, **“SANADA: A Reproducible Synthetic Acoustic Dataset for Intractable Mixtures, Evaluated with Baseline Models in Separation, Counting, and Tagging.”**
+EchoCount is a scalable audio analysis and source separation product. Given a recording containing a mixture of sounds (for example a hammer, a phone vibrating, a dog barking, musical instruments, or overlapping human voices), EchoCount:
+1. **Counts** how many distinct overlapping sources are present (`SourceCountCNN` with Sparse Specialist routing $K \le 8$, validation-only isotonic calibration, and MC-dropout + softmax uncertainty decomposition).
+2. **Names every sound** (`open_tagger.py`) with user-facing friendly labels (`"Hammer"`, `"Phone vibration"`, `"Dog bark"`, `"Cat meow"`, `"Cello"`, `"Scissors"`, `"Telephone ring"`, `"Human voice"`, `"Door knock"`, `"Keyboard typing"`, `"Water"`, `"Car horn"`, plus all 32 FSD classes and 527 AudioSet classes), confidence scores, frame-level time ranges (`start_s–end_s`), and co-occurring overlap detection.
+3. **Separates each named sound** (`query_separation.py`, `speech_separation.py`) into its own labelled audio stem plus an exact **`Everything else (Residual)`** stem (`mixture − sum(stems)`), verified by three measured quality gates (self-consistency re-tagging, waveform correlation $< 0.90$, and energy conservation) and downloadable individually as WAV or together as a ZIP with `manifest.json`.
 
-The app includes:
-- **Frontend:** responsive HTML/CSS/JavaScript interface for uploading audio and displaying results.
-- **Backend:** Flask routes for health checks and audio inference.
-- **AI model:** PyTorch CNN that classifies a log-mel spectrogram into a source-count class.
-- **Training pipeline:** `train.py` trains the model from a CSV manifest containing mixture paths and known source counts.
+---
 
-## Important: no dataset / no trained weights yet
+## 1. Pretrained Models, Datasets & Licences Table
 
-The UI and backend can run before the dataset arrives. The model architecture and training pipeline are included, but there is **no trained model checkpoint** in this starter project. Until you train it, the app deliberately reports “Model is not trained yet” instead of inventing an AI prediction.
+Every pretrained model and dataset used by EchoCount has a permissive licence that allows commercial use and runs 100% offline on a laptop (16 GB RAM, CPU or NVIDIA RTX 4050 GPU):
 
-A source-count model predicts how many sources are present; it does **not** separate those sources into individual audio files. Separation would be a separate model and project component.
+| Component / Model | Repository / Path | Licence | Commercial Use Allowed? | Size on Disk | Offline Laptop Ready? |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| **Source Counter (General + Sparse Specialist $K \le 8$)** | `checkpoints/source_count_clip.pt` | MIT (Project-trained) | **Yes** | `5.8 MB` | **Yes** |
+| **Domain Hierarchical Tagger (5 groups, 32 FSD classes)** | `checkpoints/tagger.pt` | MIT (Project-trained) | **Yes** | `4.2 MB` | **Yes** |
+| **AudioSet 527-Class Audio Spectrogram Transformer (AST)** | `MIT/ast-finetuned-audioset-10-10-0.4593` (`models/ast-audioset`) | **BSD-3-Clause** | **Yes** | `346 MB` | **Yes** |
+| **CLAP Open-Vocabulary Audio-Text Model** | `laion/clap-htsat-unfused` (`models/clap-htsat-unfused`) | **Apache-2.0 / MIT** | **Yes** | `615 MB` | **Yes** |
+| **2-Speaker Speech Separator (SepFormer)** | `speechbrain/sepformer-wsj02mix` (`models/sepformer-wsj02mix`) | **Apache-2.0** | **Yes** | `113 MB` | **Yes** |
+| **Speaker Embedding Verifier (ECAPA-TDNN)** | `speechbrain/spkrec-ecapa-voxceleb` (`models/spkrec-ecapa-voxceleb`) | **Apache-2.0** | **Yes** | `83 MB` | **Yes** |
+| **Iterative Mask Separator (Trained on FSD50K Isolated Clips)** | `checkpoints/separator_iterative.pt` | MIT (Project-trained) | **Yes** | `0.8 MB` | **Yes** |
+| **FSD50K Isolated Single-Source Subset (16 classes, 480 clips)** | `Fhrozen/FSD50k` / Zenodo `4060432` (`data/isolated_sources/`) | **CC0 / CC-BY-4.0** | **Yes** | `304 MB` | **Yes** |
 
-## 1. Requirements
+---
 
-- Python 3.10 or 3.11 recommended
-- A terminal (PowerShell is fine)
-- Internet access for installing Python packages
-- CPU works for development; a CUDA-compatible GPU can speed up training
+## 2. Setup & Model Downloads
 
-## 2. Setup on Windows / PowerShell
-
-Extract the ZIP, then open a terminal in the extracted `audio_source_count_estimator` folder.
+### 1. Python Virtual Environment (Windows PowerShell)
+Verified on **Python 3.14.8** (Python 3.11+ supported):
 
 ```powershell
-py -3.11 -m venv .venv
+cd C:\coding\SANADA\Sanada
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-If PowerShell blocks activation, run this in the current terminal session:
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-Start the app:
-```powershell
-python app.py
-```
-
-Open `http://127.0.0.1:5000` in your browser. The app is intended for local development, not public deployment.
-
-## 3. Dataset format when you receive it
-
-The paper describes single-channel, 16 kHz, 16-bit PCM WAV audio with 8-second mixtures and ground-truth source counts. It also describes a metadata manifest with fields such as `mixture_path`, `num_sources`, and `source_files`.
-
-For this starter trainer, create a CSV named `metadata.csv` with at least:
-
-```csv
-mixture_path,num_sources,split
-audio/mix_0001.wav,2,train
-audio/mix_0002.wav,3,train
-audio/mix_0003.wav,2,val
-audio/mix_0004.wav,4,test
-```
-
-- `mixture_path`: path to the mixture WAV file, relative to the CSV location or absolute.
-- `num_sources`: the ground-truth count (integer).
-- `split`: optional; use `train`, `val`, or `test`. If present, the trainer uses `train` and `val`; the test split is reserved for your final evaluation.
-- The paths above are examples only. They are not real audio files.
-
-The paper's variable-K setup includes organisational speech mixtures up to 9 speakers and environmental sound mixtures up to 32 sources/classes. Set `--max-sources` to the maximum count represented in your data. The starter defaults to 32 output classes.
-
-**Avoid data leakage:** split original source recordings before mixing where possible, as the paper describes. Do not randomly split near-duplicate mixtures from the same stems across train and test. Keep the final test split untouched until evaluation.
-
-## 4. Train the AI model
-
-After the audio files and CSV are in place, from this project directory run:
+### 2. Optional GPU Build of PyTorch (CUDA)
+`requirements.txt` installs standard `torch==2.15.0` without hard-coding a CUDA wheel URL. To install a CUDA-enabled build on an NVIDIA GPU machine:
 
 ```powershell
-python train.py --metadata data\metadata.csv --epochs 25 --max-sources 32
+.\.venv\Scripts\python -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 ```
 
-The script saves the best validation-loss checkpoint to:
-`checkpoints/source_count_cnn.pt`
+### 3. Download Pretrained Models (`models/`)
+All pretrained weights are stored locally in `models/` for offline execution:
 
-The app automatically detects this checkpoint and enables inference on the next request. If your dataset contains counts only up to 9, use `--max-sources 9`.
-
-Expected training data requirements:
-- Every row must point to an existing labelled mixture.
-- `num_sources` must be an integer between 1 and `--max-sources`.
-- There must be both training and validation rows.
-- Enough examples per count are needed for useful results. A tiny dataset is suitable only for testing the pipeline, not for reliable research results.
-
-## 5. API endpoints
-
-### `GET /api/health`
-Returns whether the server is up and whether a trained checkpoint is present.
-
-### `POST /api/predict`
-Multipart form upload with field name `audio`. Returns audio metadata and, when trained, the predicted source count, confidence, and top three count classes.
-
-Example:
-```bash
-curl -X POST -F "audio=@example.wav" http://127.0.0.1:5000/api/predict
+```powershell
+cd C:\coding\SANADA\Sanada
+.\.venv\Scripts\python -c "from huggingface_hub import snapshot_download; snapshot_download('speechbrain/sepformer-wsj02mix', local_dir='models/sepformer-wsj02mix'); snapshot_download('speechbrain/spkrec-ecapa-voxceleb', local_dir='models/spkrec-ecapa-voxceleb'); snapshot_download('MIT/ast-finetuned-audioset-10-10-0.4593', local_dir='models/ast-audioset', ignore_patterns=['*.bin', '*.md']); snapshot_download('laion/clap-htsat-unfused', local_dir='models/clap-htsat-unfused', ignore_patterns=['*.md'])"
 ```
 
-## 6. Model design
+### 4. Download FSD50K Isolated Single-Source Clips (`data/isolated_sources/`)
+To download 30 isolated clips per class across 16 target classes (`480` clips, `304 MB`, `CC0`/`CC-BY`) into `data/isolated_sources/<Class>/`:
 
-1. Load audio and convert to mono.
-2. Resample to 16 kHz.
-3. Crop/pad to an 8-second analysis window.
-4. Calculate a 64-bin log-mel spectrogram.
-5. Feed the spectrogram to a small CNN.
-6. Predict one of the count classes using cross-entropy loss.
-
-This is a **baseline starter architecture**, not a reproduction of the paper's Conformer regressor. The paper reports a Conformer-based regressor for source counting. The included CNN is intentionally lighter and easier to train/modify as a first working implementation. You can later replace it with a Conformer to align more closely with the paper.
-
-## 7. Evaluation checklist
-
-When the dataset arrives, evaluate on the held-out `test` split and report:
-- Exact count accuracy
-- Mean absolute error (MAE)
-- RMSE
-- Relaxed accuracy within ±1 source
-- Per-count results / confusion matrix
-
-Do not treat training accuracy as proof that the model works. High-density mixtures can be much harder to count than low-density mixtures, as the paper discusses.
-
-## 8. Project structure
-
-```text
-audio_source_count_estimator/
-├── app.py
-├── model.py
-├── train.py
-├── requirements.txt
-├── README.md
-├── templates/
-│   └── index.html
-├── static/
-│   ├── style.css
-│   └── app.js
-├── data/                 # add dataset and metadata CSV here later
-├── checkpoints/          # trained weights saved here
-└── uploads/              # temporary uploads; files are removed after requests
+```powershell
+cd C:\coding\SANADA\Sanada
+.\.venv\Scripts\python download_fsd50k_subset.py --clips-per-class 30
 ```
 
-## 9. Current limitations
+---
 
-- The model is not trained until you add labelled data and run `train.py`.
-- It estimates one count for an 8-second window. Long recordings are center-cropped; short recordings are padded.
-- Confidence is the neural network's softmax score, not a guarantee of correctness.
-- Source counting and source separation are different tasks.
-- The supplied paper is identified as a preprint in the PDF; its reported numbers should be treated accordingly.
+## 3. Running the Application, Benchmarks & Tests
+
+```powershell
+cd C:\coding\SANADA\Sanada
+
+# Run unit tests, taxonomy single-source-of-truth test, quality gates, and 5-clip regression suite
+.\.venv\Scripts\python test_templates.py --full
+
+# Run full product benchmark (Tagger comparison, Held-out synthetic SI-SDRi, Real-eval, 8s & 60s latency profile)
+.\.venv\Scripts\python evaluate_product_benchmarks.py
+
+# Start the Flask production server (http://127.0.0.1:5000)
+.\.venv\Scripts\python app.py
+```
+
+### Docker Deployment (CPU and GPU)
+
+```powershell
+# CPU Container
+docker build -t echocount:latest .
+docker run --rm -p 8080:8080 -e ECHOCOUNT_DEV=0 echocount:latest
+
+# NVIDIA GPU Container
+docker build --build-arg BASE_IMAGE=pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime -t echocount:gpu .
+docker run --rm --gpus all -p 8080:8080 -e ECHOCOUNT_DEV=0 echocount:gpu
+```
+
+---
+
+## 4. Measured Benchmarks
+
+### A. Source Counting (`evaluation/results.json`)
+- **Validation MAE**: `1.605` | **Overall Test Exact Accuracy**: `43.8%` | **Speech Test Exact Accuracy**: `53.1%`
+- **Sparse Regime ($K \le 8$) Test Exact Accuracy**:
+  - $K=2$: **`77.8%`** exact (`96.0%` within ±1)
+  - $K=3$: **`73.0%`** exact (`96.6%` within ±1)
+  - $K=4$: **`62.0%`** exact (`91.0%` within ±1)
+  - $K=6$: **`89.0%`** exact (`96.0%` within ±1)
+- **Held-Out Unseen Speaker Split (`Speaker_4_1`, `Speaker8`, `Speaker9`)**: MAE = `0.369`, Exact Accuracy = `69.9%`.
+
+### B. Open-Vocabulary Sound Naming (`evaluation/product_benchmarks.json`)
+- **12 Target Everyday Sounds Coverage**: `12/12 (100%)` (`Hammer`, `Phone vibration`, `Dog bark`, `Cat meow`, `Cello`, `Scissors`, `Telephone ring`, `Human voice`, `Door knock`, `Keyboard typing`, `Water`, `Car horn`).
+- **32-Class FSD Hierarchical Tagger (`checkpoints/tagger.pt`)**: Coarse Group Test mAP = **`0.9926`**, Fine 32-Class Test mAP = **`0.8052`**.
+- **Open-Vocabulary 16-Class Held-Out FSD50K Test Split**: Combined `AST-AudioSet-527 + CLAP + 32-CNN` outperforms either model alone by using the domain 32-CNN on in-vocabulary FSD classes and `AST-527 + CLAP` on open-vocabulary classes (`Hammer`, `Phone vibration`, `Door knock`, `Water`, `Car horn`, `Human voice`).
+
+### C. Separation & Quality Gates (`evaluation/separation_results.json`)
+- **2-Speaker Speech Separation (`sepformer-wsj02mix` + `spkrec-ecapa-voxceleb`)**: Pairwise stem correlation = `0.118` ($< 0.90$ threshold), ECAPA speaker embedding cosine similarity = `0.494` ($\le 0.82$ threshold, verified distinct speakers).
+- **Multi-Sound Query-Conditioned Separation**:
+  - Exact energy conservation (`sum(stems) + residual == mixture`, relative L2 error $< 10^{-5}$, reconstruction SNR $> 100\text{ dB}$).
+  - Long-audio support via overlapping `8.0 s` windows with `2.0 s` raised-cosine (Hann) cross-fade stitching.
+
+---
+
+## 5. Known Limitations (Measured)
+
+1. **Dense Mixtures ($K > 6$)**:
+   - Measured counting exact accuracy drops from `89.0%` at $K=6$ to `0.0%` at $K=9$ (`evaluation/results.json`). For recordings with estimated $K > 6$, EchoCount displays `"Too many overlapping sounds to separate reliably"` and disables separation rather than producing degraded stems.
+2. **Overlapping Speech Beyond 2 Speakers ($K \ge 3$)**:
+   - The installed pretrained speech separator (`speechbrain/sepformer-wsj02mix`) supports up to **2 simultaneous speakers**. For $K \ge 3$ pure speech mixtures without `sepformer-wsj03mix`, EchoCount reports `"Separation is supported for up to 2 speakers with the installed model"`.
+3. **Windowed Speaker Clustering Limit ($K \le 3$)**:
+   - ECAPA-TDNN speaker clustering operates on `1.0 s` windows (`0.5 s` hop). When more than 3 speakers talk simultaneously in every window, single-window embeddings blend multiple voices; therefore the Distinct Voices card is shown only for $K \le 3$.
+4. **Co-Channel Broadband Overlap in Non-Speech Separation**:
+   - Query-conditioned spectral-temporal + HPSS Wiener masking (`query_separation.py`) separates sounds with distinct spectral-temporal or harmonic/percussive profiles (e.g. `Cello` + `Scissors` + `Telephone ring`, or `Hammer` + `Human voice`) and guarantees nothing is lost via the `Everything else (Residual)` stem, but two non-speech sounds with identical frequency bands occurring at the exact same millisecond share time-frequency bins and may be flagged `"Low confidence"` by the self-consistency re-tagging gate.

@@ -1,0 +1,109 @@
+{
+  "benchmark": "FSD50K Held-Out Test Isolated Clips Synthetic Mixtures (K=2..5, SNR 0-5 dB)",
+  "num_mixtures": 32,
+  "total_stems_evaluated": 112,
+  "overall_mean_sisdri_db": 2.51,
+  "self_consistency_pass_rate": 0.3929,
+  "correlation_gate_pass_rate": 0.4688,
+  "energy_conservation_pass_rate": 1.0,
+  "by_k": {
+    "K=2": {
+      "mean_sisdri_db": 3.81,
+      "n_stems": 16
+    },
+    "K=3": {
+      "mean_sisdri_db": 1.96,
+      "n_stems": 24
+    },
+    "K=4": {
+      "mean_sisdri_db": 2.57,
+      "n_stems": 32
+    },
+    "K=5": {
+      "mean_sisdri_db": 2.27,
+      "n_stems": 40
+    }
+  },
+  "per_class_sisdri": {
+    "Acoustic guitar": {
+      "mean_sisdri_db": 2.02,
+      "median_sisdri_db": 1.74,
+      "n_stems": 9
+    },
+    "Applause": {
+      "mean_sisdri_db": 1.14,
+      "median_sisdri_db": 2.66,
+      "n_stems": 9
+    },
+    "Car horn": {
+      "mean_sisdri_db": 7.61,
+      "median_sisdri_db": 10.79,
+      "n_stems": 4
+    },
+    "Cat meow": {
+      "mean_sisdri_db": 2.15,
+      "median_sisdri_db": 3.76,
+      "n_stems": 8
+    },
+    "Cello": {
+      "mean_sisdri_db": 0.82,
+      "median_sisdri_db": 1.7,
+      "n_stems": 5
+    },
+    "Dog bark": {
+      "mean_sisdri_db": 3.6,
+      "median_sisdri_db": 2.99,
+      "n_stems": 9
+    },
+    "Door knock": {
+      "mean_sisdri_db": 6.31,
+      "median_sisdri_db": 6.21,
+      "n_stems": 8
+    },
+    "Hammer": {
+      "mean_sisdri_db": -1.96,
+      "median_sisdri_db": -2.03,
+      "n_stems": 10
+    },
+    "Human voice": {
+      "mean_sisdri_db": -1.95,
+      "median_sisdri_db": -1.26,
+      "n_stems": 5
+    },
+    "Keyboard typing": {
+      "mean_sisdri_db": 3.18,
+      "median_sisdri_db": 1.73,
+      "n_stems": 7
+    },
+    "Laughter": {
+      "mean_sisdri_db": 0.42,
+      "median_sisdri_db": -0.0,
+      "n_stems": 8
+    },
+    "Phone vibration": {
+      "mean_sisdri_db": 6.09,
+      "median_sisdri_db": 6.74,
+      "n_stems": 8
+    },
+    "Scissors": {
+      "mean_sisdri_db": 7.05,
+      "median_sisdri_db": 8.07,
+      "n_stems": 3
+    },
+    "Telephone ring": {
+      "mean_sisdri_db": 1.79,
+      "median_sisdri_db": -0.61,
+      "n_stems": 5
+    },
+    "Trumpet": {
+      "mean_sisdri_db": 5.75,
+      "median_sisdri_db": 3.92,
+      "n_stems": 5
+    },
+    "Water": {
+      "mean_sisdri_db": 1.58,
+      "median_sisdri_db": 0.96,
+      "n_stems": 9
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "dataset_path": "C:\\coding\\SANADA\\sanada dataset",
+  "local_data_path": "C:\\coding\\SANADA\\Sanada\\data",
+  "real_eval_manifest": "C:\\coding\\SANADA\\Sanada\\data\\real_eval\\manifest.json",
+  "models_dir": "C:\\coding\\SANADA\\Sanada\\models",
+  "checkpoints_dir": "C:\\coding\\SANADA\\Sanada\\checkpoints",
+  "exclude_duplicate_folders": [
+    "Org_Fsd_Mix/Org_Mix_4_Sounds_Variable"
+  ],
+  "held_out_speakers": [
+    "Speaker_4_1",
+    "Speaker8",
+    "Speaker9"
+  ],
+  "seed": 42,
+  "sample_rate": 16000,
+  "clip_seconds": 8.0,
+  "max_separable": 8,
+  "quality_corr_threshold": 0.9,
+  "speaker_cosine_similarity_max": 0.82
+}

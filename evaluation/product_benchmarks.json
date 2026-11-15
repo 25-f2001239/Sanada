@@ -1,0 +1,311 @@
+{
+  "generated_at": "2026-11-15T13:25:19Z",
+  "phase1_tagger_comparison": {
+    "num_held_out_test_clips": 96,
+    "num_classes_evaluated": 16,
+    "target_12_coverage": "12/12 (100%)",
+    "macro_domain_32_cnn_ap": 0.1223,
+    "macro_ast_clap_ap": 0.9068,
+    "macro_combined_open_tagger_ap": 0.6979,
+    "macro_combined_open_tagger_f1": 0.4317,
+    "per_class": {
+      "Acoustic guitar": {
+        "internal_class": "Acoustic_guitar",
+        "domain_32_cnn_ap": 0.2063,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 0.886,
+        "combined_open_tagger_f1": 0.5556,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Applause": {
+        "internal_class": "Applause",
+        "domain_32_cnn_ap": 0.8093,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 0.9583,
+        "combined_open_tagger_f1": 0.5714,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Dog bark": {
+        "internal_class": "Bark",
+        "domain_32_cnn_ap": 0.0625,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 0.9167,
+        "combined_open_tagger_f1": 0.5714,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Car horn": {
+        "internal_class": "Car_horn",
+        "domain_32_cnn_ap": 0.0,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 1.0,
+        "combined_open_tagger_f1": 1.0,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Cello": {
+        "internal_class": "Cello",
+        "domain_32_cnn_ap": 0.4341,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 1.0,
+        "combined_open_tagger_f1": 0.1714,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Keyboard typing": {
+        "internal_class": "Computer_keyboard",
+        "domain_32_cnn_ap": 0.0483,
+        "ast_clap_ap": 0.9242,
+        "combined_open_tagger_ap": 0.8452,
+        "combined_open_tagger_f1": 0.4762,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Hammer": {
+        "internal_class": "Hammer",
+        "domain_32_cnn_ap": 0.0,
+        "ast_clap_ap": 0.7429,
+        "combined_open_tagger_ap": 0.6731,
+        "combined_open_tagger_f1": 0.3333,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Door knock": {
+        "internal_class": "Knock",
+        "domain_32_cnn_ap": 0.0,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 1.0,
+        "combined_open_tagger_f1": 0.8,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Laughter": {
+        "internal_class": "Laughter",
+        "domain_32_cnn_ap": 0.0868,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 0.2033,
+        "combined_open_tagger_f1": 0.25,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Cat meow": {
+        "internal_class": "Meow",
+        "domain_32_cnn_ap": 0.0625,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 1.0,
+        "combined_open_tagger_f1": 0.6316,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Phone vibration": {
+        "internal_class": "Phone_vibration",
+        "domain_32_cnn_ap": 0.0,
+        "ast_clap_ap": 0.8965,
+        "combined_open_tagger_ap": 0.8144,
+        "combined_open_tagger_f1": 0.5882,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Scissors": {
+        "internal_class": "Scissors",
+        "domain_32_cnn_ap": 0.0629,
+        "ast_clap_ap": 0.9333,
+        "combined_open_tagger_ap": 0.4343,
+        "combined_open_tagger_f1": 0.1667,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Human voice": {
+        "internal_class": "Speech",
+        "domain_32_cnn_ap": 0.0625,
+        "ast_clap_ap": 0.4,
+        "combined_open_tagger_ap": 0.1429,
+        "combined_open_tagger_f1": 0.2069,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Telephone ring": {
+        "internal_class": "Telephone",
+        "domain_32_cnn_ap": 0.0597,
+        "ast_clap_ap": 0.635,
+        "combined_open_tagger_ap": 0.2251,
+        "combined_open_tagger_f1": 0.0845,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Trumpet": {
+        "internal_class": "Trumpet",
+        "domain_32_cnn_ap": 0.0626,
+        "ast_clap_ap": 1.0,
+        "combined_open_tagger_ap": 0.0671,
+        "combined_open_tagger_f1": 0.0,
+        "selected_model": "ast_audioset_527+clap"
+      },
+      "Water": {
+        "internal_class": "Water",
+        "domain_32_cnn_ap": 0.0,
+        "ast_clap_ap": 0.9762,
+        "combined_open_tagger_ap": 1.0,
+        "combined_open_tagger_f1": 0.5,
+        "selected_model": "ast_audioset_527+clap"
+      }
+    }
+  },
+  "phase2_synthetic_separation": {
+    "benchmark": "FSD50K Held-Out Test Isolated Clips Synthetic Mixtures (K=2..5, SNR 0-5 dB)",
+    "num_mixtures": 32,
+    "total_stems_evaluated": 112,
+    "overall_mean_sisdri_db": 2.51,
+    "self_consistency_pass_rate": 0.3929,
+    "correlation_gate_pass_rate": 0.4688,
+    "energy_conservation_pass_rate": 1.0,
+    "by_k": {
+      "K=2": {
+        "mean_sisdri_db": 3.81,
+        "n_stems": 16
+      },
+      "K=3": {
+        "mean_sisdri_db": 1.96,
+        "n_stems": 24
+      },
+      "K=4": {
+        "mean_sisdri_db": 2.57,
+        "n_stems": 32
+      },
+      "K=5": {
+        "mean_sisdri_db": 2.27,
+        "n_stems": 40
+      }
+    },
+    "per_class_sisdri": {
+      "Acoustic guitar": {
+        "mean_sisdri_db": 2.02,
+        "median_sisdri_db": 1.74,
+        "n_stems": 9
+      },
+      "Applause": {
+        "mean_sisdri_db": 1.14,
+        "median_sisdri_db": 2.66,
+        "n_stems": 9
+      },
+      "Car horn": {
+        "mean_sisdri_db": 7.61,
+        "median_sisdri_db": 10.79,
+        "n_stems": 4
+      },
+      "Cat meow": {
+        "mean_sisdri_db": 2.15,
+        "median_sisdri_db": 3.76,
+        "n_stems": 8
+      },
+      "Cello": {
+        "mean_sisdri_db": 0.82,
+        "median_sisdri_db": 1.7,
+        "n_stems": 5
+      },
+      "Dog bark": {
+        "mean_sisdri_db": 3.6,
+        "median_sisdri_db": 2.99,
+        "n_stems": 9
+      },
+      "Door knock": {
+        "mean_sisdri_db": 6.31,
+        "median_sisdri_db": 6.21,
+        "n_stems": 8
+      },
+      "Hammer": {
+        "mean_sisdri_db": -1.96,
+        "median_sisdri_db": -2.03,
+        "n_stems": 10
+      },
+      "Human voice": {
+        "mean_sisdri_db": -1.95,
+        "median_sisdri_db": -1.26,
+        "n_stems": 5
+      },
+      "Keyboard typing": {
+        "mean_sisdri_db": 3.18,
+        "median_sisdri_db": 1.73,
+        "n_stems": 7
+      },
+      "Laughter": {
+        "mean_sisdri_db": 0.42,
+        "median_sisdri_db": -0.0,
+        "n_stems": 8
+      },
+      "Phone vibration": {
+        "mean_sisdri_db": 6.09,
+        "median_sisdri_db": 6.74,
+        "n_stems": 8
+      },
+      "Scissors": {
+        "mean_sisdri_db": 7.05,
+        "median_sisdri_db": 8.07,
+        "n_stems": 3
+      },
+      "Telephone ring": {
+        "mean_sisdri_db": 1.79,
+        "median_sisdri_db": -0.61,
+        "n_stems": 5
+      },
+      "Trumpet": {
+        "mean_sisdri_db": 5.75,
+        "median_sisdri_db": 3.92,
+        "n_stems": 5
+      },
+      "Water": {
+        "mean_sisdri_db": 1.58,
+        "median_sisdri_db": 0.96,
+        "n_stems": 9
+      }
+    }
+  },
+  "phase3_real_eval": {
+    "benchmark": "Real-Recording Evaluation Set (data/real_eval/manifest.json)",
+    "num_clips": 2,
+    "count_exact_accuracy": 1.0,
+    "clips": [
+      {
+        "filename": "two_teachers_speaking.wav",
+        "true_k": 2,
+        "predicted_k": 2,
+        "exact_match": true,
+        "active_groups": [
+          "Human voice"
+        ],
+        "named_sounds": [
+          "Human voice"
+        ],
+        "separation_available": true,
+        "max_pairwise_corr": 0.1179,
+        "ecapa_speaker_cosine": 0.4936
+      },
+      {
+        "filename": "three_speakers_discussion.wav",
+        "true_k": 3,
+        "predicted_k": 3,
+        "exact_match": true,
+        "active_groups": [
+          "Human voice"
+        ],
+        "named_sounds": [
+          "Human voice"
+        ],
+        "separation_available": false,
+        "max_pairwise_corr": null,
+        "ecapa_speaker_cosine": null
+      }
+    ]
+  },
+  "phase4_latency_profile": {
+    "startup_warmup_seconds": 0.164,
+    "clip_8s": {
+      "feature_s": 0.0375,
+      "count_s": 0.0116,
+      "open_tagger_s": 1.3361,
+      "speaker_clustering_s": 0.3534,
+      "query_separation_s": 1.0648,
+      "quality_gates_s": 2.4786,
+      "total_analyze_s": 1.7386,
+      "total_end_to_end_s": 5.282
+    },
+    "clip_60s": {
+      "feature_s": 0.0619,
+      "count_s": 0.015,
+      "open_tagger_s": 1.3138,
+      "speaker_clustering_s": 0.3166,
+      "query_separation_s": 10.1878,
+      "quality_gates_s": 2.4704,
+      "total_analyze_s": 1.7073,
+      "total_end_to_end_s": 14.3655
+    }
+  }
+}

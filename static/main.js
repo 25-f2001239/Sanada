@@ -11,7 +11,7 @@
   }
   const KEY = 'echocount.history.v1';
   const H = {
-    all() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } },
+    all() { try { const value = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(value) ? value : []; } catch { return []; } },
     save(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { toast('Could not save history in this browser.', 'err'); } },
     add(e) { const a = H.all(); a.unshift(e); H.save(a.slice(0, 200)); },
     remove(id) { H.save(H.all().filter(x => x.id !== id)); },

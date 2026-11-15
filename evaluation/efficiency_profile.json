@@ -1,0 +1,53 @@
+{
+  "clip": "two_teachers_speaking.wav",
+  "duration_s": 8.0,
+  "mc_passes": 30,
+  "iterations": 10,
+  "stages_seconds": {
+    "decode": {
+      "before_s": 0.0117,
+      "after_s": 0.0117,
+      "before_ms": 11.7,
+      "after_ms": 11.7
+    },
+    "shared_logmel": {
+      "before_s": 0.0,
+      "after_s": 0.0379,
+      "note": "Computed once and shared between count and tag in After pipeline"
+    },
+    "count_30_passes": {
+      "before_s": 0.1278,
+      "after_s": 0.0498,
+      "after_model_only_s": 0.0119,
+      "before_ms": 127.8,
+      "after_ms": 49.8,
+      "speedup_x": 2.57
+    },
+    "tag": {
+      "before_s": 0.0358,
+      "after_s": 0.0035,
+      "before_ms": 35.8,
+      "after_ms": 3.5,
+      "speedup_x": 10.2
+    },
+    "analyze_total": {
+      "before_s": 0.1753,
+      "after_s": 0.065,
+      "before_ms": 175.3,
+      "after_ms": 65.0,
+      "speedup_x": 2.7
+    },
+    "separate_on_demand": {
+      "before_s": 0.81,
+      "after_s": 0.81,
+      "ms": 810.0,
+      "note": "Executed on-demand only (/api/separate), never during /api/analyze"
+    },
+    "zip_on_demand": {
+      "before_s": 0.0207,
+      "after_s": 0.0207,
+      "ms": 20.7,
+      "note": "Executed on-demand only (/api/separate), never during /api/analyze"
+    }
+  }
+}

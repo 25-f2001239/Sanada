@@ -1,81 +1,33 @@
-# SANADA: Audio Source Count Estimator - Architecture & Technical Guide
+# EchoCount architecture
 
-## 1. Project Overview
-This project is a research prototype designed to estimate the number of overlapping audio sources (speakers, sounds) in a single-channel mixture. It uses a deep learning approach to classify audio segments into discrete source-count categories.
+EchoCount is a Flask application that estimates the number of overlapping sources in mono audio. Its CNN classifier operates on log-mel spectrograms and does not perform source separation.
 
-## 2. System Architecture
+## Request pipeline
 
-### A. High-Level Pipeline
-`Audio File` $\rightarrow$ `Preprocessing` $\rightarrow$ `Feature Extraction` $\rightarrow$ `CNN Model` $\rightarrow$ `Source Count Prediction`
+1. The browser uploads a file to **POST /api/predict**.
+2. Flask stores it under a unique temporary name and removes it when the request completes.
+3. PyAV decodes WAV, FLAC, MP3, OGG, or M4A, downmixes to mono, and resamples to 16 kHz.
+4. The audio is center-cropped or padded to eight seconds.
+5. The full eight-second analysis clip is converted to one normalized 64-band log-mel spectrogram.
+6. A PyTorch CNN predicts one source count for the full clip and reports its softmax confidence.
 
-### B. Technical Stack
-- **Frontend**: HTML5, CSS3, JavaScript (ES6+), WaveSurfer.js (for audio visualization).
-- **Backend**: Flask (Python), Flask-CORS.
-- **AI Framework**: PyTorch.
-- **Signal Processing**: Librosa, NumPy, SoundFile.
+## Model and training
 
----
+**model.py** owns the CNN and the complete feature pipeline used by both training and inference. Its adaptive pooling layer accepts the spectrogram frame dimensions generated for the full clip.
 
-## 3. AI Model Architecture
+**train.py** reads **mixture_path,num_sources** and train, val, and test **split** labels from a CSV manifest. Each eight-second labelled mixture is used once, matching inference, and the best validation macro-MAE checkpoint is saved to **checkpoints/source_count_clip.pt**. The test split is excluded from model selection.
 
-### A. The Model: `SourceCountCNN`
-The model is a Convolutional Neural Network (CNN) that treats audio as an image (spectrogram).
+The old root-level **best_sanada_model.pth** contains YAMNet/MLP weights and is not compatible with this CNN. It is not used as an automatic fallback.
 
-**Layer Breakdown:**
-1.  **Feature Extractor**:
-    - 3 Convolutional Layers with BatchNorm and ReLU.
-    - Max-pooling after the first two layers to reduce dimensionality.
-    - **Adaptive Average Pooling**: Forces the final feature map to a fixed size $(4 \times 8)$ regardless of input length.
-2.  **Classifier**:
-    - Flatten layer $\rightarrow$ Fully Connected (128 units) $\rightarrow$ ReLU $\rightarrow$ Dropout (0.25) $\rightarrow$ Output Layer.
-    - **Output**: A vector of size `max_sources`, where each index represents the probability of that specific count (e.g., index 0 = 1 source).
+## Web application
 
-### B. Audio Feature Engineering
-The model does not "listen" to raw waves. It uses **Log-Mel Spectrograms**:
-- **Sample Rate**: 16,000 Hz.
-- **Window**: 8-second analysis window.
-- **Mel Bins**: 64 bins (capturing human-centric frequency perception).
-- **Normalization**: Per-example Z-score normalization (mean=0, std=1) to make the model invariant to recording volume.
+- **app.py**: routes, health status, upload validation, JSON responses, cleanup.
+- **templates/**: pages rendered by Flask/Jinja.
+- **static/main.js**: shared navigation, theme, status, history storage.
+- **static/analyze.js**: file preview, waveform, upload, and result rendering.
+- **static/history.js**: local browser history and CSV export.
+- **static/how.js**: explanatory illustrations.
 
-### C. Inference Logic (Sliding Window)
-To handle different audio lengths and improve stability, the project implements a **Sliding Window Inference**:
-- The audio is split into 2-second windows with a 1-second hop.
-- The CNN predicts a count for each window.
-- The final result is the **Mode** (most frequent prediction) across the entire timeline.
+## Deployment
 
----
-
-## 4. Dataset & Training Guide
-
-### A. Dataset Requirements
-- **Format**: Mono WAV files, 16kHz.
-- **Labels**: A `metadata.csv` containing:
-  - `mixture_path`: Path to the audio file.
-  - `num_sources`: Integer representing the ground truth count.
-  - `split`: `train`, `val`, or `test`.
-
-### B. Training Process
-The model is trained using **Cross-Entropy Loss** and the **AdamW** optimizer.
-**Command to train:**
-```powershell
-python train.py --metadata data/metadata.csv --epochs 25 --max-sources 4
-```
-
----
-
-## 5. Implementation Details for Team Members
-
-### Key Files
-- `model.py`: Contains the CNN architecture and `predict_source_count` logic.
-- `train.py`: The pipeline for training and saving checkpoints.
-- `app.py`: The Flask API that bridges the AI model and the web UI.
-- `static/app.js`: Handles the WaveSurfer integration and API calls.
-
-### Modifying the AI Model
-If team members wish to experiment with different architectures (e.g., replacing the CNN with a Conformer or LSTM):
-1.  Modify the `SourceCountCNN` class in `model.py`.
-2.  Ensure the `forward` method still outputs a vector of size `max_sources`.
-3.  Update `predict_source_count` to match the new model's input/output requirements.
-
-### Deployment Note
-The app uses a `.pt` checkpoint file. Ensure that any new models are saved to `checkpoints/source_count_cnn.pt` for the web app to detect them automatically.
+The local Flask development server binds to **127.0.0.1**. Production runs through Gunicorn (Linux/container) or Waitress (Windows). The container listens on the **PORT** environment variable and needs a compatible checkpoint mounted at the configured **MODEL_PATH**.

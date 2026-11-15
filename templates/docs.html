@@ -11,7 +11,7 @@
     <div class="doc">
       <section id="setup">
         <h2>Set up</h2>
-        <p>Python 3.10 or 3.11 is recommended. From the project folder:</p>
+        <p>Python 3.11 or 3.12 is recommended. From the project folder:</p>
         <div class="tabs" data-tabs>
           <div class="tab-list" role="tablist"><button role="tab" data-tab="win" aria-selected="true" type="button">Windows</button><button role="tab" data-tab="mac" aria-selected="false" type="button">macOS and Linux</button></div>
           <div class="tab-panel" data-panel="win"><div class="code"><pre id="c-setup">py -3.11 -m venv .venv
@@ -42,8 +42,8 @@ audio/mix_0003.wav,4,test</pre><button class="btn sm" data-copy="#c-csv" type="b
 
       <section id="train">
         <h2>Train the model</h2>
-        <div class="code"><pre id="c-train">python train.py --metadata data/metadata.csv --epochs 25 --max-sources 32</pre><button class="btn sm" data-copy="#c-train" type="button">Copy</button></div>
-        <p>The best checkpoint by validation loss is saved to <code>checkpoints/source_count_cnn.pt</code>. The app finds it on the next request, so no restart is needed. Current status: <strong>{{ 'checkpoint found' if status.trained else 'no checkpoint yet' }}</strong>.</p>
+        <div class="code"><pre id="c-train">python train.py --metadata data/metadata.csv --epochs 25 --max-sources 31</pre><button class="btn sm" data-copy="#c-train" type="button">Copy</button></div>
+        <p>The best checkpoint by validation macro MAE is saved to <code>checkpoints/source_count_clip.pt</code>. Training uses one full eight-second mixture per label and leaves the test split out. Current status: <strong>{{ 'checkpoint found' if status.trained else 'no checkpoint yet' }}</strong>.</p>
       </section>
 
       <section id="api">
@@ -51,7 +51,7 @@ audio/mix_0003.wav,4,test</pre><button class="btn sm" data-copy="#c-csv" type="b
         <div class="table-wrap"><table class="kv">
           <tr><th>Route</th><th>What it does</th></tr>
           <tr><td><code>GET /api/health</code></td><td>Reports that the server is up and whether a checkpoint exists.</td></tr>
-          <tr><td><code>POST /api/predict</code></td><td>Multipart upload in the field <code>audio</code>. Returns signal details and, when trained, the estimate with a per-window timeline.</td></tr>
+          <tr><td><code>POST /api/predict</code></td><td>Multipart upload in the field <code>audio</code>. Returns signal details and, when trained, one estimate for the analysis clip.</td></tr>
         </table></div>
         <div class="code"><pre id="c-curl">curl -X POST -F "audio=@example.wav" http://127.0.0.1:5000/api/predict</pre><button class="btn sm" data-copy="#c-curl" type="button">Copy</button></div>
         <div class="actions"><button class="btn sm" id="pingBtn" type="button">Test /api/health now</button></div>
@@ -62,9 +62,9 @@ audio/mix_0003.wav,4,test</pre><button class="btn sm" data-copy="#c-csv" type="b
         <h2>Known limits</h2>
         <ul>
           <li>Without a trained checkpoint the app reports signal statistics only.</li>
-          <li>One 8-second window is analysed. Long files are centre-cropped and short files are padded.</li>
+          <li>One eight-second clip produces one prediction. Long files are centre-cropped and short files are padded.</li>
           <li>Softmax confidence is not a guarantee of correctness.</li>
-          <li>The training clips are 8 seconds long but inference uses 2-second windows. Check accuracy on held-out data, or train on matching window lengths.</li>
+          <li>Training uses each eight-second mixture once, matching the inference unit. The test split is excluded from training and validation.</li>
           <li>The app is for local development and is not hardened for public hosting.</li>
         </ul>
       </section>

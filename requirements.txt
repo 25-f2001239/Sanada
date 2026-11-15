@@ -1,6 +1,25 @@
-Flask>=3.0
-numpy>=1.24
-pandas>=2.0
-soundfile>=0.12
-librosa>=0.10.2
-torch>=2.2
+# Core web framework & HTTP utilities (app.py, test_templates.py)
+Flask==3.1.3
+Werkzeug==3.1.9
+
+# Scientific computing, ML calibration/clustering & metadata (all scripts)
+numpy==2.5.4
+scipy==1.18.1
+scikit-learn==1.9.1
+pandas==3.1.1
+
+# Audio decoding & spectral feature extraction (audio_io.py, model.py, speech_separation.py, query_separation.py)
+soundfile==0.14.0
+librosa==1.0.0
+av==16.1.0
+
+# Deep learning backend (model.py, counting.py, retrain_counter.py, train_tagger.py, tagger.py, separation.py)
+torch==2.15.0
+
+# Pretrained Open-Vocabulary Tagging (AST AudioSet-527 & CLAP in open_tagger.py)
+# and Pretrained Speech Separation / Speaker Embeddings (SpeechBrain SepFormer & ECAPA in speech_separation.py)
+transformers==5.23.0
+safetensors==0.8.0
+torchaudio==2.11.1
+speechbrain==1.1.2
+huggingface_hub==2.4.0

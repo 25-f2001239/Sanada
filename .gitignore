@@ -6,5 +6,14 @@ uploads/*
 !uploads/.gitkeep
 checkpoints/*
 !checkpoints/.gitkeep
+models/*
+!models/.gitkeep
 data/*
 !data/.gitkeep
+!data/real_eval/
+!data/isolated_sources/
+data/isolated_sources/*
+!data/isolated_sources/manifest.json
+.pip-cache/
+.pip-tmp/
+work/
