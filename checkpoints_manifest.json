@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "default_release_base_url": "https://github.com/25-f2001239/Sanada/releases/download/v1.0.0",
+  "checkpoints": {
+    "source_count_clip.pt": {
+      "path": "checkpoints/source_count_clip.pt",
+      "size_bytes": 8635027,
+      "size_mb": 8.24,
+      "sha256": "e003d018fe663b7532bc6faffb36ddfb5a926e2662efaacd8f834b9f67a80cb5",
+      "release_asset_url": "https://github.com/25-f2001239/Sanada/releases/download/v1.0.0/source_count_clip.pt"
+    },
+    "tagger.pt": {
+      "path": "checkpoints/tagger.pt",
+      "size_bytes": 4340669,
+      "size_mb": 4.14,
+      "sha256": "b126af8bca344512246495d57b8e6ba0f0c0ec20bd13ccd0e432134b9d0db96a",
+      "release_asset_url": "https://github.com/25-f2001239/Sanada/releases/download/v1.0.0/tagger.pt"
+    },
+    "separator_iterative.pt": {
+      "path": "checkpoints/separator_iterative.pt",
+      "size_bytes": 481403,
+      "size_mb": 0.46,
+      "sha256": "698a3a62013797e8b86e8721c4947c8b8c9c1c97fe48660b92850f4b5dd2fb97",
+      "release_asset_url": "https://github.com/25-f2001239/Sanada/releases/download/v1.0.0/separator_iterative.pt"
+    }
+  }
+}
