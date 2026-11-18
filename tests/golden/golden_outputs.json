@@ -1,0 +1,3747 @@
+{
+  "evaluation_checksums": {
+    "efficiency_profile.json": "168974bbcf032d6fd05b17a06af8bfc07de2fcf62feb61e878dfbc3c951fa912",
+    "product_benchmarks.json": "413fa376d448237d4084d16c260fb4be66fc59872931750f8061efb16becf5cd",
+    "results.json": "b1912f96be9440c218df5993e63d0f6cdcfab425cde07c120050d8310d25560a",
+    "separation_results.json": "f278d602e322706db48737734dcff8b43fe628dd399fd91619bf3c04195f8f2a"
+  },
+  "api_shapes": {
+    "/api/health": {
+      "model": {
+        "clip_seconds": "float",
+        "held_out_speaker_exact": "NoneType",
+        "held_out_speaker_mae": "NoneType",
+        "max_sources": "int",
+        "min_sources": "int",
+        "model_error": "NoneType",
+        "model_name": "str",
+        "open_tagger": {
+          "ast_audioset_available": "bool",
+          "ast_license": "str",
+          "ast_model_id": "str",
+          "ast_num_classes": "int",
+          "available": "bool",
+          "clap_available": "bool",
+          "clap_license": "str",
+          "clap_model_id": "str",
+          "domain_32_tagger_available": "bool",
+          "target_12_coverage": "str",
+          "target_12_sounds": [
+            "str"
+          ]
+        },
+        "sample_rate": "int",
+        "separator": {
+          "available": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "sample_rate": "int",
+          "trained": "bool",
+          "version": "str"
+        },
+        "speech_separator": {
+          "available": "bool",
+          "download_commands": "str",
+          "ecapa_dir": "str",
+          "has_2spk_model": "bool",
+          "has_3spk_model": "bool",
+          "has_speaker_encoder": "bool",
+          "max_supported_speakers": "int",
+          "offline_fallback_message": "NoneType",
+          "powershell_download_cmd": "str",
+          "reason": "NoneType",
+          "sepformer3_dir": "str",
+          "sepformer_dir": "str"
+        },
+        "tagger": {
+          "architecture": "str",
+          "available": "bool",
+          "epoch": "int",
+          "error": "NoneType",
+          "groups": [
+            "str"
+          ],
+          "hierarchical": "bool",
+          "num_classes": "int",
+          "num_groups": "int",
+          "test_group_macro_map": "float",
+          "test_macro_f1": "float",
+          "test_macro_map": "float",
+          "trained": "bool",
+          "val_group_macro_map": "float",
+          "val_group_map": "float",
+          "val_macro_f1": "float",
+          "val_macro_map": "float",
+          "version": "str",
+          "vocabulary": [
+            "str"
+          ]
+        },
+        "trained": "bool",
+        "val_exact_accuracy": "float",
+        "val_macro_mae": "float",
+        "val_mae": "float",
+        "val_within_one": "float"
+      },
+      "ok": "bool"
+    },
+    "/api/evaluation": {
+      "available": "bool",
+      "before_comparison": {
+        "confusion_matrix": {
+          "classes": [
+            "str"
+          ],
+          "rows": [
+            {
+              "counts": {
+                "2": "int",
+                "3": "int",
+                "4": "int",
+                "6": "int",
+                "9": "int",
+                ">9": "int",
+                "other_<=8": "int"
+              },
+              "exact_accuracy_pct": "float",
+              "n": "int",
+              "true_k": "int",
+              "unreliable": "bool"
+            }
+          ]
+        },
+        "overall": {
+          "bias": "float",
+          "exact_accuracy": "float",
+          "exact_ci_95": [
+            "float"
+          ],
+          "mae": "float",
+          "mae_ci_95": [
+            "float"
+          ],
+          "mae_raw": "float",
+          "mean_mc_std": "float",
+          "mean_softmax_std": "float",
+          "mean_total_std": "float",
+          "n": "int",
+          "rmse": "float",
+          "within1_ci_95": [
+            "float"
+          ],
+          "within_one": "float"
+        },
+        "per_count": [
+          {
+            "bias": "float",
+            "exact_accuracy": "float",
+            "exact_ci_95": [
+              "float"
+            ],
+            "label": "str",
+            "mae": "float",
+            "mae_ci_95": [
+              "float"
+            ],
+            "mean_mc_std": "float",
+            "mean_pred": "float",
+            "mean_raw": "float",
+            "mean_softmax_std": "float",
+            "mean_total_std": "float",
+            "n": "int",
+            "reliability_note": "str",
+            "rmse": "float",
+            "true_k": "int",
+            "unreliable": "bool",
+            "within1_ci_95": [
+              "float"
+            ],
+            "within_one": "float"
+          }
+        ]
+      },
+      "buckets": [
+        {
+          "bias": "float",
+          "exact_accuracy": "float",
+          "label": "str",
+          "mae": "float",
+          "mean_pred": "float",
+          "mean_raw": "float",
+          "mean_true": "float",
+          "n": "int",
+          "rmse": "float",
+          "unreliable": "bool",
+          "within_one": "float"
+        }
+      ],
+      "by_family": {
+        "fsd": {
+          "after_test": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "direction": "str",
+              "evaluated": "bool",
+              "high_count_threshold": "int",
+              "max_mean_predicted": "float",
+              "mean_bias_high": "float",
+              "mean_bias_low": "float",
+              "n_high": "int",
+              "predictions_plateau_from_true_count": "int",
+              "tolerance": "float"
+            }
+          },
+          "after_val": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "direction": "str",
+              "evaluated": "bool",
+              "high_count_threshold": "int",
+              "max_mean_predicted": "float",
+              "mean_bias_high": "float",
+              "mean_bias_low": "float",
+              "n_high": "int",
+              "predictions_plateau_from_true_count": "int",
+              "tolerance": "float"
+            }
+          },
+          "before_test": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "direction": "str",
+              "evaluated": "bool",
+              "high_count_threshold": "int",
+              "max_mean_predicted": "float",
+              "mean_bias_high": "float",
+              "mean_bias_low": "float",
+              "n_high": "int",
+              "predictions_plateau_from_true_count": "int",
+              "tolerance": "float"
+            }
+          }
+        },
+        "speech": {
+          "after_test": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "evaluated": "bool",
+              "reason": "str"
+            }
+          },
+          "after_val": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "evaluated": "bool",
+              "reason": "str"
+            }
+          },
+          "before_test": {
+            "buckets": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "label": "str",
+                "mae": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_true": "float",
+                "n": "int",
+                "rmse": "float",
+                "unreliable": "bool",
+                "within_one": "float"
+              }
+            ],
+            "confusion_matrix": {
+              "classes": [
+                "str"
+              ],
+              "rows": [
+                {
+                  "counts": {
+                    "2": "int",
+                    "3": "int",
+                    "4": "int",
+                    "6": "int",
+                    "9": "int",
+                    ">9": "int",
+                    "other_<=8": "int"
+                  },
+                  "exact_accuracy_pct": "float",
+                  "n": "int",
+                  "true_k": "int",
+                  "unreliable": "bool"
+                }
+              ]
+            },
+            "overall": {
+              "bias": "float",
+              "exact_accuracy": "float",
+              "exact_ci_95": [
+                "float"
+              ],
+              "mae": "float",
+              "mae_ci_95": [
+                "float"
+              ],
+              "mae_raw": "float",
+              "mean_mc_std": "float",
+              "mean_softmax_std": "float",
+              "mean_total_std": "float",
+              "n": "int",
+              "rmse": "float",
+              "within1_ci_95": [
+                "float"
+              ],
+              "within_one": "float"
+            },
+            "per_count": [
+              {
+                "bias": "float",
+                "exact_accuracy": "float",
+                "exact_ci_95": [
+                  "float"
+                ],
+                "label": "str",
+                "mae": "float",
+                "mae_ci_95": [
+                  "float"
+                ],
+                "mean_mc_std": "float",
+                "mean_pred": "float",
+                "mean_raw": "float",
+                "mean_softmax_std": "float",
+                "mean_total_std": "float",
+                "n": "int",
+                "reliability_note": "str",
+                "rmse": "float",
+                "true_k": "int",
+                "unreliable": "bool",
+                "within1_ci_95": [
+                  "float"
+                ],
+                "within_one": "float"
+              }
+            ],
+            "saturation": {
+              "evaluated": "bool",
+              "reason": "str"
+            }
+          }
+        }
+      },
+      "checkpoint": {
+        "architecture": "str",
+        "decision_rule": "str",
+        "epoch": "int",
+        "held_out_speaker_eval": {
+          "bias": "float",
+          "exact_accuracy": "float",
+          "held_out_speakers": [
+            "str"
+          ],
+          "mae": "float",
+          "n": "int",
+          "within_one": "float"
+        },
+        "max_sources": "int",
+        "min_sources": "int",
+        "path": "str",
+        "sha256": "str",
+        "sparse_epoch": "int"
+      },
+      "checkpoint_present": "bool",
+      "confusion_matrix": {
+        "classes": [
+          "str"
+        ],
+        "rows": [
+          {
+            "counts": {
+              "2": "int",
+              "3": "int",
+              "4": "int",
+              "6": "int",
+              "9": "int",
+              ">9": "int",
+              "other_<=8": "int"
+            },
+            "exact_accuracy_pct": "float",
+            "n": "int",
+            "true_k": "int",
+            "unreliable": "bool"
+          }
+        ]
+      },
+      "dataset": {
+        "leakage_check": {
+          "checked": "bool",
+          "overlapping_source_files": "int",
+          "speech_speaker_note": "str"
+        },
+        "metadata": "str",
+        "name": "str",
+        "split": "str"
+      },
+      "generated_at": "str",
+      "overall": {
+        "bias": "float",
+        "exact_accuracy": "float",
+        "exact_ci_95": [
+          "float"
+        ],
+        "mae": "float",
+        "mae_ci_95": [
+          "float"
+        ],
+        "mae_raw": "float",
+        "mean_mc_std": "float",
+        "mean_softmax_std": "float",
+        "mean_total_std": "float",
+        "n": "int",
+        "rmse": "float",
+        "within1_ci_95": [
+          "float"
+        ],
+        "within_one": "float"
+      },
+      "per_count": [
+        {
+          "bias": "float",
+          "exact_accuracy": "float",
+          "exact_ci_95": [
+            "float"
+          ],
+          "label": "str",
+          "mae": "float",
+          "mae_ci_95": [
+            "float"
+          ],
+          "mean_mc_std": "float",
+          "mean_pred": "float",
+          "mean_raw": "float",
+          "mean_softmax_std": "float",
+          "mean_total_std": "float",
+          "n": "int",
+          "reliability_note": "str",
+          "rmse": "float",
+          "true_k": "int",
+          "unreliable": "bool",
+          "within1_ci_95": [
+            "float"
+          ],
+          "within_one": "float"
+        }
+      ],
+      "real_eval": [
+        {
+          "after": {
+            "active_groups": [
+              "str"
+            ],
+            "all_groups": [
+              {
+                "above_threshold": "bool",
+                "group": "str",
+                "probability": "float",
+                "threshold": "float"
+              }
+            ],
+            "calibrated_value": "float",
+            "compatible_fine_tags": [],
+            "mc_std": "float",
+            "raw_value": "float",
+            "rounded_count": "int",
+            "softmax_std": "float",
+            "total_std": "float"
+          },
+          "before": {
+            "calibrated_value": "float",
+            "mc_std": "float",
+            "raw_value": "float",
+            "rounded_count": "int",
+            "softmax_std": "float",
+            "top_fine_tags": [
+              "str"
+            ],
+            "top_groups": [
+              "str"
+            ]
+          },
+          "description": "str",
+          "filename": "str",
+          "id": "str",
+          "separation_check": {
+            "could_not_separate_speakers": "bool",
+            "max_pairwise_corr": "float",
+            "max_speaker_embedding_cosine": "float",
+            "max_stem_mix_corr": "float",
+            "quality_failed": "bool",
+            "status_message": "str",
+            "stem_labels": [
+              "str"
+            ]
+          },
+          "speaker_clustering": {
+            "distinct_speakers": "int",
+            "distinct_speakers_found": "int",
+            "evaluated": "bool",
+            "explanation": "str",
+            "labels": [
+              "str"
+            ],
+            "model_count": "int",
+            "num_voiced_windows": "int",
+            "voiced_ratio": "float"
+          },
+          "true_count": "int",
+          "true_groups": [
+            "str"
+          ]
+        }
+      ],
+      "samples": [
+        {
+          "calibrated": "float",
+          "family": "str",
+          "file": "str",
+          "folder": "str",
+          "mc_std": "float",
+          "pred": "int",
+          "raw": "float",
+          "softmax_std": "float",
+          "split": "str",
+          "std": "float",
+          "true": "int",
+          "used_specialist": "bool"
+        }
+      ],
+      "saturation": {
+        "direction": "str",
+        "evaluated": "bool",
+        "high_count_threshold": "int",
+        "max_mean_predicted": "float",
+        "mean_bias_high": "float",
+        "mean_bias_low": "float",
+        "n_high": "int",
+        "predictions_plateau_from_true_count": "int",
+        "tolerance": "float"
+      },
+      "separation_eval": {
+        "benchmark": "str",
+        "by_k": {
+          "K=2": {
+            "mean_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "K=3": {
+            "mean_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "K=4": {
+            "mean_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "K=5": {
+            "mean_sisdri_db": "float",
+            "n_stems": "int"
+          }
+        },
+        "correlation_gate_pass_rate": "float",
+        "energy_conservation_pass_rate": "float",
+        "num_mixtures": "int",
+        "overall_mean_sisdri_db": "float",
+        "per_class_sisdri": {
+          "Acoustic guitar": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Applause": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Car horn": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Cat meow": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Cello": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Dog bark": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Door knock": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Hammer": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Human voice": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Keyboard typing": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Laughter": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Phone vibration": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Scissors": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Telephone ring": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Trumpet": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          },
+          "Water": {
+            "mean_sisdri_db": "float",
+            "median_sisdri_db": "float",
+            "n_stems": "int"
+          }
+        },
+        "self_consistency_pass_rate": "float",
+        "total_stems_evaluated": "int"
+      },
+      "stale": "bool",
+      "tagger_summary": {
+        "architecture": "str",
+        "available": "bool",
+        "epoch": "int",
+        "error": "NoneType",
+        "groups": [
+          "str"
+        ],
+        "num_classes": "int",
+        "test_group_macro_map": "float",
+        "test_macro_f1": "float",
+        "test_macro_map": "float",
+        "trained": "bool",
+        "val_group_macro_map": "float",
+        "val_macro_f1": "float",
+        "val_macro_map": "float",
+        "version": "str",
+        "vocabulary": [
+          "str"
+        ]
+      },
+      "uncertainty": {
+        "method": "str",
+        "passes": "int",
+        "seed": "int"
+      },
+      "validation_reliability": {
+        "before_per_count": [
+          {
+            "bias": "float",
+            "exact_accuracy": "float",
+            "exact_ci_95": [
+              "float"
+            ],
+            "label": "str",
+            "mae": "float",
+            "mae_ci_95": [
+              "float"
+            ],
+            "mean_mc_std": "float",
+            "mean_pred": "float",
+            "mean_raw": "float",
+            "mean_softmax_std": "float",
+            "mean_total_std": "float",
+            "n": "int",
+            "reliability_note": "str",
+            "rmse": "float",
+            "true_k": "int",
+            "unreliable": "bool",
+            "within1_ci_95": [
+              "float"
+            ],
+            "within_one": "float"
+          }
+        ],
+        "n": "int",
+        "overall": {
+          "bias": "float",
+          "exact_accuracy": "float",
+          "exact_ci_95": [
+            "float"
+          ],
+          "mae": "float",
+          "mae_ci_95": [
+            "float"
+          ],
+          "mae_raw": "float",
+          "mean_mc_std": "float",
+          "mean_softmax_std": "float",
+          "mean_total_std": "float",
+          "n": "int",
+          "rmse": "float",
+          "within1_ci_95": [
+            "float"
+          ],
+          "within_one": "float"
+        },
+        "per_count": [
+          {
+            "bias": "float",
+            "exact_accuracy": "float",
+            "exact_ci_95": [
+              "float"
+            ],
+            "label": "str",
+            "mae": "float",
+            "mae_ci_95": [
+              "float"
+            ],
+            "mean_mc_std": "float",
+            "mean_pred": "float",
+            "mean_raw": "float",
+            "mean_softmax_std": "float",
+            "mean_total_std": "float",
+            "n": "int",
+            "reliability_note": "str",
+            "rmse": "float",
+            "true_k": "int",
+            "unreliable": "bool",
+            "within1_ci_95": [
+              "float"
+            ],
+            "within_one": "float"
+          }
+        ]
+      }
+    }
+  },
+  "pages": {
+    "/": {
+      "status": 200,
+      "sha256": "088e63ee0115c5613c082cdb28894daeddbef7427e32a4cd01bdaf1734108410",
+      "length": 14406
+    },
+    "/analyze": {
+      "status": 200,
+      "sha256": "3f37ecca85f1d7e0c76790c1e6c67b3a134cfccc49147fa2c2a11829bad3a8a1",
+      "length": 9544
+    },
+    "/evaluation": {
+      "status": 200,
+      "sha256": "14fba64214cb1729350d5af60b510164c3a78cca040965d5932f28fbe7d1d6a9",
+      "length": 10434
+    },
+    "/history": {
+      "status": 200,
+      "sha256": "c669728bfe1570c9c404a7a6179a0c7af10aa99c1e0d36ac04fd4c2871872d1f",
+      "length": 6542
+    },
+    "/how": {
+      "status": 200,
+      "sha256": "7910093f23d9c41df0748f17bb6608439f1e47fded665ec68d124f714da0bdca",
+      "length": 9533
+    },
+    "/docs": {
+      "status": 200,
+      "sha256": "4ebadd44c51e73a528a3b266dcc8bbf44a16170a0f6f02aa1683b42026d18789",
+      "length": 10983
+    }
+  },
+  "latencies": {
+    "fsd_mix_2": {
+      "analyze_s": 24.7968,
+      "separate_s": null
+    },
+    "fsd_mix_3": {
+      "analyze_s": 1.1552,
+      "separate_s": 6.4962
+    },
+    "org_mix_2": {
+      "analyze_s": 1.3852,
+      "separate_s": 7.8741
+    },
+    "org_mix_3": {
+      "analyze_s": 1.3888,
+      "separate_s": null
+    },
+    "org_mix_9": {
+      "analyze_s": 1.1582,
+      "separate_s": null
+    },
+    "real_2spk": {
+      "analyze_s": 1.427,
+      "separate_s": 7.2815
+    },
+    "real_3spk": {
+      "analyze_s": 1.4514,
+      "separate_s": null
+    },
+    "iso_hammer": {
+      "analyze_s": 1.1061,
+      "separate_s": null
+    },
+    "iso_bark": {
+      "analyze_s": 1.1489,
+      "separate_s": null
+    },
+    "iso_water": {
+      "analyze_s": 1.2146,
+      "separate_s": null
+    }
+  },
+  "clips": {
+    "fsd_mix_2": {
+      "file": "mix_00006.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [
+          {
+            "intervals": [
+              {
+                "end": "float",
+                "start": "float"
+              }
+            ],
+            "sounds": [
+              "str"
+            ],
+            "total_overlap_seconds": "float"
+          }
+        ],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "num_voiced_windows": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [
+            {
+              "intervals": [
+                {
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "sounds": [
+                "str"
+              ],
+              "total_overlap_seconds": "float"
+            }
+          ],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 2,
+        "raw_regression_value": 2.1665,
+        "calibrated_value": 2.0,
+        "uncertainty_std": 1.001
+      },
+      "groups": {
+        "Human voice": 0.9999,
+        "Musical instrument": 0.9995,
+        "Animal": 0.026,
+        "Environment/other": 0.0115,
+        "Household/tools": 0.0041
+      },
+      "named_sounds": [
+        {
+          "name": "Applause",
+          "confidence": 0.4843
+        },
+        {
+          "name": "Violin",
+          "confidence": 0.4492
+        }
+      ],
+      "can_separate": true,
+      "separation": null
+    },
+    "fsd_mix_3": {
+      "file": "mix_00035.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [
+          {
+            "intervals": [
+              {
+                "end": "float",
+                "start": "float"
+              }
+            ],
+            "sounds": [
+              "str"
+            ],
+            "total_overlap_seconds": "float"
+          }
+        ],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [
+            {
+              "intervals": [
+                {
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "sounds": [
+                "str"
+              ],
+              "total_overlap_seconds": "float"
+            }
+          ],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 3,
+        "raw_regression_value": 3.2581,
+        "calibrated_value": 3.046,
+        "uncertainty_std": 1.101
+      },
+      "groups": {
+        "Musical instrument": 0.9939,
+        "Household/tools": 0.982,
+        "Human voice": 0.0286,
+        "Animal": 0.0115,
+        "Environment/other": 0.0073
+      },
+      "named_sounds": [
+        {
+          "name": "Phone vibration",
+          "confidence": 0.6714
+        },
+        {
+          "name": "Cello",
+          "confidence": 0.4254
+        },
+        {
+          "name": "Telephone ring",
+          "confidence": 0.4243
+        },
+        {
+          "name": "Scissors",
+          "confidence": 0.4229
+        }
+      ],
+      "can_separate": true,
+      "separation": {
+        "shape": {
+          "download_url": "str",
+          "job_id": "str",
+          "pretrained_speech_status": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "quality_check": {
+            "energy_conservation": {
+              "passed": "bool",
+              "reconstruction_snr_db": "float",
+              "relative_l2_error": "float",
+              "tolerance": "float"
+            },
+            "failed": "bool",
+            "failure_reason": "NoneType",
+            "max_pairwise_corr": "float",
+            "max_stem_mix_corr": "float",
+            "num_stems": "int",
+            "pairwise_corrs": [
+              {
+                "corr": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "stem_mix_corrs": [
+              {
+                "corr": "float",
+                "i": "int"
+              }
+            ],
+            "threshold_used": "float"
+          },
+          "quality_failed": "bool",
+          "quality_reason": "NoneType",
+          "self_consistency": {
+            "pass_rate": "float",
+            "passed_count": "int",
+            "per_stem": [
+              {
+                "exact_name_match": "bool",
+                "group_match": "bool",
+                "low_confidence": "bool",
+                "query_group": "str",
+                "query_name": "str",
+                "self_consistent": "bool",
+                "status_badge": "str",
+                "stem_index": "int",
+                "top_group_confidence": "float",
+                "top_predicted_confidence": "float",
+                "top_predicted_group": "str",
+                "top_predicted_sound": "str"
+              }
+            ],
+            "total_stems": "int"
+          },
+          "speaker_verification": {
+            "could_not_separate_speakers": "bool",
+            "different_speakers_verified": "bool",
+            "max_embedding_cosine_similarity": "float",
+            "max_speaker_embedding_cosine": "float",
+            "pairwise_speaker_cosine": [
+              {
+                "cosine_similarity": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "pretrained_status": {
+              "available": "bool",
+              "download_commands": "str",
+              "ecapa_dir": "str",
+              "has_2spk_model": "bool",
+              "has_3spk_model": "bool",
+              "has_speaker_encoder": "bool",
+              "max_supported_speakers": "int",
+              "offline_fallback_message": "NoneType",
+              "powershell_download_cmd": "str",
+              "reason": "NoneType",
+              "sepformer3_dir": "str",
+              "sepformer_dir": "str"
+            },
+            "reason": "str",
+            "status_message": "str",
+            "stem_labels": [
+              "str"
+            ],
+            "threshold": "float",
+            "using_ecapa": "bool"
+          },
+          "speech_mode": "bool",
+          "status": "str",
+          "stems": [
+            {
+              "download_url": "str",
+              "energy_share": "float",
+              "file": "str",
+              "group": "str",
+              "index": "int",
+              "is_residual": "bool",
+              "label": "str",
+              "low_confidence": "bool",
+              "self_consistent": "bool",
+              "status_badge": "str",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "top_predicted_sound": "str",
+              "url": "str"
+            }
+          ],
+          "stopped_early": "bool",
+          "timings": {
+            "quality_gate_ms": "float",
+            "separate_ms": "float",
+            "zip_ms": "float"
+          },
+          "trained": "bool",
+          "used_pretrained_speech": "bool"
+        },
+        "stem_labels": [
+          "Phone vibration",
+          "Cello",
+          "Telephone ring",
+          "Scissors",
+          "Everything else (Residual)"
+        ],
+        "quality_failed": false,
+        "max_pairwise_corr": 0.8252,
+        "max_stem_mix_corr": 0.8585,
+        "energy_passed": true,
+        "self_consistency_pass_rate": 0.25
+      }
+    },
+    "org_mix_2": {
+      "file": "mix_00006.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "num_voiced_windows": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 2,
+        "raw_regression_value": 2.8766,
+        "calibrated_value": 2.1905,
+        "uncertainty_std": 1.284
+      },
+      "groups": {
+        "Human voice": 1.0,
+        "Animal": 0.0055,
+        "Household/tools": 0.0045,
+        "Musical instrument": 0.0004,
+        "Environment/other": 0.0001
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.85
+        }
+      ],
+      "can_separate": true,
+      "separation": {
+        "shape": {
+          "download_url": "str",
+          "job_id": "str",
+          "pretrained_speech_status": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "quality_check": {
+            "energy_conservation": {
+              "passed": "bool",
+              "reconstruction_snr_db": "float",
+              "relative_l2_error": "float",
+              "tolerance": "float"
+            },
+            "failed": "bool",
+            "failure_reason": "NoneType",
+            "max_pairwise_corr": "float",
+            "max_stem_mix_corr": "float",
+            "num_stems": "int",
+            "pairwise_corrs": [
+              {
+                "corr": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "stem_mix_corrs": [
+              {
+                "corr": "float",
+                "i": "int"
+              }
+            ],
+            "threshold_used": "float"
+          },
+          "quality_failed": "bool",
+          "quality_reason": "NoneType",
+          "self_consistency": {
+            "pass_rate": "float",
+            "passed_count": "int",
+            "per_stem": [
+              {
+                "exact_name_match": "bool",
+                "group_match": "bool",
+                "low_confidence": "bool",
+                "query_group": "str",
+                "query_name": "str",
+                "self_consistent": "bool",
+                "status_badge": "str",
+                "stem_index": "int",
+                "top_group_confidence": "float",
+                "top_predicted_confidence": "float",
+                "top_predicted_group": "str",
+                "top_predicted_sound": "str"
+              }
+            ],
+            "total_stems": "int"
+          },
+          "speaker_verification": {
+            "could_not_separate_speakers": "bool",
+            "different_speakers_verified": "bool",
+            "max_embedding_cosine_similarity": "float",
+            "max_speaker_embedding_cosine": "float",
+            "pairwise_speaker_cosine": [
+              {
+                "cosine_similarity": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "pretrained_status": {
+              "available": "bool",
+              "download_commands": "str",
+              "ecapa_dir": "str",
+              "has_2spk_model": "bool",
+              "has_3spk_model": "bool",
+              "has_speaker_encoder": "bool",
+              "max_supported_speakers": "int",
+              "offline_fallback_message": "NoneType",
+              "powershell_download_cmd": "str",
+              "reason": "NoneType",
+              "sepformer3_dir": "str",
+              "sepformer_dir": "str"
+            },
+            "reason": "str",
+            "status_message": "str",
+            "stem_labels": [
+              "str"
+            ],
+            "threshold": "float",
+            "using_ecapa": "bool"
+          },
+          "speech_mode": "bool",
+          "status": "str",
+          "stems": [
+            {
+              "download_url": "str",
+              "energy_share": "float",
+              "file": "str",
+              "group": "str",
+              "index": "int",
+              "is_residual": "bool",
+              "label": "str",
+              "low_confidence": "bool",
+              "self_consistent": "bool",
+              "status_badge": "str",
+              "time_ranges": [],
+              "top_predicted_sound": "str",
+              "url": "str"
+            }
+          ],
+          "stopped_early": "bool",
+          "timings": {
+            "quality_gate_ms": "float",
+            "separate_ms": "float",
+            "zip_ms": "float"
+          },
+          "trained": "bool",
+          "used_pretrained_speech": "bool"
+        },
+        "stem_labels": [
+          "Human 1",
+          "Human 2",
+          "Everything else (Residual)"
+        ],
+        "quality_failed": false,
+        "max_pairwise_corr": 0.1441,
+        "max_stem_mix_corr": 0.7904,
+        "energy_passed": true,
+        "self_consistency_pass_rate": 1.0
+      }
+    },
+    "org_mix_3": {
+      "file": "mix_00006.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "str",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "num_voiced_windows": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 3,
+        "raw_regression_value": 3.355,
+        "calibrated_value": 3.046,
+        "uncertainty_std": 1.596
+      },
+      "groups": {
+        "Human voice": 1.0,
+        "Animal": 0.0081,
+        "Household/tools": 0.0038,
+        "Musical instrument": 0.0003,
+        "Environment/other": 0.0002
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.85
+        }
+      ],
+      "can_separate": false,
+      "separation": null
+    },
+    "org_mix_9": {
+      "file": "mix_00054.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "str",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "str",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "distinct_speakers": "NoneType",
+          "distinct_speakers_found": "NoneType",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 7,
+        "raw_regression_value": 6.9539,
+        "calibrated_value": 6.9286,
+        "uncertainty_std": 1.484
+      },
+      "groups": {
+        "Human voice": 1.0,
+        "Animal": 0.0026,
+        "Household/tools": 0.0021,
+        "Environment/other": 0.0004,
+        "Musical instrument": 0.0002
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.85
+        }
+      ],
+      "can_separate": false,
+      "separation": null
+    },
+    "real_2spk": {
+      "file": "two_teachers_speaking.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "num_voiced_windows": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 2,
+        "raw_regression_value": 2.7592,
+        "calibrated_value": 2.1875,
+        "uncertainty_std": 1.15
+      },
+      "groups": {
+        "Human voice": 1.0,
+        "Household/tools": 0.0033,
+        "Animal": 0.0008,
+        "Musical instrument": 0.0003,
+        "Environment/other": 0.0002
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.85
+        }
+      ],
+      "can_separate": true,
+      "separation": {
+        "shape": {
+          "download_url": "str",
+          "job_id": "str",
+          "pretrained_speech_status": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "quality_check": {
+            "energy_conservation": {
+              "passed": "bool",
+              "reconstruction_snr_db": "float",
+              "relative_l2_error": "float",
+              "tolerance": "float"
+            },
+            "failed": "bool",
+            "failure_reason": "NoneType",
+            "max_pairwise_corr": "float",
+            "max_stem_mix_corr": "float",
+            "num_stems": "int",
+            "pairwise_corrs": [
+              {
+                "corr": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "stem_mix_corrs": [
+              {
+                "corr": "float",
+                "i": "int"
+              }
+            ],
+            "threshold_used": "float"
+          },
+          "quality_failed": "bool",
+          "quality_reason": "NoneType",
+          "self_consistency": {
+            "pass_rate": "float",
+            "passed_count": "int",
+            "per_stem": [
+              {
+                "exact_name_match": "bool",
+                "group_match": "bool",
+                "low_confidence": "bool",
+                "query_group": "str",
+                "query_name": "str",
+                "self_consistent": "bool",
+                "status_badge": "str",
+                "stem_index": "int",
+                "top_group_confidence": "float",
+                "top_predicted_confidence": "float",
+                "top_predicted_group": "str",
+                "top_predicted_sound": "str"
+              }
+            ],
+            "total_stems": "int"
+          },
+          "speaker_verification": {
+            "could_not_separate_speakers": "bool",
+            "different_speakers_verified": "bool",
+            "max_embedding_cosine_similarity": "float",
+            "max_speaker_embedding_cosine": "float",
+            "pairwise_speaker_cosine": [
+              {
+                "cosine_similarity": "float",
+                "i": "int",
+                "j": "int"
+              }
+            ],
+            "pretrained_status": {
+              "available": "bool",
+              "download_commands": "str",
+              "ecapa_dir": "str",
+              "has_2spk_model": "bool",
+              "has_3spk_model": "bool",
+              "has_speaker_encoder": "bool",
+              "max_supported_speakers": "int",
+              "offline_fallback_message": "NoneType",
+              "powershell_download_cmd": "str",
+              "reason": "NoneType",
+              "sepformer3_dir": "str",
+              "sepformer_dir": "str"
+            },
+            "reason": "str",
+            "status_message": "str",
+            "stem_labels": [
+              "str"
+            ],
+            "threshold": "float",
+            "using_ecapa": "bool"
+          },
+          "speech_mode": "bool",
+          "status": "str",
+          "stems": [
+            {
+              "download_url": "str",
+              "energy_share": "float",
+              "file": "str",
+              "group": "str",
+              "index": "int",
+              "is_residual": "bool",
+              "label": "str",
+              "low_confidence": "bool",
+              "self_consistent": "bool",
+              "status_badge": "str",
+              "time_ranges": [],
+              "top_predicted_sound": "str",
+              "url": "str"
+            }
+          ],
+          "stopped_early": "bool",
+          "timings": {
+            "quality_gate_ms": "float",
+            "separate_ms": "float",
+            "zip_ms": "float"
+          },
+          "trained": "bool",
+          "used_pretrained_speech": "bool"
+        },
+        "stem_labels": [
+          "Human 1",
+          "Human 2",
+          "Everything else (Residual)"
+        ],
+        "quality_failed": false,
+        "max_pairwise_corr": 0.1179,
+        "max_stem_mix_corr": 0.7734,
+        "energy_passed": true,
+        "self_consistency_pass_rate": 1.0
+      }
+    },
+    "real_3spk": {
+      "file": "three_speakers_discussion.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "str",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "num_voiced_windows": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 3,
+        "raw_regression_value": 3.3151,
+        "calibrated_value": 3.046,
+        "uncertainty_std": 1.608
+      },
+      "groups": {
+        "Human voice": 1.0,
+        "Household/tools": 0.0028,
+        "Animal": 0.0023,
+        "Environment/other": 0.0005,
+        "Musical instrument": 0.0003
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.85
+        }
+      ],
+      "can_separate": false,
+      "separation": null
+    },
+    "iso_hammer": {
+      "file": "210210.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [
+          {
+            "intervals": [
+              {
+                "end": "float",
+                "start": "float"
+              }
+            ],
+            "sounds": [
+              "str"
+            ],
+            "total_overlap_seconds": "float"
+          }
+        ],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "contradicts_count": "bool",
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [
+            "str"
+          ],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [
+            {
+              "intervals": [
+                {
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "sounds": [
+                "str"
+              ],
+              "total_overlap_seconds": "float"
+            }
+          ],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 3,
+        "raw_regression_value": 2.9591,
+        "calibrated_value": 2.5882,
+        "uncertainty_std": 1.043
+      },
+      "groups": {
+        "Human voice": 0.8444,
+        "Musical instrument": 0.1769,
+        "Household/tools": 0.8429,
+        "Animal": 0.0199,
+        "Environment/other": 0.0113
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.8444
+        },
+        {
+          "name": "Hammer",
+          "confidence": 0.8429
+        },
+        {
+          "name": "Door knock",
+          "confidence": 0.4888
+        }
+      ],
+      "can_separate": true,
+      "separation": null
+    },
+    "iso_bark": {
+      "file": "107190.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "NoneType",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [
+          {
+            "intervals": [
+              {
+                "end": "float",
+                "start": "float"
+              }
+            ],
+            "sounds": [
+              "str"
+            ],
+            "total_overlap_seconds": "float"
+          }
+        ],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "NoneType",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "distinct_speakers": "int",
+          "distinct_speakers_found": "int",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [
+            {
+              "intervals": [
+                {
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "sounds": [
+                "str"
+              ],
+              "total_overlap_seconds": "float"
+            }
+          ],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 3,
+        "raw_regression_value": 3.3593,
+        "calibrated_value": 3.046,
+        "uncertainty_std": 1.351
+      },
+      "groups": {
+        "Musical instrument": 0.8409,
+        "Household/tools": 0.6811,
+        "Animal": 0.648,
+        "Human voice": 0.2334,
+        "Environment/other": 0.1143
+      },
+      "named_sounds": [
+        {
+          "name": "Dog bark",
+          "confidence": 0.648
+        },
+        {
+          "name": "Cello",
+          "confidence": 0.3031
+        },
+        {
+          "name": "Scissors",
+          "confidence": 0.2962
+        },
+        {
+          "name": "Telephone ring",
+          "confidence": 0.2958
+        }
+      ],
+      "can_separate": true,
+      "separation": null
+    },
+    "iso_water": {
+      "file": "100035.wav",
+      "analyze_shape": {
+        "audio": {
+          "analysed_window_seconds": "float",
+          "crop_start_seconds": "float",
+          "duration_seconds": "float",
+          "input_sample_rate": "int"
+        },
+        "count": {
+          "calibrated": "bool",
+          "calibrated_value": "float",
+          "confidence_percent": "float",
+          "dense_warning": "str",
+          "display": "str",
+          "max_sources": "int",
+          "mc_dropout_std": "float",
+          "mc_passes": "int",
+          "min_sources": "int",
+          "out_of_range": "bool",
+          "range_warning": "NoneType",
+          "raw_regression_value": "float",
+          "rounded_count": "int",
+          "softmax_std": "float",
+          "sparse_regime": "bool",
+          "uncertainty_std": "float"
+        },
+        "filename": "str",
+        "job_id": "str",
+        "named_sounds": [
+          {
+            "above_threshold": "bool",
+            "class": "str",
+            "confidence": "float",
+            "friendly_name": "str",
+            "group": "str",
+            "name": "str",
+            "probability": "float",
+            "source_model": "str",
+            "threshold": "float",
+            "time_ranges": [
+              {
+                "confidence": "float",
+                "end": "float",
+                "start": "float"
+              }
+            ]
+          }
+        ],
+        "overlapping_sounds": [
+          {
+            "intervals": [
+              {
+                "end": "float",
+                "start": "float"
+              }
+            ],
+            "sounds": [
+              "str"
+            ],
+            "total_overlap_seconds": "float"
+          }
+        ],
+        "separation": {
+          "can_separate": "bool",
+          "max_separable": "int",
+          "reason": "str",
+          "speech_mode": "bool",
+          "speech_separator": {
+            "available": "bool",
+            "download_commands": "str",
+            "ecapa_dir": "str",
+            "has_2spk_model": "bool",
+            "has_3spk_model": "bool",
+            "has_speaker_encoder": "bool",
+            "max_supported_speakers": "int",
+            "offline_fallback_message": "NoneType",
+            "powershell_download_cmd": "str",
+            "reason": "NoneType",
+            "sepformer3_dir": "str",
+            "sepformer_dir": "str"
+          },
+          "trained": "bool"
+        },
+        "speaker_clustering": {
+          "distinct_speakers": "NoneType",
+          "distinct_speakers_found": "NoneType",
+          "evaluated": "bool",
+          "explanation": "str",
+          "labels": [],
+          "limit_explanation": "str",
+          "method_label": "str",
+          "model_count": "int",
+          "show_card": "bool",
+          "using_ecapa": "bool",
+          "voiced_ratio": "float"
+        },
+        "tags": {
+          "active_groups": [
+            "str"
+          ],
+          "available": "bool",
+          "caveat": "str",
+          "groups": [
+            {
+              "above_threshold": "bool",
+              "group": "str",
+              "probability": "float",
+              "threshold": "float"
+            }
+          ],
+          "hierarchical": "bool",
+          "max_simultaneous_sounds": "int",
+          "named_sounds": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ],
+          "open_vocabulary": "bool",
+          "overlapping_sounds": [
+            {
+              "intervals": [
+                {
+                  "end": "float",
+                  "start": "float"
+                }
+              ],
+              "sounds": [
+                "str"
+              ],
+              "total_overlap_seconds": "float"
+            }
+          ],
+          "speech_detected": "bool",
+          "tags": [
+            {
+              "above_threshold": "bool",
+              "class": "str",
+              "confidence": "float",
+              "friendly_name": "str",
+              "group": "str",
+              "name": "str",
+              "probability": "float",
+              "source_model": "str",
+              "threshold": "float",
+              "time_ranges": [
+                {
+                  "confidence": "float",
+                  "end": "float",
+                  "start": "float"
+                }
+              ]
+            }
+          ]
+        },
+        "timings": {
+          "count_ms": "float",
+          "decode_ms": "float",
+          "feature_ms": "float",
+          "speaker_cluster_ms": "float",
+          "tag_ms": "float"
+        },
+        "trained": "bool"
+      },
+      "count": {
+        "rounded_count": 21,
+        "raw_regression_value": 23.2358,
+        "calibrated_value": 21.2316,
+        "uncertainty_std": 7.206
+      },
+      "groups": {
+        "Musical instrument": 0.9973,
+        "Household/tools": 0.9895,
+        "Environment/other": 0.9865,
+        "Human voice": 0.9831,
+        "Animal": 0.9519
+      },
+      "named_sounds": [
+        {
+          "name": "Human voice",
+          "confidence": 0.8357
+        },
+        {
+          "name": "Harmonica",
+          "confidence": 0.4322
+        },
+        {
+          "name": "Flute",
+          "confidence": 0.4298
+        },
+        {
+          "name": "Dog bark",
+          "confidence": 0.4296
+        },
+        {
+          "name": "Glockenspiel",
+          "confidence": 0.4276
+        },
+        {
+          "name": "Paper tearing",
+          "confidence": 0.4263
+        },
+        {
+          "name": "Laughter",
+          "confidence": 0.4247
+        },
+        {
+          "name": "Microwave oven",
+          "confidence": 0.4243
+        },
+        {
+          "name": "Keys jangling",
+          "confidence": 0.4242
+        },
+        {
+          "name": "Glass shatter",
+          "confidence": 0.423
+        },
+        {
+          "name": "Gunshot",
+          "confidence": 0.4214
+        },
+        {
+          "name": "Cough",
+          "confidence": 0.4182
+        },
+        {
+          "name": "Acoustic guitar",
+          "confidence": 0.4163
+        },
+        {
+          "name": "Fireworks",
+          "confidence": 0.4156
+        },
+        {
+          "name": "Trumpet",
+          "confidence": 0.415
+        },
+        {
+          "name": "Gong",
+          "confidence": 0.4142
+        },
+        {
+          "name": "Telephone ring",
+          "confidence": 0.4141
+        },
+        {
+          "name": "Drawer",
+          "confidence": 0.4134
+        },
+        {
+          "name": "Chime",
+          "confidence": 0.4118
+        },
+        {
+          "name": "Cello",
+          "confidence": 0.4116
+        },
+        {
+          "name": "Keyboard typing",
+          "confidence": 0.4105
+        },
+        {
+          "name": "Electric piano",
+          "confidence": 0.4104
+        },
+        {
+          "name": "Squeak",
+          "confidence": 0.4099
+        },
+        {
+          "name": "Cat meow",
+          "confidence": 0.4091
+        },
+        {
+          "name": "Scissors",
+          "confidence": 0.4064
+        },
+        {
+          "name": "Clarinet",
+          "confidence": 0.4056
+        },
+        {
+          "name": "Bus",
+          "confidence": 0.4035
+        },
+        {
+          "name": "Violin",
+          "confidence": 0.4022
+        },
+        {
+          "name": "Snare drum",
+          "confidence": 0.4004
+        },
+        {
+          "name": "Oboe",
+          "confidence": 0.3964
+        },
+        {
+          "name": "Saxophone",
+          "confidence": 0.3959
+        },
+        {
+          "name": "Writing",
+          "confidence": 0.3957
+        },
+        {
+          "name": "Applause",
+          "confidence": 0.3374
+        },
+        {
+          "name": "Bird song",
+          "confidence": 0.2919
+        }
+      ],
+      "can_separate": false,
+      "separation": null
+    }
+  }
+}
