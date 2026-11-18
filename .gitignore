@@ -1,19 +1,68 @@
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Python caches & coverage
 __pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.pip-cache/
+.pip-tmp/
+
+# Node & IDEs
+node_modules/
+.idea/
+.vscode/
+
+# OS & logs
+.DS_Store
+Thumbs.db
+*.log
+
+# Secrets & environment
 .env
-uploads/*
-!uploads/.gitkeep
+.env.*
+!.env.example
+
+# Runtime uploads, temp, work, archives & local DBs
+uploads/
+tmp/
+work/
+feature_cache/
+*.zip
+*.7z
+*.db
+*.sqlite3
+
+# Downloaded pretrained models & trained checkpoints
+models/
 checkpoints/*
 !checkpoints/.gitkeep
-models/*
-!models/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+
+# Datasets, generated indexes, private/eval audio & large generated JSON
 data/*
 !data/.gitkeep
 !data/real_eval/
+data/real_eval/*.wav
+data/real_eval/*.flac
+data/real_eval/*.mp3
+!data/real_eval/RECORDING_GUIDE.md
+!data/real_eval/manifest.json
 !data/isolated_sources/
 data/isolated_sources/*
 !data/isolated_sources/manifest.json
-.pip-cache/
-.pip-tmp/
-work/
+
+# Keep small evaluation summary JSONs (< 1 MB) for How-it-works page; ignore large raw results
+evaluation/results.json
