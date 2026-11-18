@@ -1,127 +1,104 @@
-# EchoCount — Source Counting, Open-Vocabulary Sound Naming & Query-Based Audio Separation
+# EchoCount — Audio Source Counting, Sound Naming & Separation
 
-EchoCount is a scalable audio analysis and source separation product. Given a recording containing a mixture of sounds (for example a hammer, a phone vibrating, a dog barking, musical instruments, or overlapping human voices), EchoCount:
-1. **Counts** how many distinct overlapping sources are present (`SourceCountCNN` with Sparse Specialist routing $K \le 8$, validation-only isotonic calibration, and MC-dropout + softmax uncertainty decomposition).
-2. **Names every sound** (`open_tagger.py`) with user-facing friendly labels (`"Hammer"`, `"Phone vibration"`, `"Dog bark"`, `"Cat meow"`, `"Cello"`, `"Scissors"`, `"Telephone ring"`, `"Human voice"`, `"Door knock"`, `"Keyboard typing"`, `"Water"`, `"Car horn"`, plus all 32 FSD classes and 527 AudioSet classes), confidence scores, frame-level time ranges (`start_s–end_s`), and co-occurring overlap detection.
-3. **Separates each named sound** (`query_separation.py`, `speech_separation.py`) into its own labelled audio stem plus an exact **`Everything else (Residual)`** stem (`mixture − sum(stems)`), verified by three measured quality gates (self-consistency re-tagging, waveform correlation $< 0.90$, and energy conservation) and downloadable individually as WAV or together as a ZIP with `manifest.json`.
+EchoCount is a Flask + PyTorch audio analysis web app. Upload a recording (WAV, MP3, or FLAC) and EchoCount:
+1. **Counts** how many distinct overlapping sources are present (`SourceCountCNN` with Sparse Specialist routing $K \le 8$, isotonic calibration, and 30-pass MC-dropout uncertainty).
+2. **Names every sound** with friendly labels (`"Hammer"`, `"Phone vibration"`, `"Dog bark"`, `"Cat meow"`, `"Cello"`, `"Scissors"`, `"Telephone ring"`, `"Human voice"`, `"Door knock"`, `"Keyboard typing"`, `"Water"`, `"Car horn"`, plus AudioSet-527 classes), confidence scores, and frame-level time ranges.
+3. **Separates each named sound** into its own stem plus an exact **`Everything else (Residual)`** stem (`mixture − sum(stems)`), verified by three measured quality gates (waveform correlation $< 0.90$, energy conservation, and self-consistency re-tagging) and downloadable as individual WAVs or a ZIP.
 
----
-
-## 1. Pretrained Models, Datasets & Licences Table
-
-Every pretrained model and dataset used by EchoCount has a permissive licence that allows commercial use and runs 100% offline on a laptop (16 GB RAM, CPU or NVIDIA RTX 4050 GPU):
-
-| Component / Model | Repository / Path | Licence | Commercial Use Allowed? | Size on Disk | Offline Laptop Ready? |
-| :--- | :--- | :--- | :---: | :---: | :---: |
-| **Source Counter (General + Sparse Specialist $K \le 8$)** | `checkpoints/source_count_clip.pt` | MIT (Project-trained) | **Yes** | `5.8 MB` | **Yes** |
-| **Domain Hierarchical Tagger (5 groups, 32 FSD classes)** | `checkpoints/tagger.pt` | MIT (Project-trained) | **Yes** | `4.2 MB` | **Yes** |
-| **AudioSet 527-Class Audio Spectrogram Transformer (AST)** | `MIT/ast-finetuned-audioset-10-10-0.4593` (`models/ast-audioset`) | **BSD-3-Clause** | **Yes** | `346 MB` | **Yes** |
-| **CLAP Open-Vocabulary Audio-Text Model** | `laion/clap-htsat-unfused` (`models/clap-htsat-unfused`) | **Apache-2.0 / MIT** | **Yes** | `615 MB` | **Yes** |
-| **2-Speaker Speech Separator (SepFormer)** | `speechbrain/sepformer-wsj02mix` (`models/sepformer-wsj02mix`) | **Apache-2.0** | **Yes** | `113 MB` | **Yes** |
-| **Speaker Embedding Verifier (ECAPA-TDNN)** | `speechbrain/spkrec-ecapa-voxceleb` (`models/spkrec-ecapa-voxceleb`) | **Apache-2.0** | **Yes** | `83 MB` | **Yes** |
-| **Iterative Mask Separator (Trained on FSD50K Isolated Clips)** | `checkpoints/separator_iterative.pt` | MIT (Project-trained) | **Yes** | `0.8 MB` | **Yes** |
-| **FSD50K Isolated Single-Source Subset (16 classes, 480 clips)** | `Fhrozen/FSD50k` / Zenodo `4060432` (`data/isolated_sources/`) | **CC0 / CC-BY-4.0** | **Yes** | `304 MB` | **Yes** |
+> _Screenshot placeholder: add `docs/screenshot.png` of the `/analyze` UI here._
 
 ---
 
-## 2. Setup & Model Downloads
+## 1. Quick Setup (Windows PowerShell)
 
-### 1. Python Virtual Environment (Windows PowerShell)
-Verified on **Python 3.14.8** (Python 3.11+ supported):
+**Requirements:** Python **3.11 – 3.14** (verified on Python `3.14.8`).
 
 ```powershell
-cd C:\coding\SANADA\Sanada
+git clone https://github.com/25-f2001239/Sanada.git
+cd Sanada
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+copy .env.example .env
 ```
 
-### 2. Optional GPU Build of PyTorch (CUDA)
-`requirements.txt` installs standard `torch==2.15.0` without hard-coding a CUDA wheel URL. To install a CUDA-enabled build on an NVIDIA GPU machine:
-
+### Optional GPU Build of PyTorch (CUDA)
+`requirements.txt` installs CPU `torch==2.15.0` by default. On an NVIDIA GPU machine:
 ```powershell
-.\.venv\Scripts\python -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+.\.venv\Scripts\python.exe -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 3. Download Pretrained Models (`models/`)
-All pretrained weights are stored locally in `models/` for offline execution:
-
+### Download Pretrained Models & Trained Checkpoints
+Model weights are excluded from git. Download the pretrained HuggingFace models (`models/`) and trained checkpoints (`checkpoints/`):
 ```powershell
-cd C:\coding\SANADA\Sanada
-.\.venv\Scripts\python -c "from huggingface_hub import snapshot_download; snapshot_download('speechbrain/sepformer-wsj02mix', local_dir='models/sepformer-wsj02mix'); snapshot_download('speechbrain/spkrec-ecapa-voxceleb', local_dir='models/spkrec-ecapa-voxceleb'); snapshot_download('MIT/ast-finetuned-audioset-10-10-0.4593', local_dir='models/ast-audioset', ignore_patterns=['*.bin', '*.md']); snapshot_download('laion/clap-htsat-unfused', local_dir='models/clap-htsat-unfused', ignore_patterns=['*.md'])"
+.\.venv\Scripts\python.exe scripts\download_models.py
+.\.venv\Scripts\python.exe scripts\download_models.py --check
 ```
+*(If hosted checkpoints are not yet uploaded to GitHub Releases, the app still starts gracefully and reports `"Trained checkpoint not found, run scripts/download_models.py"`. You can also train checkpoints locally from your dataset using `scripts/train.py`.)*
 
-### 4. Download FSD50K Isolated Single-Source Clips (`data/isolated_sources/`)
-To download 30 isolated clips per class across 16 target classes (`480` clips, `304 MB`, `CC0`/`CC-BY`) into `data/isolated_sources/<Class>/`:
-
+### Run the App
 ```powershell
-cd C:\coding\SANADA\Sanada
-.\.venv\Scripts\python download_fsd50k_subset.py --clips-per-class 30
+.\.venv\Scripts\python.exe app.py
+# Open http://127.0.0.1:5000
 ```
 
 ---
 
-## 3. Running the Application, Benchmarks & Tests
+## 2. Tests, Training & Evaluation
 
 ```powershell
-cd C:\coding\SANADA\Sanada
+# Run product unit, route, and 5-clip regression tests
+.\.venv\Scripts\python.exe test_templates.py --full
 
-# Run unit tests, taxonomy single-source-of-truth test, quality gates, and 5-clip regression suite
-.\.venv\Scripts\python test_templates.py --full
+# Verify golden baseline (requires dataset & local checkpoints)
+.\.venv\Scripts\python.exe tests\golden_check.py --verify
 
-# Run full product benchmark (Tagger comparison, Held-out synthetic SI-SDRi, Real-eval, 8s & 60s latency profile)
-.\.venv\Scripts\python evaluate_product_benchmarks.py
+# Unified training CLI (--smoke or --full)
+.\.venv\Scripts\python.exe scripts\train.py counter --smoke
+.\.venv\Scripts\python.exe scripts\train.py all --full
 
-# Start the Flask production server (http://127.0.0.1:5000)
-.\.venv\Scripts\python app.py
-```
-
-### Docker Deployment (CPU and GPU)
-
-```powershell
-# CPU Container
-docker build -t echocount:latest .
-docker run --rm -p 8080:8080 -e ECHOCOUNT_DEV=0 echocount:latest
-
-# NVIDIA GPU Container
-docker build --build-arg BASE_IMAGE=pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime -t echocount:gpu .
-docker run --rm --gpus all -p 8080:8080 -e ECHOCOUNT_DEV=0 echocount:gpu
+# Unified evaluation & latency profiler (--smoke or --full)
+# Regenerates evaluation/results.json (ignored from git due to size):
+.\.venv\Scripts\python.exe scripts\evaluate.py counter --full
+.\.venv\Scripts\python.exe scripts\evaluate.py all --full
 ```
 
 ---
 
-## 4. Measured Benchmarks
+## 3. Measured Benchmarks
 
-### A. Source Counting (`evaluation/results.json`)
-- **Validation MAE**: `1.605` | **Overall Test Exact Accuracy**: `43.8%` | **Speech Test Exact Accuracy**: `53.1%`
-- **Sparse Regime ($K \le 8$) Test Exact Accuracy**:
-  - $K=2$: **`77.8%`** exact (`96.0%` within ±1)
-  - $K=3$: **`73.0%`** exact (`96.6%` within ±1)
-  - $K=4$: **`62.0%`** exact (`91.0%` within ±1)
-  - $K=6$: **`89.0%`** exact (`96.0%` within ±1)
-- **Held-Out Unseen Speaker Split (`Speaker_4_1`, `Speaker8`, `Speaker9`)**: MAE = `0.369`, Exact Accuracy = `69.9%`.
+All figures below are read directly from `evaluation/results.json` (`SourceCountCNN-v3-speech-fsd-specialist`, `epoch=11`, `sha256: e003d018...`), `evaluation/product_benchmarks.json`, and `evaluation/separation_results.json`. (`evaluation/results.json` is excluded from git; regenerate it with `python scripts/evaluate.py counter --full`.)
 
-### B. Open-Vocabulary Sound Naming (`evaluation/product_benchmarks.json`)
-- **12 Target Everyday Sounds Coverage**: `12/12 (100%)` (`Hammer`, `Phone vibration`, `Dog bark`, `Cat meow`, `Cello`, `Scissors`, `Telephone ring`, `Human voice`, `Door knock`, `Keyboard typing`, `Water`, `Car horn`).
-- **32-Class FSD Hierarchical Tagger (`checkpoints/tagger.pt`)**: Coarse Group Test mAP = **`0.9926`**, Fine 32-Class Test mAP = **`0.8052`**.
-- **Open-Vocabulary 16-Class Held-Out FSD50K Test Split**: Combined `AST-AudioSet-527 + CLAP + 32-CNN` outperforms either model alone by using the domain 32-CNN on in-vocabulary FSD classes and `AST-527 + CLAP` on open-vocabulary classes (`Hammer`, `Phone vibration`, `Door knock`, `Water`, `Car horn`, `Human voice`).
-
-### C. Separation & Quality Gates (`evaluation/separation_results.json`)
-- **2-Speaker Speech Separation (`sepformer-wsj02mix` + `spkrec-ecapa-voxceleb`)**: Pairwise stem correlation = `0.118` ($< 0.90$ threshold), ECAPA speaker embedding cosine similarity = `0.494` ($\le 0.82$ threshold, verified distinct speakers).
-- **Multi-Sound Query-Conditioned Separation**:
-  - Exact energy conservation (`sum(stems) + residual == mixture`, relative L2 error $< 10^{-5}$, reconstruction SNR $> 100\text{ dB}$).
-  - Long-audio support via overlapping `8.0 s` windows with `2.0 s` raised-cosine (Hann) cross-fade stitching.
+- **Source Counting (`evaluation/results.json`, `n=1,285` test mixtures):**
+  - Overall Test: `MAE = 1.6451`, `Exact = 43.8%`, `Within ±1 = 64.3%`.
+  - Speech Test (`n=695`): `MAE = 0.8014`, `Exact = 53.1%`, `Within ±1 = 78.9%`.
+  - Sparse Counts (Overall Test): `K=2` (`n=248`): `77.8%` exact (`99.2%` within ±1); `K=3` (`n=248`): `73.0%` exact (`96.0%` within ±1); `K=4` (`n=148`): `54.1%` exact (`90.5%` within ±1); `K=6` (`n=115`): `70.4%` exact (`93.9%` within ±1).
+  - **Held-Out Unseen Speakers (`Speaker_4_1`, `Speaker8`, `Speaker9`, `n=352`)**: `Exact = 13.1%` (`0.1307`), `Within ±1 = 29.6%` (`0.2955`), `MAE = 2.054`. *(Note: an earlier draft cited `69.9%` / `0.369`, which did not match `evaluation/results.json` for `epoch=11`; `13.1%` exact / `2.054` MAE is the actual measured result on unseen speakers.)*
+- **Tagging (`evaluation/results.json` & `evaluation/product_benchmarks.json`):**
+  - 32-Class FSD Hierarchical Tagger (`checkpoints/tagger.pt`, `epoch=8`): Group Test mAP = `0.9926`, Fine 32-Class Test mAP = `0.8052`, Test F1 = `0.7612`.
+  - Open-Vocabulary 16-Class FSD50K Held-Out Split (`96` clips): AST+CLAP mAP = `0.9068`, Combined Open-Tagger mAP = `0.6979`, F1 = `0.4317`.
+- **Separation (`evaluation/separation_results.json`, `32` held-out synthetic mixtures `K=2..5`, `112` stems):**
+  - Mean SI-SDRi = `+2.51 dB`, Self-Consistency Pass Rate = `39.3%`, Energy Conservation = `100.0%`.
+- **Latency (`evaluation/product_benchmarks.json`, CPU):**
+  - `8 s` clip: `analyze = 1.739 s`, `query_separation = 1.065 s`.
+  - `60 s` clip: `analyze = 1.707 s`, `query_separation = 10.188 s`.
 
 ---
 
-## 5. Known Limitations (Measured)
+## 4. Project Structure, Licences & Privacy
 
-1. **Dense Mixtures ($K > 6$)**:
-   - Measured counting exact accuracy drops from `89.0%` at $K=6$ to `0.0%` at $K=9$ (`evaluation/results.json`). For recordings with estimated $K > 6$, EchoCount displays `"Too many overlapping sounds to separate reliably"` and disables separation rather than producing degraded stems.
-2. **Overlapping Speech Beyond 2 Speakers ($K \ge 3$)**:
-   - The installed pretrained speech separator (`speechbrain/sepformer-wsj02mix`) supports up to **2 simultaneous speakers**. For $K \ge 3$ pure speech mixtures without `sepformer-wsj03mix`, EchoCount reports `"Separation is supported for up to 2 speakers with the installed model"`.
-3. **Windowed Speaker Clustering Limit ($K \le 3$)**:
-   - ECAPA-TDNN speaker clustering operates on `1.0 s` windows (`0.5 s` hop). When more than 3 speakers talk simultaneously in every window, single-window embeddings blend multiple voices; therefore the Distinct Voices card is shown only for $K \le 3$.
-4. **Co-Channel Broadband Overlap in Non-Speech Separation**:
-   - Query-conditioned spectral-temporal + HPSS Wiener masking (`query_separation.py`) separates sounds with distinct spectral-temporal or harmonic/percussive profiles (e.g. `Cello` + `Scissors` + `Telephone ring`, or `Hammer` + `Human voice`) and guarantees nothing is lost via the `Everything else (Residual)` stem, but two non-speech sounds with identical frequency bands occurring at the exact same millisecond share time-frequency bins and may be flagged `"Low confidence"` by the self-consistency re-tagging gate.
+- See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the file map, request pipeline diagram, and `ECHOCOUNT_DEV` mode details.
+- **Licences:** EchoCount code is licensed under the **MIT License** ([LICENSE](LICENSE)). Licences differ per pretrained model; see **[THIRD_PARTY.md](THIRD_PARTY.md)**. Some models were trained on datasets with research-only terms (for example WSJ0 for the SepFormer separator).
+- **Datasets:** Not included in git (`FSD_Mix_*` and `Org_Mix_*` live outside the repo; FSD50K isolated clips come from `Fhrozen/FSD50k` / Zenodo `4060432`; real-room recording protocol is in [data/real_eval/RECORDING_GUIDE.md](data/real_eval/RECORDING_GUIDE.md)).
+- **Privacy:** No user audio or recordings of people are stored in the repository. Uploaded audio is processed in temporary per-request directories deleted after `JOB_TTL_SECONDS`.
+
+---
+
+## 5. Limitations (Measured)
+
+1. **Dense Mixtures ($K > 6$)**: Counting accuracy drops to `0.0%` exact at `K=9` (`MAE = 2.809`); EchoCount warns `"Too many overlapping sounds to separate reliably"` and disables separation.
+2. **Unseen-Speaker Generalization**: On held-out unseen speakers (`n=352`), exact count accuracy is `13.1%` (`MAE = 2.054`), showing a measurable domain/speaker generalization gap compared to seen-speaker mixtures (`53.1%` exact).
+3. **Speech Separation ($K \le 2$)**: `sepformer-wsj02mix` separates up to 2 simultaneous speakers; for $K \ge 3$ pure speech mixtures without `sepformer-wsj03mix`, separation is disabled.
+4. **Speaker Clustering ($K \le 3$)**: Windowed ECAPA-TDNN clustering is shown only for $K \le 3$ because simultaneous overlap blends 1-second window embeddings.
+5. **Co-Channel Broadband Overlap**: Non-speech sounds sharing identical frequency bands and timestamps share TF bins and may be flagged `"Low confidence"` by the self-consistency re-tagging gate (`39.3%` pass rate across `K=2..5` mixtures).

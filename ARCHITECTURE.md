@@ -1,33 +1,41 @@
-# EchoCount architecture
+# EchoCount Architecture
 
-EchoCount is a Flask application that estimates the number of overlapping sources in mono audio. Its CNN classifier operates on log-mel spectrograms and does not perform source separation.
+EchoCount is a Flask + PyTorch audio analysis product that counts overlapping sound sources, names each detected sound with frame-level time ranges, and separates each sound into its own stem plus an exact residual stem.
 
-## Request pipeline
+## 1. File Map (Core Source)
 
-1. The browser uploads a file to **POST /api/predict**.
-2. Flask stores it under a unique temporary name and removes it when the request completes.
-3. PyAV decodes WAV, FLAC, MP3, OGG, or M4A, downmixes to mono, and resamples to 16 kHz.
-4. The audio is center-cropped or padded to eight seconds.
-5. The full eight-second analysis clip is converted to one normalized 64-band log-mel spectrogram.
-6. A PyTorch CNN predicts one source count for the full clip and reports its softmax confidence.
+| File | Responsibility |
+| :--- | :--- |
+| [config.py](file:///C:/coding/SANADA/Sanada/config.py) | Paths, environment settings, `config.json` & `taxonomy.json` single-source-of-truth helpers |
+| [audio.py](file:///C:/coding/SANADA/Sanada/audio.py) | Upload sniffing, PyAV mono decode, polyphase resampling, WAV encoding, 64-band log-mel extraction |
+| [data.py](file:///C:/coding/SANADA/Sanada/data.py) | Dataset scanning, leakage audit, and dev-gated (`ECHOCOUNT_DEV=1`) SHA-256 ground-truth lookup |
+| [counting.py](file:///C:/coding/SANADA/Sanada/counting.py) | `SourceCountCNN`, sparse specialist ($K \le 8$) routing, isotonic calibration, batched MC-dropout uncertainty |
+| [tagging.py](file:///C:/coding/SANADA/Sanada/tagging.py) | 32-class `GroupFineTaggerCNN` + AudioSet-527 AST + CLAP zero-shot + sliding-window time localization |
+| [separation.py](file:///C:/coding/SANADA/Sanada/separation.py) | `IterativeMaskSeparator`, SpeechBrain SepFormer + ECAPA speech separation, query-conditioned Wiener separation, 8s/2s windowed cross-fade stitching |
+| [quality.py](file:///C:/coding/SANADA/Sanada/quality.py) | Stem quality gates: waveform correlation ($< 0.90$), energy conservation, and self-consistency re-tagging |
+| [app.py](file:///C:/coding/SANADA/Sanada/app.py) | Flask routes, rate limiting, async separation job queue, TTL cleanup, WAV/ZIP downloads |
+| [scripts/train.py](file:///C:/coding/SANADA/Sanada/scripts/train.py) | Unified training CLI (`counter`, `tagger`, `separator`, `all`; `--smoke` / `--full`) |
+| [scripts/evaluate.py](file:///C:/coding/SANADA/Sanada/scripts/evaluate.py) | Unified evaluation & latency profiler (`counter`, `benchmarks`, `profile`, `all`; `--smoke` / `--full`) |
+| `static/` & `templates/` | Jinja HTML templates and vanilla JS/CSS (`analyze.js`, `evaluation.js`, `history.js`, `how.js`, `main.js`, `style.css`) |
 
-## Model and training
+## 2. Request Flow
 
-**model.py** owns the CNN and the complete feature pipeline used by both training and inference. Its adaptive pooling layer accepts the spectrogram frame dimensions generated for the full clip.
+```
+Upload (WAV/MP3/FLAC)
+  └─> audio.decode_mono() -> 16 kHz mono -> 8s window -> audio.waveform_to_logmel()
+        ├─> counting.count_with_uncertainty()  ──> General CNN + Sparse Specialist (K<=8) + 30-pass MC-dropout
+        ├─> tagging.tag_open_vocabulary()      ──> AST-527 + CLAP + 32-CNN + 1.5s sliding-window time ranges
+        └─> separation.estimate_distinct_speakers() ──> ECAPA-TDNN clustering (K<=3 speech)
+              └─> POST /api/separate (sync or async job)
+                    ├─> 2-spk pure speech: SepFormer wsj02mix + ECAPA verification
+                    ├─> Multi-sound: Query-Conditioned HPSS Wiener + IterativeMaskSeparator
+                    ├─> Residual stem: mixture - sum(stems)
+                    └─> quality.py (correlation < 0.90, energy conservation, self-consistency re-tag) -> WAVs + ZIP
+```
 
-**train.py** reads **mixture_path,num_sources** and train, val, and test **split** labels from a CSV manifest. Each eight-second labelled mixture is used once, matching inference, and the best validation macro-MAE checkpoint is saved to **checkpoints/source_count_clip.pt**. The test split is excluded from model selection.
+## 3. Models, Training & Dev Mode
 
-The old root-level **best_sanada_model.pth** contains YAMNet/MLP weights and is not compatible with this CNN. It is not used as an automatic fallback.
-
-## Web application
-
-- **app.py**: routes, health status, upload validation, JSON responses, cleanup.
-- **templates/**: pages rendered by Flask/Jinja.
-- **static/main.js**: shared navigation, theme, status, history storage.
-- **static/analyze.js**: file preview, waveform, upload, and result rendering.
-- **static/history.js**: local browser history and CSV export.
-- **static/how.js**: explanatory illustrations.
-
-## Deployment
-
-The local Flask development server binds to **127.0.0.1**. Production runs through Gunicorn (Linux/container) or Waitress (Windows). The container listens on the **PORT** environment variable and needs a compatible checkpoint mounted at the configured **MODEL_PATH**.
+- **Checkpoints (`checkpoints/`)**: `source_count_clip.pt`, `tagger.pt`, `separator_iterative.pt`.
+- **Pretrained Models (`models/`)**: `ast-audioset` (BSD-3-Clause), `clap-htsat-unfused` (Apache-2.0), `sepformer-wsj02mix` (Apache-2.0), `spkrec-ecapa-voxceleb` (Apache-2.0).
+- **Training & Evaluation**: Run `.\.venv\Scripts\python scripts\train.py <target> --full` and `.\.venv\Scripts\python scripts\evaluate.py <target> --full`.
+- **Dev Mode (`ECHOCOUNT_DEV`)**: Off (`0`) by default in production so no ground-truth dataset fields or SHA-256 hashes are exposed via `/api/analyze`. Set `ECHOCOUNT_DEV=1` locally to enable dataset ground-truth inspection.
