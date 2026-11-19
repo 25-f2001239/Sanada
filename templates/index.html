@@ -9,7 +9,7 @@
 <section class="hero wrap">
   <h1 data-split>Count every <span class="inline-wave" aria-hidden="true">{% for k in range(7) %}<i style="--k:{{ k }}"></i>{% endfor %}</span> sound hiding in the mix.</h1>
   <div class="hero-row">
-    <p>Drop in a single-channel recording and EchoCount estimates how many sources overlap in it. Voices, instruments, traffic. It runs on your own machine.</p>
+    <p>Drop in a single-channel recording and EchoCount estimates how many sources overlap, names each sound, and separates sparse speech. Processed on the server with automatic {{ job_ttl_minutes }}-minute cleanup.</p>
     <div class="actions">
       <a class="btn primary" data-magnetic href="{{ url_for('analyze_page') }}"><svg class="ic"><use href="#i-upload"/></svg>Analyze a recording</a>
       <a class="btn" data-magnetic href="{{ url_for('how_page') }}">See how it works</a>
@@ -36,14 +36,70 @@
   <div class="bento">
     <article class="card span3 rv" data-spot><h3>Hear it, then see it</h3><p>Your upload becomes a waveform you can play and scrub. The part the model analysed is marked, so every result can be checked by ear.</p>
       <div class="viz bars" aria-hidden="true">{% for i in range(34) %}<i style="--i:{{ i }}"></i>{% endfor %}</div></article>
-    <article class="card span3 rv" style="--d:80ms" data-spot><span class="eg">One prediction per clip</span><h3>The whole clip matters</h3><p>The model reads one complete eight-second spectrogram and estimates one source count.</p>
+    <article class="card span3 rv" style="--d:80ms" data-spot><span class="eg">One prediction per clip</span><h3>The whole clip matters</h3><p>The model reads one complete eight-second spectrogram and estimates one source count with MC-dropout uncertainty.</p>
       <div class="viz bars" aria-hidden="true">{% for i in range(34) %}<i style="--i:{{ i }}"></i>{% endfor %}</div></article>
-    <article class="card span2 rv" data-spot><span class="eg">Example</span><h3>Confidence you can read</h3><p>The model confidence appears next to the estimated count.</p>
-      <div class="mini-ring" aria-hidden="true"><svg viewBox="0 0 100 100"><circle class="a" cx="50" cy="50" r="42"/><circle class="b" cx="50" cy="50" r="42"/></svg><b>87%</b></div></article>
-    <article class="card span2 rv" style="--d:80ms" data-spot><h3>Private by default</h3><p>Audio goes to the Flask server on your computer, and the temporary copy is deleted after analysis.</p>
-      <div class="term" aria-hidden="true"><em>$</em> python app.py<br>Running on 127.0.0.1:5000<br><em>$</em> <u></u></div></article>
-    <article class="card span2 rv" style="--d:160ms" data-spot><span class="eg">Example</span><h3>A history of your runs</h3><p>Results are kept in this browser and export to CSV.</p>
-      <div class="mini-rows" aria-hidden="true"><div><b>3</b>podcast_ep12.wav<span>91%</span></div><div><b>5</b>cafe_corner.flac<span>74%</span></div><div><b>2</b>duet_take4.mp3<span>88%</span></div></div></article>
+    {% if public_stats %}
+    {% set c_all = public_stats.counting.overall %}
+    {% set c_unseen = public_stats.counting.held_out_unseen_speakers %}
+    {% set reliable_k = public_stats.counting.per_count_overall | rejectattr('unreliable') | list %}
+    <article class="card span2 rv" data-spot>
+      <h3>Measured, not promised</h3>
+      <p>Exact count accuracy across held-out test clips (n={{ '{:,}'.format(c_all.n) }}): <strong>{{ '%.1f'|format(c_all.exact_accuracy * 100) }}%</strong> exact, <strong>{{ '%.1f'|format(c_all.within_one * 100) }}%</strong> within ±1.</p>
+      <div class="k-bars" role="img" aria-label="Exact count accuracy by true source count K">
+        {% for row in reliable_k %}
+        {% set pct = (row.exact_accuracy * 100) | round(1) %}
+        <div class="k-bar" title="K={{ row.true_k }} (n={{ row.n }}): {{ pct }}% exact">
+          <span>{{ pct|int }}%</span>
+          <div class="k-bar-track"><i style="--h:{{ [pct, 3]|max }}%"></i></div>
+          <b>K={{ row.true_k }}</b>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="fine">Unseen speakers (n={{ c_unseen.n }}): {{ '%.1f'|format(c_unseen.exact_accuracy * 100) }}% exact · MAE {{ '%.2f'|format(c_unseen.mae) }}</p>
+      <div class="card-links">
+        <a href="{{ url_for('evaluation_page') }}">Full evaluation →</a>
+        <a href="{{ url_for('how_page') }}#evaluate">How we measured this</a>
+      </div>
+    </article>
+
+    {% set ds = public_stats.dataset %}
+    <article class="card span2 rv" style="--d:80ms" data-spot>
+      <h3>What it can hear</h3>
+      <div class="stat-mini-grid">
+        <div><b data-count="{{ ds.total_recognised_classes }}">0</b><span>sound classes ({{ ds.audioset_classes }} AudioSet + {{ ds.fsd_domain_classes }} domain)</span></div>
+        <div><b data-count="{{ ds.sound_groups_count }}">0</b><span>sound groups</span></div>
+        <div><b data-count="{{ ds.total_mixtures_active }}">0</b><span>active mixtures</span></div>
+        <div><b>{{ ds.source_counts_min }}–{{ ds.source_counts_max }}</b><span>sources covered</span></div>
+      </div>
+      <div class="chip-wrap" aria-label="Validated everyday sounds">
+        {% for item in public_stats.tagging.validated_everyday_sounds %}
+        <span class="mini-chip{{ ' open' if item.mode == 'open_vocabulary' else '' }}" title="{{ 'Open-vocabulary zero-shot' if item.mode == 'open_vocabulary' else 'Domain + open-vocabulary' }} · AP {{ '%.2f'|format(item.held_out_ap) }}">
+          {{ item.friendly_name }}{% if item.mode == 'open_vocabulary' %} <small>open-vocabulary</small>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <div class="card-links">
+        <a href="{{ url_for('how_page') }}#pipeline">How we measured this</a>
+      </div>
+    </article>
+
+    {% set lat = public_stats.latency.clip_8s %}
+    {% set gates = public_stats.quality_gates %}
+    <article class="card span2 rv" style="--d:160ms" data-spot>
+      <h3>Fast and checked</h3>
+      <p>Every separated stem passes 3 checks: self-consistency, correlation (&lt; {{ gates.max_correlation_threshold }}), and energy (±{{ (gates.energy_relative_l2_tolerance * 100)|int }}%).</p>
+      <div class="term" aria-label="Measured 8-second clip stage timings">
+        <em>$</em> 8s clip · {{ public_stats.hardware_label }}<br>
+        decode {{ lat.decode_ms }} ms · feature {{ lat.feature_ms }} ms<br>
+        count {{ lat.count_ms }} ms · tag {{ lat.open_tagger_s }} s<br>
+        separate {{ lat.query_separation_s }} s · zip {{ lat.zip_ms }} ms<br>
+        <span class="term-date">snapshot {{ public_stats.generated_at[:10] }}</span>
+      </div>
+      <div class="card-links">
+        <a href="{{ url_for('how_page') }}#quality-gates">How we measured this</a>
+      </div>
+    </article>
+    {% endif %}
   </div>
 </section>
 
@@ -83,16 +139,16 @@
 <section class="section wrap" style="padding-top:0">
   <div class="section-head rv"><h2>Questions people ask</h2></div>
   <div class="acc rv">
-    <details open><summary>Does it separate the sources into files?</summary><p>For sparse mixtures, yes. When the estimated count is 8 or fewer, the separator can write one WAV per source and bundle them into a ZIP. Denser mixtures are counted only, because separating them is not reliable. If the page shows an "Untrained demo weights" banner, the stems are not real separations.</p></details>
-    <details><summary>Why does it say the model is not trained?</summary><p>The app needs a checkpoint at checkpoints/source_count_clip.pt. Train one from labelled mixtures with train.py. The Docs page lists the exact command.</p></details>
-    <details><summary>What happens to my audio?</summary><p>It is sent to the Flask server running on your computer, analysed, and the temporary file is deleted. Your history stays in this browser only.</p></details>
+    <details open><summary>Does it separate the sources into files?</summary><p>For 2-speaker speech mixtures, yes — the installed SepFormer model separates two speakers into WAV stems plus a residual and ZIP bundle. General non-speech separation and 3+ speaker separation are disabled unless a trained separator checkpoint is loaded.</p></details>
+    <details><summary>Why does it say the model is not trained?</summary><p>The app needs a checkpoint at checkpoints/source_count_clip.pt. Run <code>python scripts/download_models.py</code> or train with <code>python scripts/train.py all --full</code>. The Docs page lists the exact commands.</p></details>
+    <details><summary>What happens to my audio?</summary><p>Uploaded audio is processed on the server in an isolated job folder and deleted automatically after {{ job_ttl_minutes }} minutes and on server startup. Your run history stays in this browser only.</p></details>
     <details><summary>What about recordings longer than 8 seconds?</summary><p>Only the middle 8 seconds are analysed, and the waveform marks which part. Shorter recordings are padded with silence.</p></details>
     <details><summary>Can I trust the confidence number?</summary><p>It shows how decisive the network was, not whether it was right. Check accuracy on a held-out test set before relying on it.</p></details>
   </div>
 </section>
 
 <section class="section wrap" style="padding-top:0">
-  <div class="cta rv"><h2>Drop a file. Get a count.</h2><p>No account, no upload to a cloud. Try a synthetic mixture if you do not have audio handy.</p>
+  <div class="cta rv"><h2>Drop a file. Get a count.</h2><p>No account required. Try a synthetic mixture if you do not have audio handy.</p>
     <a class="btn primary" data-magnetic href="{{ url_for('analyze_page') }}"><svg class="ic"><use href="#i-upload"/></svg>Open the analyzer</a></div>
 </section>
 {% endblock %}

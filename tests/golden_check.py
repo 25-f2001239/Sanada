@@ -74,6 +74,8 @@ def _eval_checksums() -> dict[str, str]:
     eval_dir = BASE_DIR / "evaluation"
     out = {}
     for p in sorted(eval_dir.glob("*.json")):
+        if p.name == "public_summary.json":
+            continue
         out[p.name] = hashlib.sha256(p.read_bytes()).hexdigest()
     return out
 
@@ -81,6 +83,21 @@ def _eval_checksums() -> dict[str, str]:
 def run_capture_or_verify(verify: bool = False) -> None:
     os.environ.pop("ECHOCOUNT_DEV", None)
     client = flask_app.app.test_client()
+
+    # Authenticate a QA test user so protected /api/analyze and /api/separate succeed
+    import auth as auth_mod
+
+    auth_mod.init_db()
+    with auth_mod._conn() as con:
+        row = con.execute("SELECT id FROM users WHERE email = ?", ("golden@gmail.com",)).fetchone()
+        uid = int(row["id"]) if row else int(
+            con.execute(
+                "INSERT INTO users (email, password_hash, email_verified, created_at) VALUES (?, ?, 1, ?)",
+                ("golden@gmail.com", auth_mod.hash_password("GoldenCheck123!"), time.time()),
+            ).lastrowid
+        )
+    sid, _ = auth_mod.create_session(uid)
+    client.set_cookie(auth_mod.SESSION_COOKIE, sid)
 
     # 1. Pages & API health/eval shapes
     pages = ["/", "/analyze", "/evaluation", "/history", "/how", "/docs"]

@@ -6,17 +6,17 @@ EchoCount is a Flask + PyTorch audio analysis product that counts overlapping so
 
 | File | Responsibility |
 | :--- | :--- |
-| [config.py](file:///C:/coding/SANADA/Sanada/config.py) | Paths, environment settings, `config.json` & `taxonomy.json` single-source-of-truth helpers |
-| [audio.py](file:///C:/coding/SANADA/Sanada/audio.py) | Upload sniffing, PyAV mono decode, polyphase resampling, WAV encoding, 64-band log-mel extraction |
-| [data.py](file:///C:/coding/SANADA/Sanada/data.py) | Dataset scanning, leakage audit, and dev-gated (`ECHOCOUNT_DEV=1`) SHA-256 ground-truth lookup |
-| [counting.py](file:///C:/coding/SANADA/Sanada/counting.py) | `SourceCountCNN`, sparse specialist ($K \le 8$) routing, isotonic calibration, batched MC-dropout uncertainty |
-| [tagging.py](file:///C:/coding/SANADA/Sanada/tagging.py) | 32-class `GroupFineTaggerCNN` + AudioSet-527 AST + CLAP zero-shot + sliding-window time localization |
-| [separation.py](file:///C:/coding/SANADA/Sanada/separation.py) | `IterativeMaskSeparator`, SpeechBrain SepFormer + ECAPA speech separation, query-conditioned Wiener separation, 8s/2s windowed cross-fade stitching |
-| [quality.py](file:///C:/coding/SANADA/Sanada/quality.py) | Stem quality gates: waveform correlation ($< 0.90$), energy conservation, and self-consistency re-tagging |
-| [app.py](file:///C:/coding/SANADA/Sanada/app.py) | Flask routes, rate limiting, async separation job queue, TTL cleanup, WAV/ZIP downloads |
-| [scripts/train.py](file:///C:/coding/SANADA/Sanada/scripts/train.py) | Unified training CLI (`counter`, `tagger`, `separator`, `all`; `--smoke` / `--full`) |
-| [scripts/evaluate.py](file:///C:/coding/SANADA/Sanada/scripts/evaluate.py) | Unified evaluation & latency profiler (`counter`, `benchmarks`, `profile`, `all`; `--smoke` / `--full`) |
-| `static/` & `templates/` | Jinja HTML templates and vanilla JS/CSS (`analyze.js`, `evaluation.js`, `history.js`, `how.js`, `main.js`, `style.css`) |
+| [config.py](config.py) | Paths, environment settings, `config.json` & `taxonomy.json` single-source-of-truth helpers |
+| [audio.py](audio.py) | Upload sniffing, PyAV mono decode, polyphase resampling, WAV encoding, 64-band log-mel extraction |
+| [data.py](data.py) | Dataset scanning, leakage audit, and dev-gated (`ECHOCOUNT_DEV=1`) SHA-256 ground-truth lookup |
+| [counting.py](counting.py) | `SourceCountCNN`, sparse specialist ($K \le 8$) routing, isotonic calibration, batched MC-dropout uncertainty |
+| [tagging.py](tagging.py) | 32-class `GroupFineTaggerCNN` + AudioSet-527 AST + CLAP zero-shot + sliding-window time localization |
+| [separation.py](separation.py) | `IterativeMaskSeparator`, SpeechBrain SepFormer + ECAPA speech separation, query-conditioned Wiener separation, 8s/2s windowed cross-fade stitching |
+| [quality.py](quality.py) | Stem quality gates: waveform correlation ($< 0.90$), energy conservation, and self-consistency re-tagging |
+| [app.py](app.py) | Flask routes (`/api/public-stats`, `/api/analyze`, `/api/separate`), rate limiting, async separation job queue, startup & TTL cleanup |
+| [scripts/train.py](scripts/train.py) | Unified training CLI (`counter`, `tagger`, `separator`, `all`; `--smoke` / `--full`) |
+| [scripts/evaluate.py](scripts/evaluate.py) | Unified evaluation, latency profiler, and `--export-public` (`evaluation/public_summary.json`) |
+| `content/`, `static/` & `templates/` | Data-driven `how_it_works.json`, Jinja HTML templates, and vanilla JS/CSS (`analyze.js`, `evaluation.js`, `history.js`, `how.js`, `main.js`, `style.css`) |
 
 ## 2. Request Flow
 

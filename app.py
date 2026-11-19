@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -19,11 +20,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-from flask import Flask, jsonify, render_template, request, send_file
+from dotenv import load_dotenv
+from flask import Flask, jsonify, make_response, redirect, render_template, request, send_file, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 import audio
+import auth
 import counting
 import data as data_mod
 import quality as quality_mod
@@ -38,9 +41,13 @@ from config import (
     SAMPLE_RATE,
 )
 
+load_dotenv(BASE_DIR / ".env")
+
 UPLOAD_DIR = BASE_DIR / "uploads"
 JOB_DIR = UPLOAD_DIR / "jobs"
 EVAL_PATH = Path(os.getenv("EVAL_RESULTS", str(EVAL_DIR / "results.json")))
+PUBLIC_SUMMARY_PATH = Path(os.getenv("PUBLIC_SUMMARY_PATH", str(EVAL_DIR / "public_summary.json")))
+HOW_CONTENT_PATH = BASE_DIR / "content" / "how_it_works.json"
 JOB_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
@@ -57,6 +64,13 @@ logging.basicConfig(
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+app.secret_key = auth.get_or_create_secret_key()
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("ECHOCOUNT_COOKIE_SECURE", "0") == "1"
+
+auth.init_db()
+auth.init_oauth(app)
 
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
@@ -154,8 +168,8 @@ def get_dense_mixture_warning(rounded_k: int) -> str | None:
     return f"Too many overlapping sounds to separate reliably: counts above about {last_k} are unreliable (measured exact accuracy at K={dense_k} is {dense_pct}%)"
 
 
-def sweep_jobs() -> None:
-    """Delete expired in-memory jobs and orphaned job directories."""
+def sweep_jobs(startup: bool = False) -> None:
+    """Delete expired in-memory jobs and orphaned job directories (all on startup)."""
     now = time.time()
     with _jobs_lock:
         expired = [jid for jid, job in _jobs.items() if now - job["created"] > JOB_TTL_SECONDS]
@@ -165,10 +179,44 @@ def sweep_jobs() -> None:
         shutil.rmtree(JOB_DIR / jid, ignore_errors=True)
     try:
         for p in JOB_DIR.iterdir():
-            if p.is_dir() and p.name not in _jobs and now - p.stat().st_mtime > JOB_TTL_SECONDS:
+            if not p.is_dir():
+                continue
+            if startup or (p.name not in _jobs and now - p.stat().st_mtime > JOB_TTL_SECONDS):
                 shutil.rmtree(p, ignore_errors=True)
     except OSError:
         pass
+
+
+sweep_jobs(startup=True)
+
+
+def _read_json_file(path: Path) -> dict | None:
+    """Read a JSON object from disk, returning None if absent or unreadable."""
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def load_public_summary() -> dict | None:
+    """Load the committed public benchmark summary if present."""
+    return _read_json_file(PUBLIC_SUMMARY_PATH)
+
+
+@app.context_processor
+def inject_site_globals() -> dict:
+    """Expose public stats, auth state, dev flag, and job retention TTL to all Jinja templates."""
+    return {
+        "public_stats": load_public_summary(),
+        "is_dev": data_mod.is_dev_mode(),
+        "job_ttl_minutes": max(1, round(JOB_TTL_SECONDS / 60)),
+        "current_user": auth.get_current_user(),
+        "csrf_token": auth.get_or_create_form_csrf(),
+        "oauth_providers": auth.provider_availability(),
+    }
 
 
 def get_job(job_id: str):
@@ -237,7 +285,11 @@ def history_page():
 
 @app.get("/how")
 def how_page():
-    return render_template("how.html", status=model_status())
+    return render_template(
+        "how.html",
+        status=model_status(),
+        how_content=_read_json_file(HOW_CONTENT_PATH) or {},
+    )
 
 
 @app.get("/docs")
@@ -248,6 +300,288 @@ def docs_page():
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True, "model": model_status()})
+
+
+@app.get("/api/public-stats")
+def public_stats_route():
+    summary = load_public_summary()
+    if summary is None:
+        return jsonify({"available": False, "reason": "Public summary has not been exported yet."}), 404
+    return jsonify(summary)
+
+
+def _safe_next_url(raw: str | None) -> str:
+    target = (raw or "/analyze").strip()
+    return target if target.startswith("/") and not target.startswith("//") else "/analyze"
+
+
+@app.get("/login")
+def login_page():
+    if auth.get_current_user():
+        return redirect(_safe_next_url(request.args.get("next")))
+    return render_template(
+        "auth.html",
+        status=model_status(),
+        mode="login",
+        next_url=_safe_next_url(request.args.get("next")),
+    )
+
+
+@app.get("/register")
+def register_page():
+    if auth.get_current_user():
+        return redirect(_safe_next_url(request.args.get("next")))
+    return render_template(
+        "auth.html",
+        status=model_status(),
+        mode="register",
+        next_url=_safe_next_url(request.args.get("next")),
+    )
+
+
+@app.get("/forgot-password")
+def forgot_password_page():
+    return render_template("auth.html", status=model_status(), mode="forgot", next_url="/analyze")
+
+
+@app.get("/reset-password")
+def reset_password_page():
+    return render_template(
+        "auth.html",
+        status=model_status(),
+        mode="reset",
+        token=request.args.get("token", ""),
+        next_url="/analyze",
+    )
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    user = auth.get_current_user()
+    if not user:
+        return jsonify({"authenticated": False}), 200
+    return jsonify(
+        {
+            "authenticated": True,
+            "email": user["email"],
+            "email_verified": user["email_verified"],
+            "role": user.get("role", "user"),
+        }
+    )
+
+
+@app.post("/auth/login")
+def auth_login_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    if not auth.verify_captcha_hook(request):
+        return jsonify({"error": "Verification check failed."}), 400
+    data = request.get_json(silent=True) or request.form
+    email = str(data.get("email", ""))
+    password = str(data.get("password", ""))
+    ip = request.remote_addr or "local"
+    if not auth.check_auth_rate_limit(f"login:ip:{ip}") or not auth.check_auth_rate_limit(
+        f"login:email:{auth.normalize_email(email)}", limit=5, window_s=300.0
+    ):
+        return jsonify({"error": "Too many sign-in attempts. Please wait a few minutes and try again."}), 429
+    user, err = auth.authenticate_password_user(email, password)
+    if err or not user:
+        return jsonify({"error": err or "Invalid email or password."}), 401
+    sid, _ = auth.create_session(user["id"])
+    resp = make_response(
+        jsonify({"ok": True, "email": user["email"], "redirect": _safe_next_url(data.get("next"))})
+    )
+    return auth.set_session_cookie(resp, sid)
+
+
+@app.post("/auth/register")
+def auth_register_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    if not auth.verify_captcha_hook(request):
+        return jsonify({"error": "Verification check failed."}), 400
+    data = request.get_json(silent=True) or request.form
+    email = str(data.get("email", ""))
+    password = str(data.get("password", ""))
+    ip = request.remote_addr or "local"
+    if not auth.check_auth_rate_limit(f"reg:ip:{ip}", limit=10, window_s=600.0):
+        return jsonify({"error": "Too many registration attempts. Please try again later."}), 429
+    uid, token, err = auth.register_password_user(email, password)
+    if err or not uid or not token:
+        return jsonify({"error": err or "Registration could not be completed."}), 400
+    verify_url = url_for("auth_verify_route", token=token, _external=True)
+    sent = auth.send_auth_email(
+        auth.normalize_email(email),
+        "Verify your EchoCount account",
+        f"Click this link to verify your EchoCount account (valid for 30 minutes):\n\n{verify_url}\n",
+    )
+    is_local_or_dev = (
+        (request.remote_addr in ("127.0.0.1", "::1", "localhost"))
+        or data_mod.is_dev_mode()
+        or os.getenv("ECHOCOUNT_TEST_VERIFY_LINK") == "1"
+    )
+    if not sent and not is_local_or_dev:
+        return jsonify(
+            {"error": "Email verification service (SMTP_HOST) is not configured on this server."}
+        ), 503
+    payload: dict = {
+        "ok": True,
+        "verification_required": True,
+        "message": (
+            "Verification email sent. Check your inbox to activate your account."
+            if sent
+            else "Account created. Click Verify email now to activate your account."
+        ),
+    }
+    if not sent and is_local_or_dev:
+        payload["verify_url"] = verify_url
+    return jsonify(payload), 201
+
+
+@app.get("/auth/verify")
+def auth_verify_route():
+    token = request.args.get("token", "")
+    uid = auth.consume_auth_token(token, "verify_email")
+    if not uid:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error="Verification link is invalid or expired. Please register or request a new link.",
+        ), 400
+    with auth._conn() as con:
+        con.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
+    sid, _ = auth.create_session(uid)
+    resp = make_response(redirect(url_for("analyze_page")))
+    return auth.set_session_cookie(resp, sid)
+
+
+@app.post("/auth/forgot")
+def auth_forgot_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    data = request.get_json(silent=True) or request.form
+    email = auth.normalize_email(str(data.get("email", "")))
+    ip = request.remote_addr or "local"
+    if not auth.check_auth_rate_limit(f"forgot:ip:{ip}", limit=6, window_s=600.0):
+        return jsonify({"error": "Too many reset requests. Please wait a few minutes."}), 429
+    payload: dict = {
+        "ok": True,
+        "message": "If an eligible verified account exists for that email, a reset link has been prepared.",
+    }
+    with auth._conn() as con:
+        row = con.execute("SELECT id, email_verified FROM users WHERE email = ?", (email,)).fetchone()
+    if row and row["email_verified"]:
+        token = auth.create_auth_token(int(row["id"]), "reset_password")
+        reset_url = url_for("reset_password_page", token=token, _external=True)
+        sent = auth.send_auth_email(
+            email,
+            "Reset your EchoCount password",
+            f"Reset your EchoCount password (valid for 30 minutes):\n\n{reset_url}\n",
+        )
+        is_local_or_dev = (
+            (request.remote_addr in ("127.0.0.1", "::1", "localhost"))
+            or data_mod.is_dev_mode()
+            or os.getenv("ECHOCOUNT_TEST_VERIFY_LINK") == "1"
+        )
+        if not sent and is_local_or_dev:
+            payload["reset_url"] = reset_url
+    return jsonify(payload)
+
+
+@app.post("/auth/reset")
+def auth_reset_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    data = request.get_json(silent=True) or request.form
+    token = str(data.get("token", ""))
+    password = str(data.get("password", ""))
+    pw_err = auth.validate_password(password)
+    if pw_err:
+        return jsonify({"error": pw_err}), 400
+    uid = auth.consume_auth_token(token, "reset_password")
+    if not uid:
+        return jsonify({"error": "Reset link is invalid or expired."}), 400
+    pw_hash = auth.hash_password(password)
+    with auth._conn() as con:
+        con.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, uid))
+        con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (uid,))
+    return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
+
+
+@app.post("/auth/logout")
+def auth_logout_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    user = auth.get_current_user()
+    if user:
+        auth.revoke_session(user["sid"])
+    resp = make_response(jsonify({"ok": True, "redirect": "/login"}))
+    return auth.clear_session_cookie(resp)
+
+
+@app.get("/auth/oauth/<provider>")
+def oauth_start(provider: str):
+    if provider not in auth.SUPPORTED_PROVIDERS:
+        return jsonify({"error": "Unsupported authentication provider."}), 404
+    client = auth._oauth.create_client(provider)
+    if client is None:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=f"{provider.title()} sign-in is not configured on this server yet.",
+        ), 503
+    redirect_uri = url_for("oauth_callback", provider=provider, _external=True)
+    return client.authorize_redirect(redirect_uri)
+
+
+@app.get("/auth/oauth/<provider>/callback")
+def oauth_callback(provider: str):
+    if provider not in auth.SUPPORTED_PROVIDERS:
+        return jsonify({"error": "Unsupported authentication provider."}), 404
+    client = auth._oauth.create_client(provider)
+    if client is None:
+        return redirect(url_for("login_page"))
+    try:
+        token = client.authorize_access_token()
+        userinfo = token.get("userinfo") or client.userinfo()
+    except Exception:
+        auth.logger.exception("OAuth callback failed for %s", provider)
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=f"{provider.title()} sign-in could not be verified. Please try again.",
+        ), 400
+    sub = str(userinfo.get("sub") or userinfo.get("oid") or "").strip()
+    raw_email = str(userinfo.get("email") or userinfo.get("preferred_username") or "").strip()
+    verified = userinfo.get("email_verified")
+    # Microsoft v2 enterprise tokens may omit email_verified when email is verified in tenant
+    is_verified = bool(verified) if verified is not None else (provider == "microsoft" and bool(raw_email))
+    if not sub or not raw_email:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error="Provider did not return a verified identity and email address.",
+        ), 400
+    user, err = auth.register_oauth_user(provider, sub, raw_email, is_verified)
+    if err or not user:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=err or "Could not sign in with provider.",
+        ), 403
+    sid, _ = auth.create_session(user["id"])
+    resp = make_response(redirect(url_for("analyze_page")))
+    return auth.set_session_cookie(resp, sid)
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -344,8 +678,10 @@ def _separation_eligibility(
 
 
 @app.post("/api/analyze")
+@auth.login_required
 def analyze():
     """Decode, count with uncertainty, run open-vocabulary tagging, and cluster speakers."""
+    user = auth.get_current_user()
     if not check_rate_limit():
         return jsonify({"error": "Rate limit exceeded. Please wait a moment and try again."}), 429
     status = model_status()
@@ -362,6 +698,7 @@ def analyze():
     try:
         t0 = time.perf_counter()
         job_id, _, original_path, samples, rate, name = read_upload()
+        auth.register_user_job(job_id, user["id"], name)
         clip, crop_start, duration = analysis_clip(samples, rate)
         timings["decode_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
@@ -375,11 +712,9 @@ def analyze():
         )
         timings["count_ms"] = round((time.perf_counter() - t1) * 1000, 1)
 
-        gt = None
-        if data_mod.is_dev_mode():
-            t2 = time.perf_counter()
-            gt = data_mod.lookup_ground_truth(original_path)
-            timings["gt_ms"] = round((time.perf_counter() - t2) * 1000, 1)
+        t2 = time.perf_counter()
+        gt = data_mod.lookup_ground_truth(original_path, allow_in_eval=True)
+        timings["gt_ms"] = round((time.perf_counter() - t2) * 1000, 1)
 
         t3 = time.perf_counter()
         tags_open = tagging.tag_open_vocabulary(
@@ -500,8 +835,18 @@ def analyze():
         },
         "timings": timings,
     }
-    if data_mod.is_dev_mode() and gt is not None:
-        payload["ground_truth"] = gt
+    if gt is not None:
+        payload["ground_truth"] = {
+            "available": True,
+            "true_k": gt["true_k"],
+            "true_labels": gt["true_labels"],
+            "true_groups": gt["true_groups"],
+            "family": gt["family"],
+            "dataset": gt["dataset"],
+            "split": gt["split"],
+            "match_method": "audio_hash",
+            **({"sha256": gt["sha256"]} if data_mod.is_dev_mode() else {}),
+        }
     return jsonify(payload)
 
 
@@ -703,11 +1048,15 @@ def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
 
 
 @app.post("/api/separate")
+@auth.login_required
 def separate_route():
+    user = auth.get_current_user()
     if not check_rate_limit():
         return jsonify({"error": "Rate limit exceeded. Please wait a moment and try again."}), 429
     payload = request.get_json(silent=True) or {}
     job_id = str(payload.get("job_id", ""))
+    if not auth.user_owns_job(job_id, user["id"]):
+        return jsonify({"error": "That analysis expired or does not exist."}), 404
     job = get_job(job_id)
     if job is None:
         return jsonify(
@@ -732,7 +1081,11 @@ def separate_route():
 
 
 @app.get("/api/separate/<job_id>")
+@auth.login_required
 def separate_status_route(job_id: str):
+    user = auth.get_current_user()
+    if not auth.user_owns_job(job_id, user["id"]):
+        return jsonify({"error": "Job expired or does not exist."}), 404
     job = get_job(job_id)
     if job is None:
         return jsonify({"error": "Job expired or does not exist."}), 404
@@ -745,7 +1098,11 @@ def separate_status_route(job_id: str):
 
 
 @app.get("/api/stem/<job_id>/<filename>")
+@auth.login_required
 def stem_preview(job_id: str, filename: str):
+    user = auth.get_current_user()
+    if not auth.user_owns_job(job_id, user["id"]):
+        return jsonify({"error": "Stem not found or expired."}), 404
     job = get_job(job_id)
     if job is None or not job["stems"] or filename not in job["stems"]:
         return jsonify({"error": "Stem not found or expired."}), 404
@@ -760,7 +1117,11 @@ def stem_preview(job_id: str, filename: str):
 
 
 @app.get("/api/download/<job_id>.zip")
+@auth.login_required
 def download(job_id: str):
+    user = auth.get_current_user()
+    if not auth.user_owns_job(job_id, user["id"]):
+        return jsonify({"error": "This download has expired or was never created."}), 404
     job = get_job(job_id)
     if job is None or not job["zip"]:
         return jsonify({"error": "This download has expired or was never created."}), 404
@@ -774,6 +1135,7 @@ def download(job_id: str):
 
 
 @app.post("/api/predict")
+@auth.login_required
 def predict():
     audio_file = request.files.get("audio")
     if audio_file is None or not audio_file.filename:

@@ -29,16 +29,39 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials.json
+secrets.json
 
 # Runtime uploads, temp, work, archives & local DBs
 uploads/
+user_uploads/
+jobs/
 tmp/
+temp/
 work/
 feature_cache/
+deliverables/
+dist/
+build/
+.cache/
 *.zip
 *.7z
+*.bak
+*.dump
 *.db
+*.sqlite
 *.sqlite3
+*.db-journal
+*.sqlite3-journal
+instance/
+data/.secret_key
+data/ground_truth_index.json
 
 # Downloaded pretrained models & trained checkpoints
 models/
@@ -50,6 +73,9 @@ checkpoints/*
 *.bin
 *.safetensors
 *.onnx
+*.h5
+*.keras
+*.tflite
 
 # Datasets, generated indexes, private/eval audio & large generated JSON
 data/*
@@ -66,3 +92,4 @@ data/isolated_sources/*
 
 # Keep small evaluation summary JSONs (< 1 MB) for How-it-works page; ignore large raw results
 evaluation/results.json
+!evaluation/public_summary.json

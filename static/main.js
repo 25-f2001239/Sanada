@@ -108,7 +108,7 @@
     ind = $("#ind"),
     bar = $("#scrollbar");
   const move = (a) => {
-    if (!a || innerWidth <= 860) return;
+    if (!a || innerWidth <= 1024) return;
     ind.style.opacity = 1;
     ind.style.left = a.offsetLeft + "px";
     ind.style.width = a.offsetWidth + "px";
@@ -170,7 +170,7 @@
       t: "How it works",
       k: "?",
       s: "Page",
-      run: () => (location.href = "/how-it-works"),
+      run: () => (location.href = "/how"),
     },
     {
       t: "Read the docs",
@@ -200,9 +200,7 @@
       s: "Action",
       run: () =>
         navigator.clipboard
-          .writeText(
-            "python train.py --metadata data/metadata.csv --epochs 25 --max-sources 32",
-          )
+          .writeText("python scripts/train.py all --full")
           .then(() => toast("Training command copied."))
           .catch(() => toast("Could not access the clipboard.", "err")),
     },
@@ -430,19 +428,79 @@
     addEventListener("load", fit);
   }
 
-  /* ---- live server status ---- */
-  const pill = $("#statusPill");
-  fetch("/api/health")
-    .then((r) => r.json())
-    .then((d) => {
-      const ok = d.model && d.model.trained;
-      pill.dataset.state = ok ? "ready" : "untrained";
-      $(".t", pill).textContent = ok ? "Model ready" : "Model not trained";
-    })
-    .catch(() => {
-      pill.dataset.state = "offline";
-      $(".t", pill).textContent = "Server offline";
+  /* ---- account dropdown & logout ---- */
+  const acctWrap = $("#acctWrap"),
+    acctBtn = $("#acctBtn"),
+    acctMenu = $("#acctMenu");
+  if (acctWrap && acctBtn && acctMenu) {
+    const items = () => $$('[role="menuitem"]', acctMenu);
+    const setOpen = (on, focusItem = false) => {
+      acctMenu.hidden = !on;
+      acctMenu.classList.toggle("open", on);
+      acctBtn.setAttribute("aria-expanded", on ? "true" : "false");
+      if (on && focusItem) items()[0]?.focus();
+    };
+    acctBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = acctMenu.hidden;
+      setOpen(willOpen, e.detail === 0);
     });
+    acctBtn.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setOpen(true, true);
+      }
+    });
+    acctWrap.addEventListener("keydown", (e) => {
+      const list = items();
+      const idx = list.indexOf(document.activeElement);
+      if (e.key === "Escape" && !acctMenu.hidden) {
+        e.preventDefault();
+        setOpen(false);
+        acctBtn.focus();
+      } else if (e.key === "ArrowDown" && !acctMenu.hidden && list.length) {
+        e.preventDefault();
+        list[(idx + 1) % list.length].focus();
+      } else if (e.key === "ArrowUp" && !acctMenu.hidden && list.length) {
+        e.preventDefault();
+        list[(idx - 1 + list.length) % list.length].focus();
+      } else if (e.key === "Tab" && !acctMenu.hidden) {
+        setOpen(false);
+      }
+    });
+    document.addEventListener("pointerdown", (e) => {
+      if (!acctMenu.hidden && !acctWrap.contains(e.target)) setOpen(false);
+    });
+  }
+
+  const doLogout = async () => {
+    const csrf = $('meta[name="csrf-token"]')?.content || "";
+    try {
+      await fetch("/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf },
+      });
+    } finally {
+      location.href = "/login";
+    }
+  };
+  $("#logoutBtn")?.addEventListener("click", doLogout);
+  $("#sheetLogoutBtn")?.addEventListener("click", doLogout);
+  const pill = $("#statusPill");
+  if (pill) {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => {
+        const ok = d.model && d.model.trained;
+        pill.dataset.state = ok ? "ready" : "untrained";
+        $(".t", pill).textContent = ok ? "Dev mode" : "Dev · untrained";
+      })
+      .catch(() => {
+        pill.dataset.state = "offline";
+        $(".t", pill).textContent = "Server offline";
+      });
+  }
 
   /* ---- hero: one coloured lane per source, summed into one mixture line ---- */
   const hero = $("#heroCanvas");

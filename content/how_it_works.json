@@ -1,0 +1,183 @@
+{
+  "problem": {
+    "title": "The problem we solve",
+    "lead": "Given a single-channel (mono) recording with multiple overlapping sounds, estimate how many distinct sources are active, name what they are, and separate sparse speech into individual stems.",
+    "cards": [
+      {
+        "title": "Why count before separating?",
+        "body": "Most audio separators assume you already know how many speakers or instruments are talking at once (for example, fixed 2-speaker or 3-speaker models). In real rooms, the count changes from clip to clip. Counting first tells downstream tools whether separation is even feasible."
+      },
+      {
+        "title": "Why mono audio is hard",
+        "body": "With two or more microphones you can use spatial direction-of-arrival. With a single channel, all sources sum into one pressure wave: overlapping harmonics, reverberation, and loudness differences mask quieter sounds as density grows."
+      },
+      {
+        "title": "Where this matters",
+        "body": "Acoustic scene monitoring, meeting and classroom analytics, hearing-aid pre-processing, and dataset curation all need reliable source-density estimates before spending compute on separation or transcription."
+      }
+    ]
+  },
+  "data": {
+    "title": "The data",
+    "lead": "EchoCount is trained and evaluated on deduplicated mixtures from the SANADA Combined Acoustic & Speech corpus plus an isolated FSD50K benchmark subset.",
+    "notes": [
+      "SHA-256 deduplication: 198 within-folder duplicate mixtures and 1 entire duplicate folder (Org_Fsd_Mix / Org_Mix_4_Sounds_Variable) are excluded before splitting so identical waveforms never leak across train, val, and test.",
+      "Speaker-disjoint evaluation: 3 of the 13 speakers in the speech corpus are held out completely to measure generalization to unseen voices.",
+      "Taxonomy: 5 coarse acoustic groups (Human voice, Musical instrument, Animal, Household/tools, Environment/other), 32 fine FSD classes, and 527 AudioSet classes (559 recognised classes total)."
+    ]
+  },
+  "pipeline": {
+    "title": "The full pipeline, step by step",
+    "lead": "Every uploaded clip passes through six deterministic stages on the server. No stage invents labels or stems when a model is missing or a quality gate fails.",
+    "steps": [
+      {
+        "step": "01",
+        "name": "Decode & Window",
+        "detail": "Convert to mono at 16 kHz. Clips longer than 8 s are centre-cropped to 128,000 samples (8.0 s) for counting; shorter clips are zero-padded. Original sample rate is preserved for stem export."
+      },
+      {
+        "step": "02",
+        "name": "Log-Mel Spectrogram",
+        "detail": "STFT with 1,024-sample Hann window (64 ms), 256-sample hop (16 ms), and 64 mel bands (40 Hz–8 kHz), producing a 64 × 501 time-frequency grid (32,064 cells)."
+      },
+      {
+        "step": "03",
+        "name": "Source Counting + MC-Dropout",
+        "detail": "SourceCountCNN (2–31) and a sparse specialist (2–8) run 30 stochastic MC-Dropout forward passes (p = 0.4), calibrated via isotonic regression fitted on validation data."
+      },
+      {
+        "step": "04",
+        "name": "3-Stage Open-Vocabulary Tagging",
+        "detail": "GroupFineTaggerCNN scores 5 groups and 32 fine classes; AST scores 527 AudioSet classes; CLAP (HTSAT-Unfused) provides zero-shot audio-text matching and frame-level time ranges."
+      },
+      {
+        "step": "05",
+        "name": "Conditional Separation",
+        "detail": "Pure 2-speaker speech routes to pretrained SepFormer (WSJ0-2mix) + ECAPA-TDNN speaker verification. General mixtures only separate when a trained general checkpoint is active, plus a residual stem (mix − sum of stems)."
+      },
+      {
+        "step": "06",
+        "name": "Three Quality Gates",
+        "detail": "Every separated stem is checked for near-copy correlation, energy conservation against the mixture, and self-consistency (re-tagging the isolated stem to confirm it still matches its label)."
+      }
+    ]
+  },
+  "train": {
+    "title": "How we train",
+    "lead": "Training uses the train and validation splits only; the test split is locked until final evaluation.",
+    "bullets": [
+      "Dual-head objective: Smooth L1 regression loss + Cross-Entropy classification loss over integer counts, balancing exact classification with ordinal closeness.",
+      "Optimization: AdamW with CosineAnnealingLR, SpecAugment time/frequency masking, and class-balanced sampling so rare source counts are not drowned out.",
+      "Early stopping & calibration: Best checkpoint is selected by validation macro MAE. Isotonic calibration and sparse-specialist blending are fitted strictly on validation predictions—never on test."
+    ]
+  },
+  "evaluate": {
+    "title": "How we evaluate (the metrics, explained)",
+    "lead": "All numbers on this site are loaded directly from evaluation/public_summary.json, exported from real held-out test runs.",
+    "metrics": [
+      {
+        "name": "Exact Accuracy",
+        "formula": "mean(y_pred == y_true)",
+        "meaning": "Fraction of clips where the rounded integer count matches the exact ground-truth source count."
+      },
+      {
+        "name": "Within ±1 Accuracy",
+        "formula": "mean(|y_pred − y_true| <= 1)",
+        "meaning": "Fraction of clips within one source of truth—useful when dense mixtures overlap heavily."
+      },
+      {
+        "name": "MAE & Bias",
+        "formula": "MAE = mean(|y_pred − y_true|), Bias = mean(y_pred − y_true)",
+        "meaning": "Average absolute error in sources, and whether the model systematically under-counts (negative) or over-counts (positive)."
+      },
+      {
+        "name": "Bootstrap 95% CI",
+        "formula": "1,000 resamples with replacement",
+        "meaning": "Uncertainty interval around test metrics; bins with n < 30 are flagged unreliable."
+      },
+      {
+        "name": "Macro mAP & F1",
+        "formula": "mean_c AP(c)",
+        "meaning": "Unweighted mean Average Precision across classes so frequent sounds cannot hide weak rare classes."
+      },
+      {
+        "name": "SI-SDRi (dB)",
+        "formula": "SI-SDR(stem, target) − SI-SDR(mix, target)",
+        "meaning": "Scale-Invariant Signal-to-Distortion Ratio improvement in decibels over the unseparated mixture."
+      }
+    ]
+  },
+  "findings": {
+    "title": "What we found (honest results)",
+    "lead": "EchoCount works well on sparse mixtures of familiar voices and everyday sounds, and degrades measurably on dense overlaps and unseen speakers.",
+    "limits": [
+      {
+        "title": "Dense mixture saturation (K ≥ 9)",
+        "body": "Exact accuracy is strong at K=2 (77.8%), K=3 (73.0%), and K=6 (70.4%), then collapses to 0.0% at K=9 (bias −2.41 sources) as spectral overlap saturates the 64-band log-mel grid."
+      },
+      {
+        "title": "Unseen-speaker generalization gap",
+        "body": "On the 3 held-out speakers (n=352), exact accuracy drops from 53.1% (overall speech) to 13.1% (MAE 2.05), showing the CNN partially memorizes training-set speaker timbres."
+      },
+      {
+        "title": "General non-speech separation",
+        "body": "The synthetic query-separation benchmark averages +2.51 dB SI-SDRi across 16 classes, but only 39.3% of stems pass self-consistency re-tagging—so general separation is disabled in production unless a trained separator checkpoint is loaded."
+      }
+    ]
+  },
+  "keep_in_mind": [
+    {
+      "title": "Counting is not separating",
+      "body": "Estimating K sources does not automatically produce K clean audio files. Real separation is currently enabled for 2-speaker speech via SepFormer WSJ0-2mix."
+    },
+    {
+      "title": "Long files are centre-cropped",
+      "body": "Counting analyses the central 8 seconds (16 kHz mono). Shorter files are zero-padded. The Analyze waveform marks the exact analysed region."
+    },
+    {
+      "title": "Uncertainty is not accuracy",
+      "body": "MC-Dropout spread and softmax confidence show model decisiveness, not ground-truth correctness—especially on unseen voices or dense scenes."
+    },
+    {
+      "title": "Automatic server cleanup",
+      "body": "Uploaded audio, generated stems, and ZIP archives are stored in isolated job folders and deleted automatically after the configured TTL and on server startup."
+    }
+  ],
+  "reproducibility": {
+    "title": "Reproducibility",
+    "lead": "Every number on this page can be reproduced from the repository CLI:",
+    "commands": "python scripts/download_models.py\npython scripts/train.py all --full\npython scripts/evaluate.py --export-public\npython tests/golden_check.py --verify\npython test_templates.py --full"
+  },
+  "references": [
+    {
+      "cite": "Fonseca et al. (2022)",
+      "title": "FSD50K: An Open Dataset of Human-Labeled Sound Events",
+      "detail": "IEEE/ACM TASLP · Source taxonomy & isolated everyday sound benchmark."
+    },
+    {
+      "cite": "Gong et al. (2021)",
+      "title": "AST: Audio Spectrogram Transformer",
+      "detail": "Interspeech · 527-class AudioSet backbone used in stage-2 tagging."
+    },
+    {
+      "cite": "Elizalde et al. / Wu et al. (2023)",
+      "title": "CLAP: Contrastive Language-Audio Pretraining",
+      "detail": "ICASSP · Zero-shot audio-text matching and open-vocabulary queries."
+    },
+    {
+      "cite": "Subakan et al. (2021)",
+      "title": "Attention Is All You Need In Speech Separation (SepFormer)",
+      "detail": "ICASSP · Pretrained WSJ0-2mix speech separator for 2-speaker mixtures."
+    },
+    {
+      "cite": "Desplanques et al. (2020)",
+      "title": "ECAPA-TDNN: Emphasized Channel Attention, Propagation and Aggregation",
+      "detail": "Interspeech · 192-D speaker embeddings for stem verification and clustering."
+    },
+    {
+      "cite": "Gal & Ghahramani (2016)",
+      "title": "Dropout as a Bayesian Approximation",
+      "detail": "ICML · Theoretical basis for 30-pass MC-Dropout count uncertainty."
+    }
+  ]
+}

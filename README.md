@@ -62,6 +62,9 @@ Model weights are excluded from git. Download the pretrained HuggingFace models 
 # Regenerates evaluation/results.json (ignored from git due to size):
 .\.venv\Scripts\python.exe scripts\evaluate.py counter --full
 .\.venv\Scripts\python.exe scripts\evaluate.py all --full
+
+# Export committed aggregate-only stats for the Home and How-it-works pages:
+.\.venv\Scripts\python.exe scripts\evaluate.py --export-public
 ```
 
 ---
@@ -91,7 +94,7 @@ All figures below are read directly from `evaluation/results.json` (`SourceCount
 - See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the file map, request pipeline diagram, and `ECHOCOUNT_DEV` mode details.
 - **Licences:** EchoCount code is licensed under the **MIT License** ([LICENSE](LICENSE)). Licences differ per pretrained model; see **[THIRD_PARTY.md](THIRD_PARTY.md)**. Some models were trained on datasets with research-only terms (for example WSJ0 for the SepFormer separator).
 - **Datasets:** Not included in git (`FSD_Mix_*` and `Org_Mix_*` live outside the repo; FSD50K isolated clips come from `Fhrozen/FSD50k` / Zenodo `4060432`; real-room recording protocol is in [data/real_eval/RECORDING_GUIDE.md](data/real_eval/RECORDING_GUIDE.md)).
-- **Privacy:** No user audio or recordings of people are stored in the repository. Uploaded audio is processed in temporary per-request directories deleted after `JOB_TTL_SECONDS`.
+- **Privacy:** No user audio or recordings of people are stored in the repository. Uploaded audio, stems, and ZIPs are processed in isolated `uploads/jobs/` directories deleted automatically after `JOB_TTL_SECONDS` (default 30 minutes) and on server startup. `evaluation/public_summary.json` contains aggregated metrics only (no filenames, paths, or hashes).
 
 ---
 

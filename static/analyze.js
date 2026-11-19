@@ -391,6 +391,11 @@
         data = JSON.parse(x.responseText);
       } catch {}
       done();
+      if (x.status === 401 || data.auth_required) {
+        fail("Please sign in to analyze recordings. Redirecting to sign in…");
+        setTimeout(() => (location.href = "/login?next=/analyze"), 900);
+        return;
+      }
       if (x.status >= 200 && x.status < 300) render(data);
       else fail(data.error || `The server answered with status ${x.status}.`);
     };
@@ -626,12 +631,73 @@
           )
         : "";
 
+    const gt = data.ground_truth;
+    let groundTruthHtml = "";
+    if (gt && gt.available) {
+      const delta = c.rounded_count - gt.true_k;
+      const deltaBadge =
+        delta === 0
+          ? `<span class="gt-badge ok">Exact count match</span>`
+          : `<span class="gt-badge diff">Delta ${delta > 0 ? "+" + delta : delta}</span>`;
+      const gtLabels =
+        Array.isArray(gt.true_labels) && gt.true_labels.length
+          ? gt.true_labels.map((l) => `<span class="tag-chip">${esc(l)}</span>`).join("")
+          : '<span class="fine">No reference labels</span>';
+      const predLabels =
+        namedSounds.length > 0
+          ? namedSounds
+              .map(
+                (ns) =>
+                  `<span class="tag-chip above">${esc(ns.name || ns.friendly_name || ns.class)} <small>${((ns.confidence ?? 0) * 100).toFixed(0)}%</small></span>`,
+              )
+              .join("")
+          : '<span class="fine">No named sounds above threshold</span>';
+      const gtGroups =
+        Array.isArray(gt.true_groups) && gt.true_groups.length
+          ? gt.true_groups.map((g) => esc(g)).join(", ")
+          : "—";
+      const predGroups =
+        Array.isArray(tg.active_groups) && tg.active_groups.length
+          ? tg.active_groups.map((g) => esc(g)).join(", ")
+          : "None above threshold";
+      groundTruthHtml = `<details open class="gt-panel" aria-label="Ground Truth vs Model Prediction">
+        <summary class="gt-summary">
+          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>Matched by audio content hash (${esc(gt.dataset || "corpus")} · ${esc(gt.split || "split")})</small></span>
+          ${deltaBadge}
+        </summary>
+        <div class="gt-compare-grid">
+          <div class="gt-col">
+            <div class="gt-col-head">GROUND TRUTH — REFERENCE DATA</div>
+            <div class="gt-stat"><span>Reference count</span><strong>${esc(gt.true_k)}</strong></div>
+            <div class="gt-stat"><span>Acoustic groups</span><span>${gtGroups}</span></div>
+            <div class="gt-stat-block"><span>Reference labels</span><div class="tag-chips">${gtLabels}</div></div>
+          </div>
+          <div class="gt-col">
+            <div class="gt-col-head pred">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
+            <div class="gt-stat"><span>Estimated count</span><strong>≈${esc(c.rounded_count)}</strong></div>
+            <div class="gt-stat"><span>Active groups</span><span>${predGroups}</span></div>
+            <div class="gt-stat-block"><span>Detected sounds</span><div class="tag-chips">${predLabels}</div></div>
+          </div>
+        </div>
+        <p class="fine" style="margin-top:8px">Reference data provides verified source counts, acoustic groups, and event labels; word-level transcripts are not part of this acoustic corpus.</p>
+      </details>`;
+    } else {
+      groundTruthHtml = `<details class="gt-panel gt-empty" aria-label="Ground Truth status">
+        <summary class="gt-summary">
+          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>No reference match for this recording</small></span>
+        </summary>
+        <p class="fine" style="margin-top:8px">No verified reference entry matched this recording's audio content hash. Showing <strong>MODEL PREDICTION — ECHOCOUNT OUTPUT</strong> only.</p>
+      </details>`;
+    }
+
     el.res.innerHTML = `<div class="result">
       <div id="resStages" class="res-stages">${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "idle", zip: "idle" })}</div>
-      <div class="count-card" role="group" aria-label="Estimated source count">
+      <div class="count-card" role="group" aria-label="Model prediction">
+        <div class="gt-col-head pred" style="margin-bottom:2px">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
         <div class="count-main"><b id="bigN">≈${c.rounded_count}</b><span class="count-pm">(±${spread})</span><span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
         <p>${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
       </div>
+      ${groundTruthHtml}
       ${spkClusterHtml}
       ${namedSoundsHtml}
       <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
