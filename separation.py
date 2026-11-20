@@ -217,7 +217,8 @@ def separator_status(path: Path | str = SEPARATOR_PATH) -> dict[str, Any]:
 
 def pretrained_speech_status() -> dict[str, Any]:
     """Check whether pretrained SpeechBrain SepFormer and ECAPA weights exist in models/."""
-    models_root = Path(load_config().get("models_dir", str(MODELS_DIR)))
+    cfg_dir = Path(load_config().get("models_dir", str(MODELS_DIR)))
+    models_root = cfg_dir if cfg_dir.is_dir() else MODELS_DIR
     sep2_dir, sep3_dir, ecapa_dir = (
         (models_root / "sepformer-wsj02mix").resolve(),
         (models_root / "sepformer-wsj03mix").resolve(),

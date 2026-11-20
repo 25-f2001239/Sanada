@@ -1001,7 +1001,7 @@ def analyze():
                 3,
             ),
             "mc_passes": result["passes"],
-            "display": f"≈{k} (±{spread})",
+            "display": f"≈{k}" if k <= 4 else f"≈{k} (±{spread})",
             "confidence_percent": round(result["confidence_percent"], 1),
             "min_sources": result["min_sources"],
             "max_sources": result["max_sources"],

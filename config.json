@@ -1,9 +1,9 @@
 {
   "dataset_path": "C:\\Users\\areys\\Downloads\\sanada",
-  "local_data_path": "C:\\coding\\SANADA\\Sanada\\data",
-  "real_eval_manifest": "C:\\coding\\SANADA\\Sanada\\data\\real_eval\\manifest.json",
-  "models_dir": "C:\\coding\\SANADA\\Sanada\\models",
-  "checkpoints_dir": "C:\\coding\\SANADA\\Sanada\\checkpoints",
+  "local_data_path": "data",
+  "real_eval_manifest": "data/real_eval/manifest.json",
+  "models_dir": "models",
+  "checkpoints_dir": "checkpoints",
   "exclude_duplicate_folders": [
     "Org_Fsd_Mix/Org_Mix_4_Sounds_Variable"
   ],

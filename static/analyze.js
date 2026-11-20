@@ -107,6 +107,7 @@
     if (!keepInput) {
       el.input.value = "";
       show("empty");
+      window.dispatchEvent(new CustomEvent("ec:reset"));
     }
   }
   function info() {
@@ -142,6 +143,18 @@
         if (m > mx) mx = m;
       }
       peaks = p.map((v) => v / (mx || 1));
+      window.dispatchEvent(
+        new CustomEvent("ec:file", {
+          detail: {
+            filename: f.name,
+            size: f.size,
+            duration: buf.duration,
+            sampleRate: buf.sampleRate,
+            peaks,
+            samples: d,
+          },
+        }),
+      );
     } catch {
       peaks = null;
       toast(
@@ -363,6 +376,9 @@
     el.bar.style.width = "0%";
     el.loadTxt.textContent = "Uploading";
     setStages({ decode: "active" });
+    window.dispatchEvent(
+      new CustomEvent("ec:run-start", { detail: { filename: file.name } }),
+    );
     const fd = new FormData();
     fd.append("audio", file);
     const x = new XMLHttpRequest();
@@ -383,6 +399,7 @@
       el.loadTxt.textContent = "Decoding, counting and naming sounds";
       el.bar.classList.add("indet");
       setStages({ decode: "done", count: "active", tag: "active" });
+      window.dispatchEvent(new CustomEvent("ec:run-stage", { detail: { stage: "infer" } }));
     };
     x.onload = () => {
       if (id !== runId) return;
@@ -428,6 +445,7 @@
   function fail(msg) {
     el.errTxt.textContent = msg;
     show("err");
+    window.dispatchEvent(new CustomEvent("ec:run-error", { detail: { error: msg } }));
   }
   el.go.addEventListener("click", run);
   el.retry.addEventListener("click", run);
@@ -438,6 +456,7 @@
   const fmtRange = (r) => `${fmtTime(r.start || 0)}–${fmtTime(r.end || 0)}`;
 
   function render(data) {
+    window.dispatchEvent(new CustomEvent("ec:run-result", { detail: data }));
     if (!data.trained || !data.count) {
       el.res.innerHTML = `<div class="result"><div><h3>No counting model available</h3><p>${esc(data.message || "The counting checkpoint is missing or incompatible.")}</p></div>
         ${data.model_error ? `<div class="notice">${esc(data.model_error)}</div>` : ""}
@@ -690,11 +709,14 @@
       </details>`;
     }
 
+    const pmHtml =
+      c.rounded_count > 4 ? `<span class="count-pm">(±${spread})</span>` : "";
+
     el.res.innerHTML = `<div class="result">
       <div id="resStages" class="res-stages">${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "idle", zip: "idle" })}</div>
       <div class="count-card" role="group" aria-label="Model prediction">
         <div class="gt-col-head pred" style="margin-bottom:2px">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
-        <div class="count-main"><b id="bigN">≈${c.rounded_count}</b><span class="count-pm">(±${spread})</span><span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
+        <div class="count-main"><b id="bigN">≈${c.rounded_count}</b> ${pmHtml}<span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
         <p>${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
       </div>
       ${groundTruthHtml}
