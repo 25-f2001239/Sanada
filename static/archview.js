@@ -1,4 +1,4 @@
-/* EchoCount — Live 2D Neural Architecture View */
+/* EchoCount — Live 2D Neural Architecture View (responsive horizontal desktop + vertical phone layout) */
 (() => {
   const { $, esc, fmtTime } = window.EC;
   const viewAnalysis = $("#analysisView"),
@@ -15,8 +15,6 @@
 
   if (!canvas || !viewArch) return;
 
-  const W = 1200,
-    H = 620;
   const ctx = canvas.getContext("2d");
   const bellSrc = viewArch.dataset.bellSrc || "/static/arch-bell.mp3";
   const doneSrc = viewArch.dataset.doneSrc || "/static/arch-done.mp3";
@@ -26,9 +24,9 @@
     TOTAL_SEC = 4.0;
   let activeView = "analysis";
   let flowState = "off";
-  let serverPending = false; // true while /api/analyze request is in flight
+  let serverPending = false;
   let speed = 1;
-  let elapsed = 0; // 0..4.0 seconds (1s per step at 1x)
+  let elapsed = 0;
   let animTime = 0;
   let selectedId = "counter";
   let fileInfo = null;
@@ -126,20 +124,7 @@
     playSound(stepKey === "step4" ? "done" : "step");
   }
 
-  // Stage boxes in logical 1200x620 coordinates
-  const NODES = {
-    decode: { id: "decode", x: 22, y: 206, w: 190, h: 208, title: "1. Audio Decode", sub: "soundfile · librosa" },
-    mel: { id: "mel", x: 248, y: 206, w: 206, h: 208, title: "2. Log-Mel Spectrogram", sub: "librosa.melspectrogram" },
-    counter: { id: "counter", x: 520, y: 22, w: 422, h: 176, title: "3A. Source Counter", sub: "SourceCountCNN + 30× MC-Dropout MLP" },
-    tagger: { id: "tagger", x: 520, y: 222, w: 422, h: 176, title: "3B. Open-Vocab Tagger", sub: "GroupFineTaggerCNN + AST + CLAP" },
-    speaker: { id: "speaker", x: 520, y: 422, w: 422, h: 176, title: "3C. Speakers & Separation", sub: "ECAPA-TDNN + SepFormer / MaskNet" },
-    fusion: { id: "fusion", x: 984, y: 186, w: 194, h: 248, title: "4. Output Fusion", sub: "Count · Tags · GT Hash" },
-  };
-
-  const COUNTER_MLP = buildLayers([5, 7, 5], 736, 66, 184, 108);
-  const TAGGER_MLP = buildLayers([4, 5, 4], 542, 268, 120, 96);
-  const ECAPA_NET = buildLayers([4, 5, 3], 542, 468, 114, 96);
-
+  // Responsive layout definitions (horizontal on desktop/tablet, vertical portrait on phones <= 760px)
   function buildLayers(counts, x0, y0, w, h) {
     const layers = counts.map((n, li) => {
       const lx = x0 + (li / Math.max(1, counts.length - 1)) * w;
@@ -159,6 +144,60 @@
       }
     }
     return { layers, edges };
+  }
+
+  function makeLayout(mobile) {
+    if (!mobile) {
+      const nodes = {
+        decode: { id: "decode", x: 22, y: 206, w: 190, h: 208, title: "1. Audio Decode", sub: "soundfile · librosa" },
+        mel: { id: "mel", x: 248, y: 206, w: 206, h: 208, title: "2. Log-Mel Spectrogram", sub: "librosa.melspectrogram" },
+        counter: { id: "counter", x: 520, y: 22, w: 422, h: 176, title: "3A. Source Counter", sub: "SourceCountCNN + 30× MC-Dropout MLP" },
+        tagger: { id: "tagger", x: 520, y: 222, w: 422, h: 176, title: "3B. Open-Vocab Tagger", sub: "GroupFineTaggerCNN + AST + CLAP" },
+        speaker: { id: "speaker", x: 520, y: 422, w: 422, h: 176, title: "3C. Speakers & Separation", sub: "ECAPA-TDNN + SepFormer / MaskNet" },
+        fusion: { id: "fusion", x: 984, y: 186, w: 194, h: 248, title: "4. Output Fusion", sub: "Count · Tags · GT Hash" },
+      };
+      return {
+        mobile: false,
+        W: 1200,
+        H: 620,
+        nodes,
+        hub: { x: 486, y: 310 },
+        counterMlp: buildLayers([5, 7, 5], nodes.counter.x + 216, nodes.counter.y + 44, 184, 108),
+        taggerMlp: buildLayers([4, 5, 4], nodes.tagger.x + 22, nodes.tagger.y + 46, 120, 96),
+        ecapaNet: buildLayers([4, 5, 3], nodes.speaker.x + 22, nodes.speaker.y + 46, 114, 96),
+      };
+    }
+
+    // Native portrait phone layout (440 x 1272) — zero horizontal scrolling!
+    const nodes = {
+      decode: { id: "decode", x: 24, y: 16, w: 392, h: 156, title: "1. Audio Decode", sub: "soundfile · librosa" },
+      mel: { id: "mel", x: 24, y: 204, w: 392, h: 164, title: "2. Log-Mel Spectrogram", sub: "librosa.melspectrogram" },
+      counter: { id: "counter", x: 24, y: 438, w: 392, h: 176, title: "3A. Source Counter", sub: "SourceCountCNN + 30× MC-Dropout MLP" },
+      tagger: { id: "tagger", x: 24, y: 632, w: 392, h: 176, title: "3B. Open-Vocab Tagger", sub: "GroupFineTaggerCNN + AST + CLAP" },
+      speaker: { id: "speaker", x: 24, y: 826, w: 392, h: 176, title: "3C. Speakers & Separation", sub: "ECAPA-TDNN + SepFormer / MaskNet" },
+      fusion: { id: "fusion", x: 24, y: 1062, w: 392, h: 194, title: "4. Output Fusion", sub: "Count · Tags · GT Hash" },
+    };
+    return {
+      mobile: true,
+      W: 440,
+      H: 1272,
+      nodes,
+      hub: { x: 220, y: 403 },
+      counterMlp: buildLayers([5, 7, 5], nodes.counter.x + 206, nodes.counter.y + 46, 168, 104),
+      taggerMlp: buildLayers([4, 5, 4], nodes.tagger.x + 18, nodes.tagger.y + 46, 106, 94),
+      ecapaNet: buildLayers([4, 5, 3], nodes.speaker.x + 18, nodes.speaker.y + 46, 104, 94),
+    };
+  }
+
+  let layout = makeLayout(window.innerWidth <= 760);
+
+  function syncLayout() {
+    const wantMobile = window.innerWidth <= 760;
+    if (wantMobile !== layout.mobile) {
+      layout = makeLayout(wantMobile);
+    }
+    canvas.classList.toggle("arch-portrait", layout.mobile);
+    if (activeView === "arch") renderFrame();
   }
 
   function computeSpectrogram(samples, sr) {
@@ -242,7 +281,6 @@
   function heatColor(v, lit, dark) {
     const t = Math.max(0, Math.min(1, v));
     if (!lit) {
-      // Powered-off monochrome dim spectrogram
       const g = dark ? Math.round(26 + t * 34) : Math.round(230 - t * 48);
       return `rgb(${g}, ${g}, ${g + (dark ? 4 : -2)})`;
     }
@@ -276,7 +314,7 @@
     ctx.moveTo(p0.x, p0.y);
     ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
     ctx.strokeStyle = active ? color : pal.wire;
-    ctx.globalAlpha = active ? 0.7 : 0.75;
+    ctx.globalAlpha = active ? 0.72 : 0.75;
     ctx.lineWidth = active ? 2.6 : 1.5;
     ctx.stroke();
 
@@ -296,11 +334,49 @@
     ctx.restore();
   }
 
+  // Smooth polyline rail bus for portrait mobile layout
+  function drawRailBus(pts, active, color, pulseOffset, pal) {
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      segs.push({ a: pts[i], b: pts[i + 1], len, start: total });
+      total += len;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = active ? color : pal.wire;
+    ctx.globalAlpha = active ? 0.72 : 0.75;
+    ctx.lineWidth = active ? 2.4 : 1.4;
+    ctx.stroke();
+
+    if (active && total > 0) {
+      ctx.globalAlpha = 1;
+      const count = total > 240 ? 3 : 2;
+      for (let i = 0; i < count; i++) {
+        const d = ((pulseOffset + i / count) % 1) * total;
+        const seg = segs.find((s) => d <= s.start + s.len) || segs[segs.length - 1];
+        const f = seg.len ? (d - seg.start) / seg.len : 0;
+        const x = seg.a.x + (seg.b.x - seg.a.x) * f;
+        const y = seg.a.y + (seg.b.y - seg.a.y) * f;
+        ctx.beginPath();
+        ctx.arc(x, y, 4.0, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 9;
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   function stageEnergy(stageId) {
-    // Turned-off Ferris wheel: zero lights when flowState === "off"
     if (flowState === "off") return 0;
 
-    // 1.0s per step at 1x: [0..1] decode, [1..2] mel, [2..3] 3 models, [3..4] fusion
     const ranges = {
       decode: [0.0, 1.12],
       mel: [1.0, 2.12],
@@ -313,7 +389,6 @@
     if (elapsed < a || elapsed > b) return 0;
     const len = b - a;
     const t = (elapsed - a) / len;
-    // Quick ramp-in, steady bright plateau, gentle ramp-out
     if (t < 0.12) return 0.35 + (t / 0.12) * 0.65;
     if (t > 0.85) return Math.max(0.25, 1 - ((t - 0.85) / 0.15) * 0.75);
     return 1.0;
@@ -342,7 +417,6 @@
     ctx.font = "500 10.5px 'Geist Mono', monospace";
     ctx.fillText(node.sub, node.x + 12, node.y + 37);
 
-    // LED indicator (completely dark when off)
     ctx.beginPath();
     ctx.arc(node.x + node.w - 14, node.y + 18, 4.2, 0, Math.PI * 2);
     ctx.fillStyle = lit ? accent : pal.wire;
@@ -352,10 +426,11 @@
 
   function drawDecodeContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const side = layout.mobile;
     const x = node.x + 12,
-      y = node.y + 52,
-      w = node.w - 24,
-      h = 84;
+      y = node.y + 50,
+      w = side ? 196 : node.w - 24,
+      h = side ? 90 : 84;
     ctx.save();
     roundRect(x, y, w, h, 8);
     ctx.fillStyle = pal.dark ? "rgba(255,255,255,0.03)" : "rgba(12,12,14,0.04)";
@@ -384,24 +459,27 @@
       ctx.fillRect(bx, midY - bh / 2, 2.4, Math.max(2, bh));
     }
 
+    const tx = side ? x + w + 14 : x;
+    const ty = side ? y + 20 : y + h + 18;
     ctx.fillStyle = pal.mute;
     ctx.font = "500 10px 'Geist Mono', monospace";
     const srTxt = fileInfo ? `${Math.round((fileInfo.sampleRate || 16000) / 1000)}kHz → 16kHz mono` : "WAV/MP3 → 16kHz mono";
-    const durTxt = fileInfo ? `Window: 8.0s (of ${fmtTime(fileInfo.duration)})` : "Window: 8.0s (128,000 pts)";
-    ctx.fillText(srTxt, x, y + h + 18);
-    ctx.fillText(durTxt, x, y + h + 34);
+    const durTxt = fileInfo ? `8.0s (of ${fmtTime(fileInfo.duration)})` : "8.0s (128,000 pts)";
+    ctx.fillText(srTxt, tx, ty);
+    ctx.fillText(`Window: ${durTxt}`, tx, ty + 18);
     const ms = lastResult?.timings?.decode_ms;
     ctx.fillStyle = lit ? pal.orange : pal.mute;
-    ctx.fillText(ms != null ? `Measured: ${ms} ms` : "decode_mono() + resample()", x, y + h + 50);
+    ctx.fillText(ms != null ? `Measured: ${ms} ms` : "decode_mono()", tx, ty + 36);
     ctx.restore();
   }
 
   function drawMelContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const side = layout.mobile;
     const x = node.x + 12,
-      y = node.y + 52,
-      w = node.w - 24,
-      h = 92;
+      y = node.y + 50,
+      w = side ? 196 : node.w - 24,
+      h = side ? 98 : 92;
     const cols = 40,
       bins = 16;
     const cw = w / cols,
@@ -436,15 +514,17 @@
     }
     ctx.restore();
 
+    const tx = side ? x + w + 14 : x;
+    const ty = side ? y + 20 : y + h + 16;
     ctx.save();
     ctx.fillStyle = pal.mute;
     ctx.font = "500 10px 'Geist Mono', monospace";
-    ctx.fillText("n_fft=1024 · hop=256 · 64 mels", x, y + h + 16);
+    ctx.fillText(side ? "n_fft=1024 · 64 mels" : "n_fft=1024 · hop=256 · 64 mels", tx, ty);
     ctx.fillStyle = lit ? pal.amber : pal.mute;
-    ctx.fillText("Tensor: [1, 64, 501]  [-1, 0]", x, y + h + 32);
+    ctx.fillText("Tensor: [1, 64, 501]", tx, ty + 18);
     const ms = lastResult?.timings?.feature_ms;
     ctx.fillStyle = pal.mute;
-    ctx.fillText(ms != null ? `Measured: ${ms} ms` : "Shared across all 3 branches →", x, y + h + 47);
+    ctx.fillText(ms != null ? `Measured: ${ms} ms` : "Shared → 3 models", tx, ty + 36);
     ctx.restore();
   }
 
@@ -468,7 +548,7 @@
         const dropped = lit && dropoutBlink && li === 1 && Math.sin(animTime * 9 + ni * 4.7) < -0.35;
         const glow = lit ? energy * layerAct * (0.6 + 0.4 * Math.sin(animTime * 5 + n.seed)) : 0;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, dropped ? 3.2 : 5.0, 0, Math.PI * 2);
+        ctx.arc(n.x, n.y, dropped ? 3.0 : 4.8, 0, Math.PI * 2);
         if (!lit || dropped) {
           ctx.fillStyle = pal.card;
           ctx.globalAlpha = dropped ? 0.3 : 0.85;
@@ -491,20 +571,22 @@
 
   function drawCounterContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const mob = layout.mobile;
     const convs = [
-      { lbl: "16", h: 66 },
-      { lbl: "32", h: 56 },
-      { lbl: "64", h: 46 },
-      { lbl: "64", h: 38 },
+      { lbl: "16", h: 64 },
+      { lbl: "32", h: 54 },
+      { lbl: "64", h: 44 },
+      { lbl: "64", h: 36 },
     ];
-    let cx = node.x + 16;
+    let cx = node.x + 14;
+    const stepX = mob ? 41 : 44;
+    const bw = mob ? 25 : 28;
     const baseY = node.y + 118;
     const activeConv = Math.floor(((animTime * 1.8) % 1) * 4);
     ctx.save();
     convs.forEach((c, i) => {
       const act = lit && i === activeConv;
-      const bw = 28,
-        by = baseY - c.h / 2;
+      const by = baseY - c.h / 2;
       for (let d = 2; d >= 0; d--) {
         roundRect(cx + d * 3, by - d * 3, bw, c.h, 4);
         ctx.fillStyle = act ? pal.orange : pal.card;
@@ -517,48 +599,53 @@
       ctx.globalAlpha = 1;
       ctx.fillStyle = pal.mute;
       ctx.font = "600 9.5px 'Geist Mono', monospace";
-      ctx.fillText(`C${c.lbl}`, cx + 4, baseY + c.h / 2 + 13);
-      cx += 44;
+      ctx.fillText(`C${c.lbl}`, cx + 3, baseY + c.h / 2 + 13);
+      cx += stepX;
     });
 
+    const arrowX = node.x + (mob ? 180 : 194);
     ctx.strokeStyle = lit ? pal.orange : pal.wire;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(node.x + 194, node.y + 118);
-    ctx.lineTo(node.x + 212, node.y + 118);
+    ctx.moveTo(arrowX, node.y + 118);
+    ctx.lineTo(arrowX + 16, node.y + 118);
     ctx.stroke();
 
-    drawNeuralNet(COUNTER_MLP, energy, pal.orange, pal, true);
+    drawNeuralNet(layout.counterMlp, energy, pal.orange, pal, true);
 
     ctx.fillStyle = pal.mute;
     ctx.font = "500 9.5px 'Geist Mono', monospace";
     const passNum = lit ? Math.floor(((animTime * 8) % 30) + 1) : 30;
-    ctx.fillText("Conv2D Trunk (Pool 4×16)", node.x + 16, node.y + 62);
-    ctx.fillText(`MLP 4096→256→30 · ${lit ? `MC pass ${passNum}/30` : "30× MC-Dropout"}`, node.x + 216, node.y + 56);
+    ctx.fillText("Conv2D Trunk (Pool 4×16)", node.x + 14, node.y + 62);
+    ctx.fillText(
+      `MLP 4096→256→30 · ${lit ? `MC ${passNum}/30` : "30× MC"}`,
+      node.x + (mob ? 202 : 216),
+      node.y + 56,
+    );
 
     const kTxt = lastResult?.count
       ? `Output: ${fmtCount(lastResult.count)} (${lastResult.count.confidence_percent}% · ${lastResult.timings?.count_ms ?? "—"} ms)`
       : "Output: ≈K ordinal regression";
     ctx.fillStyle = lit ? pal.orange : pal.mute;
     ctx.font = "600 10.5px 'Geist Mono', monospace";
-    ctx.fillText(kTxt, node.x + 16, node.y + node.h - 10);
+    ctx.fillText(kTxt, node.x + 14, node.y + node.h - 10);
     ctx.restore();
   }
 
   function drawTaggerContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const mob = layout.mobile;
     ctx.save();
     ctx.fillStyle = pal.mute;
     ctx.font = "600 9.5px 'Geist Mono', monospace";
-    ctx.fillText("FSD CNN+MLP (9+32)", node.x + 14, node.y + 58);
-    drawNeuralNet(TAGGER_MLP, energy, pal.teal, pal, false);
+    ctx.fillText(mob ? "FSD MLP (9+32)" : "FSD CNN+MLP (9+32)", node.x + 14, node.y + 58);
+    drawNeuralNet(layout.taggerMlp, energy, pal.teal, pal, false);
 
-    // AST Patch Attention 4x4 grid
-    const ax = node.x + 168,
+    const ax = node.x + (mob ? 148 : 168),
       ay = node.y + 68,
-      cell = 20;
+      cell = mob ? 18 : 20;
     ctx.fillStyle = pal.mute;
-    ctx.fillText("AST ViT (527 cls)", ax, node.y + 58);
+    ctx.fillText("AST ViT (527)", ax, node.y + 58);
     for (let r = 0; r < 4; r++) {
       for (let c = 0; c < 4; c++) {
         const w = lit ? 0.25 + 0.75 * Math.abs(Math.sin(animTime * 4 + r * 1.7 + c * 2.3)) : 0.25;
@@ -570,9 +657,10 @@
     }
     ctx.globalAlpha = 1;
 
-    // CLAP Zero-shot bars
-    const lx = node.x + 286,
-      ly = node.y + 68;
+    const lx = node.x + (mob ? 250 : 286),
+      ly = node.y + 68,
+      barOff = mob ? 66 : 74,
+      barW = mob ? 56 : 48;
     ctx.fillStyle = pal.mute;
     ctx.fillText("CLAP Audio↔Text", lx, node.y + 58);
     const demoTags = lastResult?.named_sounds?.length
@@ -591,11 +679,11 @@
       const pulse = lit ? 0.85 + 0.15 * Math.sin(animTime * 5 + i) : 1;
       ctx.fillStyle = lit ? pal.ink : pal.mute;
       ctx.font = "500 9.5px 'Geist Mono', monospace";
-      ctx.fillText(String(t.name).slice(0, 12), lx, y + 10);
-      roundRect(lx + 74, y + 2, 48, 9, 4);
+      ctx.fillText(String(t.name).slice(0, mob ? 10 : 12), lx, y + 10);
+      roundRect(lx + barOff, y + 2, barW, 9, 4);
       ctx.fillStyle = pal.wire;
       ctx.fill();
-      roundRect(lx + 74, y + 2, Math.max(4, 48 * t.p * pulse), 9, 4);
+      roundRect(lx + barOff, y + 2, Math.max(4, barW * t.p * pulse), 9, 4);
       ctx.fillStyle = lit ? pal.teal : pal.dim;
       ctx.fill();
     });
@@ -606,32 +694,32 @@
       : "Fuses FSD-32 + AST-527 + CLAP zero-shot";
     ctx.fillStyle = lit ? pal.teal : pal.mute;
     ctx.font = "600 10.5px 'Geist Mono', monospace";
-    ctx.fillText(tagSummary.slice(0, 56), node.x + 14, node.y + node.h - 10);
+    ctx.fillText(tagSummary.slice(0, mob ? 50 : 56), node.x + 14, node.y + node.h - 10);
     ctx.restore();
   }
 
   function drawSpeakerContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const mob = layout.mobile;
     ctx.save();
     ctx.fillStyle = pal.mute;
     ctx.font = "600 9.5px 'Geist Mono', monospace";
     ctx.fillText("ECAPA-TDNN Emb.", node.x + 14, node.y + 58);
-    drawNeuralNet(ECAPA_NET, energy, pal.violet, pal, false);
+    drawNeuralNet(layout.ecapaNet, energy, pal.violet, pal, false);
 
-    // Speaker cosine clusters
-    const cx = node.x + 168,
+    const cx = node.x + (mob ? 148 : 168),
       cy = node.y + 68,
-      cw = 100,
-      ch = 88;
+      cw = mob ? 88 : 100,
+      ch = 86;
     ctx.fillStyle = pal.mute;
     ctx.fillText("Cosine Clusters", cx, node.y + 58);
     roundRect(cx, cy, cw, ch, 8);
     ctx.fillStyle = lit ? "rgba(124,58,237,0.09)" : pal.dark ? "rgba(255,255,255,0.03)" : "rgba(12,12,14,0.04)";
     ctx.fill();
     const centers = [
-      { x: cx + 28, y: cy + 28, col: pal.violet },
-      { x: cx + 72, y: cy + 56, col: pal.orange },
-      { x: cx + 68, y: cy + 24, col: pal.teal },
+      { x: cx + cw * 0.28, y: cy + 28, col: pal.violet },
+      { x: cx + cw * 0.72, y: cy + 56, col: pal.orange },
+      { x: cx + cw * 0.68, y: cy + 24, col: pal.teal },
     ];
     centers.forEach((ctr, ci) => {
       for (let j = 0; j < 4; j++) {
@@ -646,16 +734,16 @@
     });
     ctx.globalAlpha = 1;
 
-    // Separation MaskNet / Quality Gates
-    const mx = node.x + 286,
-      my = node.y + 68;
+    const mx = node.x + (mob ? 250 : 286),
+      my = node.y + 68,
+      mw = mob ? 124 : 120;
     ctx.fillStyle = pal.mute;
     ctx.fillText("SepFormer / MaskNet", mx, node.y + 58);
     const gates = ["STFT Mask", "Corr <0.90", "Energy OK", "Re-tag OK"];
     gates.forEach((g, i) => {
       const y = my + i * 21;
       const gLit = lit && ((animTime * 2.5 + i) % 2) > 0.5;
-      roundRect(mx, y, 120, 15, 6);
+      roundRect(mx, y, mw, 15, 6);
       ctx.fillStyle = gLit
         ? "rgba(124,58,237,0.2)"
         : pal.dark
@@ -674,17 +762,19 @@
       : "Speaker count + on-demand stem separation";
     ctx.fillStyle = lit ? pal.violet : pal.mute;
     ctx.font = "600 10.5px 'Geist Mono', monospace";
-    ctx.fillText(spkTxt.slice(0, 56), node.x + 14, node.y + node.h - 10);
+    ctx.fillText(spkTxt.slice(0, mob ? 50 : 56), node.x + 14, node.y + node.h - 10);
     ctx.restore();
   }
 
   function drawFusionContent(node, energy, pal) {
     const lit = energy > 0.05;
+    const side = layout.mobile;
     const res = flowState === "off" || elapsed >= STEP_SEC * 3 ? lastResult : null;
     const x = node.x + 14,
-      w = node.w - 28;
+      boxW = side ? 168 : node.w - 28,
+      boxH = side ? 116 : 58;
     ctx.save();
-    roundRect(x, node.y + 52, w, 58, 10);
+    roundRect(x, node.y + 52, boxW, boxH, 10);
     ctx.fillStyle = lit
       ? "rgba(255,90,31,0.14)"
       : pal.dark
@@ -693,11 +783,16 @@
     ctx.fill();
     ctx.fillStyle = pal.mute;
     ctx.font = "600 9.5px 'Geist Mono', monospace";
-    ctx.fillText("ESTIMATED SOURCES", x + 10, node.y + 68);
+    ctx.fillText("ESTIMATED SOURCES", x + 10, node.y + 72);
     ctx.fillStyle = lit || res?.count ? pal.orange : pal.mute;
-    ctx.font = "800 22px Unbounded, Geist, sans-serif";
+    ctx.font = side ? "800 28px Unbounded, Geist, sans-serif" : "800 22px Unbounded, Geist, sans-serif";
     const bigK = res?.count ? fmtCount(res.count) : "≈ K";
-    ctx.fillText(bigK, x + 10, node.y + 98);
+    ctx.fillText(bigK, x + 10, node.y + (side ? 116 : 98));
+    if (side) {
+      ctx.fillStyle = pal.mute;
+      ctx.font = "500 10px 'Geist Mono', monospace";
+      ctx.fillText(res?.count ? "sources predicted" : "awaiting run", x + 10, node.y + 144);
+    }
 
     const rows = [
       ["Confidence", res?.count ? `${res.count.confidence_percent}%` : "MC + Softmax"],
@@ -717,20 +812,24 @@
           : "—",
       ],
     ];
+    const rx = side ? x + boxW + 16 : x;
+    const ry0 = side ? node.y + 62 : node.y + 132;
+    const stepY = side ? 29 : 27;
     rows.forEach(([k, v], i) => {
-      const y = node.y + 132 + i * 27;
+      const y = ry0 + i * stepY;
       ctx.fillStyle = pal.mute;
       ctx.font = "500 9.5px 'Geist Mono', monospace";
-      ctx.fillText(k, x, y);
+      ctx.fillText(k, rx, y);
       ctx.fillStyle = lit || res ? pal.ink : pal.mute;
       ctx.font = "600 10.5px 'Geist Mono', monospace";
-      ctx.fillText(v, x, y + 12);
+      ctx.fillText(v, rx, y + 12);
     });
     ctx.restore();
   }
 
   function renderFrame() {
     const pal = palette();
+    const { W, H, nodes: N, hub, mobile } = layout;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
       canvas.width = W * dpr;
@@ -756,30 +855,38 @@
       eFus = stageEnergy("fusion");
 
     const pulse = animTime * 0.9;
-
-    // 1 -> 2: Audio / Waveform (orange)
-    drawBus(
-      { x: NODES.decode.x + NODES.decode.w, y: 310 },
-      { x: NODES.mel.x, y: 310 },
-      eDec > 0.25 || eMel > 0.25,
-      pal.orange,
-      pulse,
-      pal,
-    );
-
-    // 2 -> 1->3 Splitter -> ALL 3 models: strictly yellowish (pal.amber) coming out of Log-Mel
-    const jx = 486,
-      jy = 310;
     const melOutActive = eMel > 0.25 || eCnt > 0.25 || eTag > 0.25 || eSpk > 0.25;
-    drawBus({ x: NODES.mel.x + NODES.mel.w, y: 310 }, { x: jx, y: jy }, melOutActive, pal.amber, pulse * 1.1, pal);
-    drawBus({ x: jx, y: jy }, { x: NODES.counter.x, y: 110 }, eCnt > 0.25, pal.amber, pulse * 1.1, pal);
-    drawBus({ x: jx, y: jy }, { x: NODES.tagger.x, y: 310 }, eTag > 0.25, pal.amber, pulse * 1.1, pal);
-    drawBus({ x: jx, y: jy }, { x: NODES.speaker.x, y: 510 }, eSpk > 0.25, pal.amber, pulse * 1.1, pal);
+    const outActive = eFus > 0.2 || (flowState === "play" && elapsed >= 2.65 && elapsed < 3.9);
 
-    // Splitter hub circle (yellowish when lit, dark unlit when off)
+    if (!mobile) {
+      // Horizontal desktop buses
+      drawBus({ x: N.decode.x + N.decode.w, y: 310 }, { x: N.mel.x, y: 310 }, eDec > 0.25 || eMel > 0.25, pal.orange, pulse, pal);
+      drawBus({ x: N.mel.x + N.mel.w, y: 310 }, hub, melOutActive, pal.amber, pulse * 1.1, pal);
+      drawBus(hub, { x: N.counter.x, y: 110 }, eCnt > 0.25, pal.amber, pulse * 1.1, pal);
+      drawBus(hub, { x: N.tagger.x, y: 310 }, eTag > 0.25, pal.amber, pulse * 1.1, pal);
+      drawBus(hub, { x: N.speaker.x, y: 510 }, eSpk > 0.25, pal.amber, pulse * 1.1, pal);
+
+      drawBus({ x: N.counter.x + N.counter.w, y: 110 }, { x: N.fusion.x, y: 248 }, outActive, pal.orange, pulse, pal);
+      drawBus({ x: N.tagger.x + N.tagger.w, y: 310 }, { x: N.fusion.x, y: 310 }, outActive, pal.teal, pulse, pal);
+      drawBus({ x: N.speaker.x + N.speaker.w, y: 510 }, { x: N.fusion.x, y: 372 }, outActive, pal.violet, pulse, pal);
+    } else {
+      // Portrait phone buses: Decode -> Mel -> 1->3 hub -> yellowish left rail into 3A/3B/3C -> colored right rail into Fusion
+      drawRailBus([{ x: 220, y: N.decode.y + N.decode.h }, { x: 220, y: N.mel.y }], eDec > 0.25 || eMel > 0.25, pal.orange, pulse, pal);
+      drawRailBus([{ x: 220, y: N.mel.y + N.mel.h }, hub], melOutActive, pal.amber, pulse * 1.1, pal);
+      drawRailBus([hub, { x: 220, y: N.counter.y }], eCnt > 0.25, pal.amber, pulse * 1.1, pal);
+      drawRailBus([hub, { x: 11, y: hub.y }, { x: 11, y: N.tagger.y + 88 }, { x: N.tagger.x, y: N.tagger.y + 88 }], eTag > 0.25, pal.amber, pulse * 1.1, pal);
+      drawRailBus([hub, { x: 11, y: hub.y }, { x: 11, y: N.speaker.y + 88 }, { x: N.speaker.x, y: N.speaker.y + 88 }], eSpk > 0.25, pal.amber, pulse * 1.1, pal);
+
+      const rx = N.counter.x + N.counter.w;
+      drawRailBus([{ x: rx, y: N.counter.y + 88 }, { x: 429, y: N.counter.y + 88 }, { x: 429, y: 1034 }, { x: 330, y: 1034 }, { x: 330, y: N.fusion.y }], outActive, pal.orange, pulse, pal);
+      drawRailBus([{ x: rx, y: N.tagger.y + 88 }, { x: 429, y: N.tagger.y + 88 }, { x: 429, y: 1044 }, { x: 275, y: 1044 }, { x: 275, y: N.fusion.y }], outActive, pal.teal, pulse, pal);
+      drawRailBus([{ x: 220, y: N.speaker.y + N.speaker.h }, { x: 220, y: N.fusion.y }], outActive, pal.violet, pulse, pal);
+    }
+
+    // Splitter hub circle
     ctx.save();
     ctx.beginPath();
-    ctx.arc(jx, jy, 11, 0, Math.PI * 2);
+    ctx.arc(hub.x, hub.y, 12, 0, Math.PI * 2);
     ctx.fillStyle = pal.card;
     ctx.fill();
     ctx.lineWidth = melOutActive ? 2.2 : 1.3;
@@ -793,33 +900,26 @@
     ctx.fillStyle = melOutActive ? pal.amber : pal.mute;
     ctx.font = "700 9px 'Geist Mono', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("1→3", jx, jy + 3);
+    ctx.fillText("1→3", hub.x, hub.y + 3);
     ctx.restore();
 
-    // 3 Models -> 4 Fusion: each model keeps its distinct output color (orange, teal, violet)
-    const outActive = eFus > 0.2 || (flowState === "play" && elapsed >= 2.65 && elapsed < 3.9);
-    drawBus({ x: NODES.counter.x + NODES.counter.w, y: 110 }, { x: NODES.fusion.x, y: 248 }, outActive, pal.orange, pulse, pal);
-    drawBus({ x: NODES.tagger.x + NODES.tagger.w, y: 310 }, { x: NODES.fusion.x, y: 310 }, outActive, pal.teal, pulse, pal);
-    drawBus({ x: NODES.speaker.x + NODES.speaker.w, y: 510 }, { x: NODES.fusion.x, y: 372 }, outActive, pal.violet, pulse, pal);
+    drawNodeFrame(N.decode, eDec, pal, pal.orange);
+    drawDecodeContent(N.decode, eDec, pal);
 
-    // Stage nodes
-    drawNodeFrame(NODES.decode, eDec, pal, pal.orange);
-    drawDecodeContent(NODES.decode, eDec, pal);
+    drawNodeFrame(N.mel, eMel, pal, pal.amber);
+    drawMelContent(N.mel, eMel, pal);
 
-    drawNodeFrame(NODES.mel, eMel, pal, pal.amber);
-    drawMelContent(NODES.mel, eMel, pal);
+    drawNodeFrame(N.counter, eCnt, pal, pal.orange);
+    drawCounterContent(N.counter, eCnt, pal);
 
-    drawNodeFrame(NODES.counter, eCnt, pal, pal.orange);
-    drawCounterContent(NODES.counter, eCnt, pal);
+    drawNodeFrame(N.tagger, eTag, pal, pal.teal);
+    drawTaggerContent(N.tagger, eTag, pal);
 
-    drawNodeFrame(NODES.tagger, eTag, pal, pal.teal);
-    drawTaggerContent(NODES.tagger, eTag, pal);
+    drawNodeFrame(N.speaker, eSpk, pal, pal.violet);
+    drawSpeakerContent(N.speaker, eSpk, pal);
 
-    drawNodeFrame(NODES.speaker, eSpk, pal, pal.violet);
-    drawSpeakerContent(NODES.speaker, eSpk, pal);
-
-    drawNodeFrame(NODES.fusion, eFus, pal, pal.lime);
-    drawFusionContent(NODES.fusion, eFus, pal);
+    drawNodeFrame(N.fusion, eFus, pal, pal.lime);
+    drawFusionContent(N.fusion, eFus, pal);
 
     ctx.restore();
   }
@@ -960,12 +1060,10 @@
     animTime += dt * speed;
     elapsed += dt * speed;
 
-    // If live server inference is still running past Step 3, hold smoothly inside Step 3 until result arrives
     if (serverPending && elapsed > STEP_SEC * 2.92) {
       elapsed = STEP_SEC * 2.92;
     }
 
-    // Ring bell cleanly once at the exact 1-second boundary of each step (0s, 1s, 2s, 3s at 1x)
     if (elapsed >= 0) ringStep("step1");
     if (elapsed >= STEP_SEC) ringStep("step2");
     if (elapsed >= STEP_SEC * 2) ringStep("step3");
@@ -977,7 +1075,7 @@
       rungSteps.clear();
       rafId = 0;
       updateBar();
-      renderFrame(); // Powered-off final state
+      renderFrame();
       return;
     }
 
@@ -994,6 +1092,7 @@
     tabArch.setAttribute("aria-selected", String(isArch));
     if (isArch) {
       ensureBellLoaded();
+      syncLayout();
       updateBar();
       renderInspector();
       renderFrame();
@@ -1034,9 +1133,9 @@
 
   canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * W;
-    const y = ((e.clientY - rect.top) / rect.height) * H;
-    for (const n of Object.values(NODES)) {
+    const x = ((e.clientX - rect.left) / rect.width) * layout.W;
+    const y = ((e.clientY - rect.top) / rect.height) * layout.H;
+    for (const n of Object.values(layout.nodes)) {
       if (x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h) {
         selectedId = n.id;
         renderInspector();
@@ -1046,12 +1145,12 @@
     }
   });
 
-  // Repaint on theme change even while powered off
+  window.addEventListener("resize", syncLayout);
+
   new MutationObserver(() => {
     if (activeView === "arch") renderFrame();
   }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-  // Sync with analyze.js events (normal Analysis view stays instant; Architecture view runs smooth 1s/step)
   window.addEventListener("ec:file", (e) => {
     const d = e.detail || {};
     fileInfo = { filename: d.filename, duration: d.duration, sampleRate: d.sampleRate };
@@ -1077,15 +1176,12 @@
       updateBar();
     }
   });
-  window.addEventListener("ec:run-stage", () => {
-    // Choreographed 1s-per-step timeline handles stage transitions smoothly
-  });
+  window.addEventListener("ec:run-stage", () => {});
   window.addEventListener("ec:run-result", (e) => {
     serverPending = false;
     lastResult = e.detail || null;
     renderInspector();
     updateBar();
-    // If Architecture view is currently running its 4s pass, let it continue smoothly into Step 4 with real results
     if (activeView === "arch" && flowState === "off") renderFrame();
   });
   window.addEventListener("ec:run-error", () => {
@@ -1093,6 +1189,7 @@
     stopFlow();
   });
 
+  syncLayout();
   updateBar();
   renderInspector();
 })();

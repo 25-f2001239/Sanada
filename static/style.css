@@ -3720,6 +3720,10 @@ a.acct-item {
   aspect-ratio: 1200 / 620;
   cursor: pointer;
 }
+#archCanvas.arch-portrait {
+  min-width: 0;
+  aspect-ratio: 440 / 1272;
+}
 .arch-legend {
   display: flex;
   align-items: center;
@@ -3753,8 +3757,253 @@ a.acct-item {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-@media (max-width: 720px) {
+
+/* ---- comprehensive phone & tablet optimization ---- */
+html,
+body {
+  overflow-x: clip;
+}
+.sheet {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.toc {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.toc::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .an-head-row {
+    align-items: stretch;
+  }
+  .view-toggle {
+    width: 100%;
+  }
+  .view-toggle button {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+  .arch-bar {
+    padding: 14px;
+    gap: 10px;
+  }
+  .arch-bar-left {
+    width: 100%;
+  }
+  .arch-bar-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .arch-bar-actions .btn.sm {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+  .arch-speed {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+  .arch-speed button {
+    padding: 9px 10px;
+    min-height: 38px;
+  }
+  .arch-canvas-panel {
+    padding: 10px;
+  }
+  .arch-canvas-wrap {
+    overflow-x: hidden;
+  }
+  .arch-legend {
+    gap: 8px 14px;
+    font-size: 0.76rem;
+  }
+  .arch-legend > .fine {
+    margin-left: 0 !important;
+    width: 100%;
+  }
   .arch-insp-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-tabs .tab-list,
+  .tab-list {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .admin-tabs .tab-list::-webkit-scrollbar,
+  .tab-list::-webkit-scrollbar {
+    display: none;
+  }
+  .tab-list button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .adm-select {
+    flex: 1 1 100%;
+  }
+  .adm-bar-row {
+    grid-template-columns: 70px 1fr 34px;
+    gap: 8px;
+    font-size: 0.78rem;
+  }
+  .adm-actions .btn.sm {
+    min-height: 34px;
+    padding: 6px 11px;
+  }
+  .table-wrap {
+    padding: 2px 6px;
+  }
+  .kv td,
+  .kv th {
+    padding: 9px 8px;
+    font-size: 0.83rem;
+  }
+  .auth-visual {
+    padding: 22px 18px;
+  }
+  .auth-card {
+    padding: 20px 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .wrap {
+    width: min(100% - 24px, 1340px);
+  }
+  .page-head {
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+  .page-head h1 {
+    font-size: clamp(1.75rem, 8.5vw, 2.5rem);
+  }
+  .panel {
+    padding: 15px;
+    border-radius: 18px;
+  }
+  .dark {
+    padding: 22px 16px;
+    border-radius: 22px;
+  }
+  .facts,
+  .doc .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 14px;
+  }
+  .facts b,
+  .doc .facts b {
+    font-size: clamp(1.3rem, 6vw, 1.85rem);
+    letter-spacing: -0.03em;
+  }
+  .facts span {
+    font-size: 0.8rem;
+  }
+  .how-grid,
+  .pipe-grid,
+  .fact-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    border-radius: 14px;
+  }
+  .seg button {
+    width: 100%;
+    padding: 9px 8px;
+    font-size: 0.82rem;
+  }
+  .count-card {
+    padding: 16px;
+  }
+  .count-main b {
+    font-size: clamp(2.3rem, 11vw, 3.2rem);
+  }
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .metric {
+    padding: 11px 12px;
+  }
+  .metric b {
+    font-size: 1.15rem;
+  }
+  .stages li {
+    padding: 5px 9px;
+    font-size: 0.76rem;
+  }
+  .gt-summary {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .player-bar {
+    gap: 8px;
+  }
+  .player-bar .legend {
+    width: 100%;
+    margin-left: 0;
+    font-size: 0.75rem;
+  }
+  .toolbar .search {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .toolbar > .btn.sm,
+  .toolbar > a.btn.sm {
+    flex: 1 1 calc(50% - 6px);
+    justify-content: center;
+  }
+  .hstats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .hrow {
+    padding: 12px;
+    gap: 10px;
+  }
+  .badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    font-size: 1.2rem;
+  }
+  .acct-btn {
+    max-width: 146px;
+    padding: 4px 8px;
+    gap: 5px;
+  }
+  .acct-label {
+    display: inline;
+    max-width: 82px;
+    font-size: 0.75rem;
+  }
+  .acct-badge {
+    padding: 2px 6px;
+    font-size: 0.66rem;
+  }
+  .foot-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .foot-top nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
   }
 }
