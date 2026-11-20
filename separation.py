@@ -676,17 +676,24 @@ def _separate_window_by_queries(
         )
         wq = (hp**1.35) * freq_w * time_w[None, :] * temp_gate
         if idx < len(neural_masks):
-            wq = 0.90 * wq + 0.10 * (mag**1.35) * neural_masks[idx]
+            wq = 0.65 * wq + 0.35 * (mag**1.35) * neural_masks[idx]
         raw_weights.append(wq.astype(np.float32))
 
     stack_w = np.stack(raw_weights, axis=0)
     for idx in range(num_q):
-        stack_w[idx] = (stack_w[idx] / (float(np.sqrt(np.mean(stack_w[idx] ** 2))) + 1e-8)) ** 2.2
+        stack_w[idx] = (stack_w[idx] / (float(np.sqrt(np.mean(stack_w[idx] ** 2))) + 1e-8)) ** 3.8
     masks = stack_w / (
         np.sum(stack_w, axis=0, keepdims=True)
-        + 0.18 * np.mean(stack_w, axis=0, keepdims=True)
+        + 0.08 * np.mean(stack_w, axis=0, keepdims=True)
         + 1e-12
     )
+    # Light 3-frame temporal smoothing prevents metallic chatter while keeping stems distinct
+    if n_frames >= 3:
+        k_sm = np.array([0.2, 0.6, 0.2], dtype=np.float32)
+        for idx in range(num_q):
+            masks[idx] = np.apply_along_axis(lambda r: np.convolve(r, k_sm, mode="same"), 1, masks[idx])
+        mask_sum = np.sum(masks, axis=0, keepdims=True)
+        masks = np.where(mask_sum > 1.0, masks / (mask_sum + 1e-12), masks)
     return [
         librosa.istft(stft_c * masks[i], hop_length=HOP_LENGTH, length=n_samples).astype(np.float32)
         for i in range(num_q)
