@@ -57,7 +57,7 @@
       </div>
       <p class="fine">Unseen speakers (n={{ c_unseen.n }}): {{ '%.1f'|format(c_unseen.exact_accuracy * 100) }}% exact · MAE {{ '%.2f'|format(c_unseen.mae) }}</p>
       <div class="card-links">
-        <a href="{{ url_for('evaluation_page') }}">Full evaluation →</a>
+        {% if is_admin %}<a href="{{ url_for('evaluation_page') }}">Full evaluation →</a>{% endif %}
         <a href="{{ url_for('how_page') }}#evaluate">How we measured this</a>
       </div>
     </article>

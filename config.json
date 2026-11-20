@@ -1,5 +1,5 @@
 {
-  "dataset_path": "C:\\coding\\SANADA\\sanada dataset",
+  "dataset_path": "C:\\Users\\areys\\Downloads\\sanada",
   "local_data_path": "C:\\coding\\SANADA\\Sanada\\data",
   "real_eval_manifest": "C:\\coding\\SANADA\\Sanada\\data\\real_eval\\manifest.json",
   "models_dir": "C:\\coding\\SANADA\\Sanada\\models",

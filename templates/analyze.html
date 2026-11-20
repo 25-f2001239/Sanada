@@ -67,4 +67,4 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" crossorigin="anonymous"></script><script src="{{ url_for('static', filename='analyze.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" crossorigin="anonymous"></script><script src="{{ url_for('static', filename='analyze.js', v=asset_v) }}"></script>{% endblock %}

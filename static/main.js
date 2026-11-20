@@ -205,21 +205,36 @@
           .catch(() => toast("Could not access the clipboard.", "err")),
     },
     {
-      t: "Clear saved history",
+      t: "Clear my history",
       k: "×",
       s: "Action",
-      run: () => {
-        if (
-          H.all().length &&
-          confirm("Delete all saved results from this browser?")
-        ) {
+      run: async () => {
+        if (!confirm("Clear all saved results from your account history?")) return;
+        const csrf = $('meta[name="csrf-token"]')?.content || "";
+        try {
+          const r = await fetch("/api/history", {
+            method: "DELETE",
+            credentials: "same-origin",
+            headers: { "X-CSRF-Token": csrf },
+          });
+          if (r.status === 401) return toast("Sign in first to clear your history.", "err");
+          if (!r.ok) throw new Error();
           H.clear();
           toast("History cleared.");
           if (location.pathname === "/history") location.reload();
+        } catch {
+          toast("Could not clear history.", "err");
         }
       },
     },
   ];
+  if (document.body.dataset.admin === "true")
+    cmds.splice(
+      4,
+      0,
+      { t: "Admin dashboard", k: "⛨", s: "Admin", run: () => (location.href = "/admin") },
+      { t: "Evaluation results", k: "E", s: "Admin", run: () => (location.href = "/evaluation") },
+    );
   let sel = 0,
     shown = cmds;
   function paint() {

@@ -5,15 +5,30 @@
 <div class="wrap">
   <div class="page-head">
     <h1>History</h1>
-    <p class="lead">Your past results, stored only in this browser.</p>
+    {% if current_user %}
+    <p class="lead">Your past analyses for <code>{{ current_user.email }}</code>.</p>
+    {% else %}
+    <p class="lead">Sign in to view your personal analysis history.</p>
+    {% endif %}
   </div>
+  {% if current_user %}
   <div class="hstats" id="hstats"></div>
   <div class="toolbar">
     <input class="search" id="q" type="search" placeholder="Search by file name" aria-label="Search history">
     <button class="btn sm" id="exportBtn" type="button"><svg class="ic"><use href="#i-download"/></svg>Export CSV</button>
     <button class="btn sm danger" id="clearAll" type="button"><svg class="ic"><use href="#i-trash"/></svg>Clear all</button>
   </div>
-  <div class="hlist" id="hlist"></div>
+  <div class="hlist" id="hlist" data-authed="true"><div class="panel state"><p>Loading your history…</p></div></div>
+  {% else %}
+  <div class="hlist" id="hlist" data-authed="false">
+    <div class="panel state">
+      <div class="orbit"><svg class="ic"><use href="#i-wave"/></svg></div>
+      <h3>Sign in required</h3>
+      <p>History is private to each account. Sign in to see your own past analyses.</p>
+      <a class="btn primary" href="{{ url_for('login_page', next='/history') }}">Sign In</a>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='history.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='history.js', v=asset_v) }}"></script>{% endblock %}

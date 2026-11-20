@@ -125,10 +125,15 @@ def test_quality_gates_and_windowing() -> None:
 
 
 def test_templates_and_routes() -> None:
-    """Verify all pages and API health route return HTTP 200 and templates tolerate missing keys."""
+    """Verify public pages return HTTP 200, admin pages are gated, and templates tolerate missing keys."""
     client = flask_app.app.test_client()
-    for route in ("/", "/analyze", "/evaluation", "/history", "/how", "/docs", "/api/health"):
+    for route in ("/", "/analyze", "/history", "/how", "/docs", "/api/health"):
         assert client.get(route).status_code == 200
+    # Evaluation & Admin are hidden from anonymous users
+    for route in ("/evaluation", "/admin"):
+        assert client.get(route).status_code == 302
+    assert client.get("/api/evaluation").status_code == 401
+    assert client.get("/api/admin/overview").status_code == 401
     cases = [
         flask_app.model_status(),
         {
@@ -148,6 +153,105 @@ def test_templates_and_routes() -> None:
         for st_dict in cases:
             assert "Count every" in render_template("index.html", status=st_dict)
     print("  [PASS] Templates & routes.")
+
+
+def test_admin_access_and_management() -> None:
+    """Verify admin-only evaluation, user promotion/demotion, invites, disabling, and audit log."""
+    import tempfile
+    import auth as auth_mod
+
+    orig_db = auth_mod.DB_PATH
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        auth_mod.DB_PATH = Path(td) / "test_admin.db"
+        auth_mod.init_db()
+        try:
+            admin_uid = auth_mod.ensure_admin_account("root_admin@gmail.com", "AdminStrong#2026")
+            c_admin = flask_app.app.test_client()
+            a_sid, a_csrf = auth_mod.create_session(admin_uid)
+            c_admin.set_cookie(auth_mod.SESSION_COOKIE, a_sid)
+
+            c_user = flask_app.app.test_client()
+            user_uid, _ = _login_test_user(c_user, "regular.member@gmail.com")
+
+            # Regular user cannot see /evaluation, /admin, or admin APIs
+            assert c_user.get("/evaluation").status_code == 404
+            assert c_user.get("/admin").status_code == 404
+            assert c_user.get("/api/evaluation").status_code == 403
+            assert c_user.get("/api/admin/overview").status_code == 403
+            user_home = c_user.get("/").get_data(as_text=True)
+            assert 'href="/evaluation"' not in user_home and 'href="/admin"' not in user_home
+
+            # Admin can see /evaluation, /admin, and all admin APIs
+            assert c_admin.get("/evaluation").status_code == 200
+            assert c_admin.get("/admin").status_code == 200
+            assert c_admin.get("/api/evaluation").status_code == 200
+            assert c_admin.get("/api/admin/overview").status_code == 200
+            assert c_admin.get("/api/admin/users").status_code == 200
+            assert c_admin.get("/api/admin/users.csv").status_code == 200
+            assert c_admin.get("/api/admin/analyses").status_code == 200
+            admin_home = c_admin.get("/").get_data(as_text=True)
+            assert 'href="/evaluation"' in admin_home and 'href="/admin"' in admin_home
+
+            # CSRF required on mutations
+            assert c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "admin"}).status_code == 403
+
+            # Promote user -> admin -> now user can access /evaluation
+            h = {"X-CSRF-Token": a_csrf}
+            r = c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "admin"}, headers=h)
+            assert r.status_code == 200 and r.get_json()["ok"] is True
+            assert c_user.get("/evaluation").status_code == 200
+
+            # Admin cannot demote themselves
+            r_self = c_admin.post(f"/api/admin/users/{admin_uid}/role", json={"role": "user"}, headers=h)
+            assert r_self.status_code == 400
+
+            # Demote user back to regular
+            r_dem = c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "user"}, headers=h)
+            assert r_dem.status_code == 200
+            assert c_user.get("/evaluation").status_code == 404
+
+            # Pre-authorize future admin by email invite -> auto-promoted on first sign-in
+            r_inv = c_admin.post("/api/admin/invites", json={"email": "future.admin@gmail.com"}, headers=h)
+            assert r_inv.status_code == 200
+            c_future = flask_app.app.test_client()
+            _login_test_user(c_future, "future.admin@gmail.com")
+            assert c_future.get("/admin").status_code == 200
+
+            # Disable user -> immediately invalidates session
+            r_dis = c_admin.post(f"/api/admin/users/{user_uid}/disabled", json={"disabled": True}, headers=h)
+            assert r_dis.status_code == 200
+            assert c_user.get("/api/auth/me").get_json()["authenticated"] is False
+
+            # Audit log recorded actions
+            audit = c_admin.get("/api/admin/audit").get_json()["audit"]
+            actions = {row["action"] for row in audit}
+            assert {"promote", "demote", "invite_admin", "invite_accepted", "disable"}.issubset(actions)
+
+            # Per-user history isolation: each user (and admin) only sees their own history;
+            # admin Activity sees everyone's even after a user clears their own history.
+            auth_mod.record_analysis(admin_uid, "j1", "admin_clip.wav", 8.0, 2, 91.0, None, None, 120.0)
+            auth_mod.record_analysis(user_uid, "j2", "user_clip.wav", 8.0, 4, 82.0, 4, "Org_Mix_4", 150.0)
+            # Re-enable user to verify history API
+            assert c_admin.post(f"/api/admin/users/{user_uid}/disabled", json={"disabled": False}, headers=h).status_code == 200
+            c_user2 = flask_app.app.test_client()
+            u_sid, u_csrf = auth_mod.create_session(user_uid)
+            c_user2.set_cookie(auth_mod.SESSION_COOKIE, u_sid)
+
+            adm_hist = c_admin.get("/api/history").get_json()["items"]
+            usr_hist = c_user2.get("/api/history").get_json()["items"]
+            assert [x["filename"] for x in adm_hist] == ["admin_clip.wav"]
+            assert [x["filename"] for x in usr_hist] == ["user_clip.wav"]
+
+            # User cannot delete admin's history item
+            assert c_user2.delete(f"/api/history/{adm_hist[0]['id']}", headers={"X-CSRF-Token": u_csrf}).status_code == 404
+            # User clears own history -> gone from /api/history, still visible in /api/admin/analyses
+            assert c_user2.delete("/api/history", headers={"X-CSRF-Token": u_csrf}).status_code == 200
+            assert c_user2.get("/api/history").get_json()["items"] == []
+            all_act = [x["filename"] for x in c_admin.get("/api/admin/analyses").get_json()["analyses"]]
+            assert "admin_clip.wav" in all_act and "user_clip.wav" in all_act
+        finally:
+            auth_mod.DB_PATH = orig_db
+    print("  [PASS] Admin access control, role management, invites, and audit log.")
 
 
 def _login_test_user(client, email: str = "qa.tester@gmail.com"):
@@ -445,6 +549,7 @@ def main() -> None:
     test_production_hygiene()
     test_quality_gates_and_windowing()
     test_templates_and_routes()
+    test_admin_access_and_management()
     test_expo_ready_pages_and_privacy()
     test_auth_security_and_ground_truth()
     test_five_fixed_clips_regression()

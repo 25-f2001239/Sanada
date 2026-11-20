@@ -34,11 +34,13 @@ import separation
 import tagging
 from config import (
     BASE_DIR,
+    CHECKPOINTS_DIR,
     CLIP_SAMPLES,
     CLIP_SECONDS,
     EVAL_DIR,
     MODEL_PATH,
     SAMPLE_RATE,
+    get_dataset_root,
 )
 
 load_dotenv(BASE_DIR / ".env")
@@ -63,6 +65,7 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
+APP_STARTED_AT = time.time()
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.secret_key = auth.get_or_create_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -214,8 +217,10 @@ def inject_site_globals() -> dict:
         "is_dev": data_mod.is_dev_mode(),
         "job_ttl_minutes": max(1, round(JOB_TTL_SECONDS / 60)),
         "current_user": auth.get_current_user(),
+        "is_admin": auth.is_admin(),
         "csrf_token": auth.get_or_create_form_csrf(),
         "oauth_providers": auth.provider_availability(),
+        "asset_v": int(APP_STARTED_AT),
     }
 
 
@@ -274,8 +279,15 @@ def analyze_page():
 
 
 @app.get("/evaluation")
+@auth.admin_required
 def evaluation_page():
     return render_template("evaluation.html", status=model_status())
+
+
+@app.get("/admin")
+@auth.admin_required
+def admin_page():
+    return render_template("admin.html", status=model_status())
 
 
 @app.get("/history")
@@ -592,6 +604,7 @@ def too_large(_error):
 
 
 @app.get("/api/evaluation")
+@auth.admin_required
 def evaluation():
     if not EVAL_PATH.is_file():
         return jsonify({"available": False, "reason": "No evaluation results yet."})
@@ -610,6 +623,186 @@ def evaluation():
         except Exception:
             pass
     return jsonify(payload)
+
+
+# ---------------------------------------------------------------------------
+# Admin API (all routes: admin role + CSRF on mutations, enforced by auth.admin_required)
+# ---------------------------------------------------------------------------
+
+
+def _dir_size_bytes(p: Path) -> int:
+    try:
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    except OSError:
+        return 0
+
+
+def _admin_system_status() -> dict:
+    st = model_status()
+    gt_index = data_mod.INDEX_PATH
+    gt_files = None
+    if gt_index.is_file():
+        try:
+            gt_files = json.loads(gt_index.read_text(encoding="utf-8")).get("total_files")
+        except (OSError, ValueError):
+            gt_files = None
+    with _jobs_lock:
+        active_jobs = len(_jobs)
+        separating = sum(1 for j in _jobs.values() if j.get("sep_status") == "running")
+    ckpts = {
+        p.name: p.is_file()
+        for p in (MODEL_PATH, CHECKPOINTS_DIR / "tagger.pt", CHECKPOINTS_DIR / "separator_iterative.pt")
+    }
+    try:
+        ds_root = get_dataset_root()
+        ds_root_str, ds_root_found = str(ds_root), ds_root.is_dir()
+    except OSError:
+        ds_root_str, ds_root_found = str(data_mod.load_config().get("dataset_path", "")), False
+    return {
+        "uptime_s": round(time.time() - APP_STARTED_AT),
+        "dev_mode": data_mod.is_dev_mode(),
+        "model_trained": bool(st.get("trained")),
+        "checkpoints": ckpts,
+        "evaluation_results": EVAL_PATH.is_file(),
+        "ground_truth_index_files": gt_files,
+        "dataset_root": ds_root_str,
+        "dataset_root_found": ds_root_found,
+        "active_jobs": active_jobs,
+        "separations_running": separating,
+        "job_storage_mb": round(_dir_size_bytes(JOB_DIR) / 1048576, 1),
+        "db_size_mb": round(auth.DB_PATH.stat().st_size / 1048576, 2) if auth.DB_PATH.is_file() else 0,
+        "oauth_providers": auth.provider_availability(),
+        "smtp_configured": bool(os.getenv("SMTP_HOST", "").strip()),
+        "limits": {
+            "max_upload_mb": round(MAX_UPLOAD_BYTES / 1048576, 1),
+            "max_duration_s": MAX_DURATION_SECONDS,
+            "job_ttl_min": round(JOB_TTL_SECONDS / 60),
+        },
+    }
+
+
+@app.get("/api/admin/overview")
+@auth.admin_required
+def admin_overview_route():
+    return jsonify({**auth.admin_overview(), "system": _admin_system_status()})
+
+
+@app.get("/api/admin/users")
+@auth.admin_required
+def admin_users_route():
+    return jsonify({"users": auth.admin_list_users(), "invites": auth.admin_list_invites(), "me": auth.get_current_user()["id"]})
+
+
+@app.get("/api/admin/users.csv")
+@auth.admin_required
+def admin_users_csv_route():
+    import csv
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = ["id", "email", "role", "email_verified", "disabled", "sign_in_methods", "created_at", "last_login_at", "analyses", "active_sessions"]
+    w.writerow(cols)
+    fmt = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else ""  # noqa: E731
+    for u in auth.admin_list_users():
+        w.writerow([
+            u["id"], u["email"], u["role"], u["email_verified"], u["disabled"], "+".join(u["sign_in_methods"]),
+            fmt(u["created_at"]), fmt(u["last_login_at"]), u["analyses"], u["active_sessions"],
+        ])
+    auth.log_admin_action(auth.get_current_user(), "export_users_csv")
+    resp = make_response(buf.getvalue())
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = "attachment; filename=echocount_users.csv"
+    return resp
+
+
+def _admin_result(ok_msg: tuple[bool, str]):
+    ok, msg = ok_msg
+    return jsonify({"ok": ok, "message" if ok else "error": msg}), (200 if ok else 400)
+
+
+@app.post("/api/admin/users/<int:user_id>/role")
+@auth.admin_required
+def admin_set_role_route(user_id: int):
+    role = str((request.get_json(silent=True) or {}).get("role", ""))
+    return _admin_result(auth.admin_set_role(auth.get_current_user(), user_id, role))
+
+
+@app.post("/api/admin/users/<int:user_id>/disabled")
+@auth.admin_required
+def admin_set_disabled_route(user_id: int):
+    disabled = bool((request.get_json(silent=True) or {}).get("disabled"))
+    return _admin_result(auth.admin_set_disabled(auth.get_current_user(), user_id, disabled))
+
+
+@app.post("/api/admin/users/<int:user_id>/revoke-sessions")
+@auth.admin_required
+def admin_revoke_sessions_route(user_id: int):
+    return _admin_result(auth.admin_revoke_sessions(auth.get_current_user(), user_id))
+
+
+@app.delete("/api/admin/users/<int:user_id>")
+@auth.admin_required
+def admin_delete_user_route(user_id: int):
+    return _admin_result(auth.admin_delete_user(auth.get_current_user(), user_id))
+
+
+@app.post("/api/admin/invites")
+@auth.admin_required
+def admin_invite_route():
+    email = str((request.get_json(silent=True) or {}).get("email", ""))
+    return _admin_result(auth.admin_invite(auth.get_current_user(), email))
+
+
+@app.delete("/api/admin/invites/<path:email>")
+@auth.admin_required
+def admin_cancel_invite_route(email: str):
+    return _admin_result(auth.admin_cancel_invite(auth.get_current_user(), email))
+
+
+@app.get("/api/admin/analyses")
+@auth.admin_required
+def admin_analyses_route():
+    return jsonify({"analyses": auth.admin_recent_analyses(int(request.args.get("limit", 50)))})
+
+
+@app.get("/api/admin/audit")
+@auth.admin_required
+def admin_audit_route():
+    return jsonify({"audit": auth.admin_audit_log(int(request.args.get("limit", 100)))})
+
+
+# ---------------------------------------------------------------------------
+# Per-user History API (strictly scoped to the currently logged-in user)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/history")
+@auth.login_required
+def user_history_route():
+    user = auth.get_current_user()
+    limit = max(1, min(500, int(request.args.get("limit", 200))))
+    return jsonify({"items": auth.user_history(user["id"], limit=limit), "email": user["email"]})
+
+
+@app.delete("/api/history/<int:item_id>")
+@auth.login_required
+def delete_user_history_item_route(item_id: int):
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    user = auth.get_current_user()
+    if not auth.delete_user_history_item(user["id"], item_id):
+        return jsonify({"error": "History item not found."}), 404
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/history")
+@auth.login_required
+def clear_user_history_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    user = auth.get_current_user()
+    cleared = auth.clear_user_history(user["id"])
+    return jsonify({"ok": True, "cleared": cleared})
 
 
 def _separation_eligibility(
@@ -847,6 +1040,17 @@ def analyze():
             "match_method": "audio_hash",
             **({"sha256": gt["sha256"]} if data_mod.is_dev_mode() else {}),
         }
+    auth.record_analysis(
+        user["id"],
+        job_id,
+        name,
+        round(duration, 2),
+        k,
+        round(float(result["confidence_percent"]), 1),
+        int(gt["true_k"]) if gt else None,
+        gt["dataset"] if gt else None,
+        round(sum(v for v in timings.values() if isinstance(v, (int, float))), 1),
+    )
     return jsonify(payload)
 
 

@@ -703,7 +703,7 @@
       <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
       ${warn}
       ${tagsHtml}
-      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the <a href="/evaluation">Evaluation</a> tab for measured error by source count.</div>
+      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the ${document.body.dataset.admin === "true" ? '<a href="/evaluation">Evaluation</a> tab' : '<a href="/how#findings">How it works</a> page'} for measured error by source count.</div>
       <section class="stems" aria-labelledby="stemsH"><h3 id="stemsH" class="sub">Separated stems</h3><div id="stemsBody"></div></section>
     </div>`;
 
@@ -724,15 +724,6 @@
     show("res");
     sepState = s;
     stemsEmpty(s, c.rounded_count, namedSounds);
-    H.add({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      ts: Date.now(),
-      filename: data.filename || file.name,
-      count: c.rounded_count,
-      conf: +(c.confidence_percent / 100).toFixed(3),
-      duration: a.duration_seconds || dur,
-      counts: [c.rounded_count],
-    });
   }
 
   function stemsEmpty(s, roundedCount, namedSounds) {
