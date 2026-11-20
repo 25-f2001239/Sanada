@@ -564,10 +564,16 @@
             const ivs = (o.intervals || [])
               .map((iv) => esc(fmtRange(iv)))
               .join(", ");
-            return `<span><strong>${pairName}</strong> (${ivs})</span>`;
+            return `<span class="overlap-chip"><strong>${pairName}</strong> <small>(${ivs})</small></span>`;
           })
-          .join(" &nbsp;·&nbsp; ");
-        overlapHtml = `<p class="fine" style="margin-top:8px"><strong>Co-occurring overlapping sounds:</strong> ${ovItems}</p>`;
+          .join("");
+        overlapHtml = `<div class="overlap-box" role="region" aria-label="Co-occurring overlapping sounds">
+          <div class="overlap-head">
+            <strong>Co-occurring overlapping sounds</strong>
+            <small>${overlaps.length} pair${overlaps.length === 1 ? "" : "s"}</small>
+          </div>
+          <div class="overlap-scroll">${ovItems}</div>
+        </div>`;
       }
 
       namedSoundsHtml = `<section class="tag-section" aria-labelledby="namedH">
