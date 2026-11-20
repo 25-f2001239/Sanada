@@ -556,30 +556,9 @@
         })
         .join("");
 
-      let overlapHtml = "";
-      if (overlaps.length > 0) {
-        const ovItems = overlaps
-          .map((o) => {
-            const pairName = (o.sounds || []).map((x) => esc(x)).join(" + ");
-            const ivs = (o.intervals || [])
-              .map((iv) => esc(fmtRange(iv)))
-              .join(", ");
-            return `<span class="overlap-chip"><strong>${pairName}</strong> <small>(${ivs})</small></span>`;
-          })
-          .join("");
-        overlapHtml = `<div class="overlap-box" role="region" aria-label="Co-occurring overlapping sounds">
-          <div class="overlap-head">
-            <strong>Co-occurring overlapping sounds</strong>
-            <small>${overlaps.length} pair${overlaps.length === 1 ? "" : "s"}</small>
-          </div>
-          <div class="overlap-scroll">${ovItems}</div>
-        </div>`;
-      }
-
       namedSoundsHtml = `<section class="tag-section" aria-labelledby="namedH">
         <h3 id="namedH" class="sub">Detected sounds <small>${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} with time ranges</small></h3>
         <div class="named-sounds-list">${rows}</div>
-        ${overlapHtml}
       </section>`;
     }
 

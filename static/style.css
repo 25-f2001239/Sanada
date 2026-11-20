@@ -4008,56 +4008,21 @@ body {
   }
 }
 
-/* ---- scrollable detected sounds & co-occurring overlaps window ---- */
+/* ---- scrollable detected sounds & Ground Truth chip windows ---- */
 .named-sounds-list {
-  max-height: 300px;
+  max-height: 280px;
   overflow-y: auto;
   padding-right: 4px;
   -webkit-overflow-scrolling: touch;
 }
-.overlap-box {
-  margin-top: 8px;
-  border: 1px solid var(--line2);
-  border-radius: var(--r2);
+.gt-stat-block .tag-chips,
+.tag-section .tag-chips {
+  max-height: 156px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 10px;
   background: var(--soft);
-  padding: 10px 12px;
-  display: grid;
-  gap: 8px;
-}
-.overlap-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 0.84rem;
-}
-.overlap-head small {
-  color: var(--mute);
-  font-family: var(--mono);
-  font-size: 0.76rem;
-}
-.overlap-scroll {
-  max-height: 136px;
-  overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-right: 4px;
-  -webkit-overflow-scrolling: touch;
-}
-.overlap-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border-radius: 99px;
-  background: var(--card);
   border: 1px solid var(--line);
-  font-size: 0.78rem;
-  line-height: 1.3;
-}
-.overlap-chip small {
-  color: var(--mute);
-  font-family: var(--mono);
-  font-size: 0.72rem;
+  align-content: flex-start;
+  -webkit-overflow-scrolling: touch;
 }
