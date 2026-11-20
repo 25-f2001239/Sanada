@@ -23,6 +23,7 @@ import numpy as np
 from dotenv import load_dotenv
 from flask import Flask, jsonify, make_response, redirect, render_template, request, send_file, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 import audio
@@ -65,6 +66,7 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 APP_STARTED_AT = time.time()
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.secret_key = auth.get_or_create_secret_key()
