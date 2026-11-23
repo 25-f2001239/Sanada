@@ -3,20 +3,21 @@
 {% block page %}analyze{% endblock %}
 {% block content %}
 <div class="wrap">
-  <div class="page-head">
+  <div class="page-head head-wave-host">
+    <canvas id="analyzeWaveField" class="wave-field-calm" aria-hidden="true"></canvas>
     <div class="an-head-row">
       <div>
         <h1>Analyze a recording</h1>
         <p class="lead">Choose a file, check it by ear, then count the sources and, when the count is low enough, separate them.</p>
       </div>
       <div class="view-toggle" role="tablist" aria-label="Analyze workspace view">
-        <button type="button" role="tab" id="viewTabAnalysis" data-view="analysis" aria-selected="true">Analysis view</button>
-        <button type="button" role="tab" id="viewTabArch" data-view="arch" aria-selected="false"><i class="live-dot" aria-hidden="true"></i>Architecture view</button>
+        <button type="button" role="tab" id="viewTabAnalysis" data-view="analysis" aria-selected="true" aria-controls="analysisView">Analysis view</button>
+        <button type="button" role="tab" id="viewTabArch" data-view="arch" aria-selected="false" aria-controls="archView"><i class="live-dot" aria-hidden="true"></i>Architecture view</button>
       </div>
     </div>
     {% if not current_user %}
     <div class="notice info" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px">
-      <span><strong>Sign in required:</strong> Sign in with Google, Microsoft, Yahoo, or your verified email to run audio analysis and stem separation.</span>
+      <span><strong>Sign in required:</strong> Sign in with your verified email or configured OAuth provider to run audio analysis and stem separation.</span>
       <span style="display:flex;gap:8px"><a class="btn sm" href="{{ url_for('login_page', next='/analyze') }}">Sign In</a><a class="btn sm primary" href="{{ url_for('register_page', next='/analyze') }}">Sign Up</a></span>
     </div>
     {% endif %}
@@ -26,6 +27,7 @@
     </div>
     {% endif %}
   </div>
+
   <div class="split" id="analysisView">
     <section class="panel stack" aria-label="Upload">
       <label class="dropzone" id="dropzone" for="audioInput" tabindex="0" aria-describedby="dzHelp">
@@ -74,39 +76,216 @@
     </section>
   </div>
 
-  <section class="arch-shell hidden" id="archView" data-bell-src="{{ url_for('static', filename='arch-bell.mp3', v=asset_v) }}" data-done-src="{{ url_for('static', filename='arch-done.mp3', v=asset_v) }}" aria-label="Live neural architecture visualization">
+  <section class="arch-shell hidden" id="archView" aria-label="Animated EchoCount system architecture">
     <div class="panel arch-bar">
       <div class="arch-bar-left">
-        <span class="fine" id="archFileLbl">No audio loaded</span>
+        <span class="arch-stage-pill" id="archPhasePill">STAGE 1 · AUDIO INPUT</span>
+        <span class="fine" id="archFileLbl">Pipeline flow active · Click any processing block below to inspect its tensors and code module</span>
       </div>
       <div class="arch-bar-actions">
-        <button class="btn sm" id="archPickBtn" type="button"><svg class="ic"><use href="#i-upload"/></svg><span>Load audio</span></button>
-        <button class="btn sm primary" id="archRunBtn" type="button" disabled>Analyze</button>
-        <button class="btn sm" id="archPlayBtn" type="button"><svg class="ic"><use href="#i-play"/></svg><span>Play flow</span></button>
-        <button class="btn sm" id="archMuteBtn" type="button" aria-pressed="true" title="Toggle step chime sound">Sound: On</button>
-        <div class="arch-speed" role="group" aria-label="Animation speed">
-          <button type="button" data-speed="0.5">0.5×</button>
-          <button type="button" data-speed="1" class="active">1×</button>
-          <button type="button" data-speed="2">2×</button>
+        <button class="btn sm" id="archPlayBtn" type="button" aria-label="Pause data-flow animation">
+          <svg class="ic" id="archPlayIcon"><use href="#i-pause"/></svg><span id="archPlayText">Pause flow</span>
+        </button>
+        <button class="btn sm" id="archRestartBtn" type="button" aria-label="Restart data-flow animation from Audio Input">
+          <span>Restart</span>
+        </button>
+        <div class="arch-speed" role="group" aria-label="Animation playback speed">
+          <button type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+          <button type="button" data-speed="1" class="active" aria-pressed="true">1×</button>
+          <button type="button" data-speed="2" aria-pressed="false">2×</button>
         </div>
       </div>
     </div>
 
-    <div class="panel arch-canvas-panel">
-      <div class="arch-canvas-wrap">
-        <canvas id="archCanvas" role="img" aria-label="Live 2D neural network pipeline showing audio decoding, log-mel spectrogram generation, and parallel inference through Counter CNN+MLP, Open-Vocab Tagger, and Speaker/Separation branches"></canvas>
+    <div class="panel arch-diagram-panel">
+      <div class="arch-svg-scroll" tabindex="0" role="region" aria-label="Interactive EchoCount pipeline architecture diagram">
+        <svg id="archSvg" class="arch-svg" viewBox="0 0 1160 500" role="img" aria-labelledby="archSvgTitle archSvgDesc">
+          <title id="archSvgTitle">EchoCount Parallel Acoustic Inference Architecture</title>
+          <desc id="archSvgDesc">Signal flows from Audio Input through PyAV Decode and Shared Log-Mel Spectrogram into three parallel branches: SourceCountCNN, Open-Vocabulary Audio Tagger, and Speaker/Source Separation, converging at Output Fusion and Quality Gates.</desc>
+          <defs>
+            <pattern id="archGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.06)" stroke-width="1"/>
+            </pattern>
+            <marker id="arrCyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 1 2 L 8 5 L 1 8 z" fill="#38bdf8"/>
+            </marker>
+            <marker id="arrAmber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 1 2 L 8 5 L 1 8 z" fill="#f59e0b"/>
+            </marker>
+            <marker id="arrTeal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 1 2 L 8 5 L 1 8 z" fill="#12b5a6"/>
+            </marker>
+            <marker id="arrViolet" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 1 2 L 8 5 L 1 8 z" fill="#a78bfa"/>
+            </marker>
+          </defs>
+
+          <rect x="0" y="0" width="1160" height="500" rx="14" fill="#090d16"/>
+          <rect x="0" y="0" width="1160" height="500" rx="14" fill="url(#archGrid)"/>
+
+          {# Column Headers #}
+          <g class="arch-col-headers" font-family="var(--mono)" font-size="10" fill="rgba(148,163,184,0.65)" letter-spacing="1.2">
+            <text x="86" y="28" text-anchor="middle">01 · INPUT</text>
+            <text x="252" y="28" text-anchor="middle">02 · PREPROCESS</text>
+            <text x="434" y="28" text-anchor="middle">03 · SHARED TENSOR</text>
+            <text x="710" y="28" text-anchor="middle">04 · PARALLEL MODEL BRANCHES</text>
+            <text x="1032" y="28" text-anchor="middle">05 · FUSION &amp; GATES</text>
+          </g>
+
+          {# Base Connection Paths #}
+          <g class="arch-paths-base" fill="none" stroke-linecap="round">
+            <path id="p-in-dec" d="M 150 250 L 184 250" stroke="rgba(56,189,248,0.28)" stroke-width="2" marker-end="url(#arrCyan)"/>
+            <path id="p-dec-mel" d="M 320 250 L 356 250" stroke="rgba(56,189,248,0.28)" stroke-width="2" marker-end="url(#arrCyan)"/>
+            <path id="p-mel-cnt" d="M 512 222 C 548 222, 548 98, 586 98" stroke="rgba(245,158,11,0.3)" stroke-width="2" marker-end="url(#arrAmber)"/>
+            <path id="p-mel-tag" d="M 512 250 L 586 250" stroke="rgba(18,181,166,0.3)" stroke-width="2" marker-end="url(#arrTeal)"/>
+            <path id="p-mel-sep" d="M 512 278 C 548 278, 548 402, 586 402" stroke="rgba(167,139,250,0.3)" stroke-width="2" marker-end="url(#arrViolet)"/>
+            <path id="p-cnt-fus" d="M 834 98 C 880 98, 880 220, 924 220" stroke="rgba(245,158,11,0.3)" stroke-width="2" marker-end="url(#arrAmber)"/>
+            <path id="p-tag-fus" d="M 834 250 L 924 250" stroke="rgba(18,181,166,0.3)" stroke-width="2" marker-end="url(#arrTeal)"/>
+            <path id="p-sep-fus" d="M 834 402 C 880 402, 880 280, 924 280" stroke="rgba(167,139,250,0.3)" stroke-width="2" marker-end="url(#arrViolet)"/>
+          </g>
+
+          {# Active Flow Dash Overlay Paths #}
+          <g class="arch-paths-flow" fill="none" stroke-linecap="round" stroke-dasharray="5 9">
+            <path id="f-in-dec" d="M 150 250 L 184 250" stroke="#38bdf8" stroke-width="2"/>
+            <path id="f-dec-mel" d="M 320 250 L 356 250" stroke="#38bdf8" stroke-width="2"/>
+            <path id="f-mel-cnt" d="M 512 222 C 548 222, 548 98, 586 98" stroke="#f59e0b" stroke-width="2"/>
+            <path id="f-mel-tag" d="M 512 250 L 586 250" stroke="#12b5a6" stroke-width="2"/>
+            <path id="f-mel-sep" d="M 512 278 C 548 278, 548 402, 586 402" stroke="#a78bfa" stroke-width="2"/>
+            <path id="f-cnt-fus" d="M 834 98 C 880 98, 880 220, 924 220" stroke="#f59e0b" stroke-width="2"/>
+            <path id="f-tag-fus" d="M 834 250 L 924 250" stroke="#12b5a6" stroke-width="2"/>
+            <path id="f-sep-fus" d="M 834 402 C 880 402, 880 280, 924 280" stroke="#a78bfa" stroke-width="2"/>
+          </g>
+
+          {# NODE 1: Audio Input #}
+          <g class="arch-node" data-node="input" tabindex="0" role="button" aria-label="Inspect Audio Input and Container Validation stage">
+            <rect class="node-box" x="22" y="182" width="128" height="136" rx="12"/>
+            <text class="node-kicker" x="36" y="204" fill="#38bdf8">audio.py</text>
+            <text class="node-title" x="36" y="224">Audio Input</text>
+            <text class="node-sub" x="36" y="241">WAV · MP3 · FLAC</text>
+            <g class="node-viz" id="vizInputWave" transform="translate(36, 254)">
+              {% for i in range(14) %}
+              <rect class="wbar" data-wi="{{ i }}" x="{{ i * 7 }}" y="6" width="4" height="22" rx="2" fill="#38bdf8" opacity="0.75"/>
+              {% endfor %}
+            </g>
+            <text class="node-dim" x="36" y="304">≤ 40 MB · ≤ 600 s</text>
+          </g>
+
+          {# NODE 2: PyAV Decode & Resample #}
+          <g class="arch-node" data-node="decode" tabindex="0" role="button" aria-label="Inspect PyAV Decode and 16 kHz Resampling stage">
+            <rect class="node-box" x="184" y="182" width="136" height="136" rx="12"/>
+            <text class="node-kicker" x="198" y="204" fill="#38bdf8">decode_mono()</text>
+            <text class="node-title" x="198" y="224">PyAV Decode</text>
+            <text class="node-sub" x="198" y="241">16 kHz Mono · 8.0 s</text>
+            <g transform="translate(198, 256)">
+              <rect x="0" y="0" width="108" height="26" rx="5" fill="rgba(15,23,42,0.9)" stroke="rgba(56,189,248,0.28)"/>
+              <rect id="vizDecodeWin" x="18" y="3" width="72" height="20" rx="3" fill="rgba(56,189,248,0.22)" stroke="#38bdf8" stroke-width="1"/>
+              <text x="54" y="16" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#bae6fd">center 8.0s</text>
+            </g>
+            <text class="node-dim" x="198" y="304">float32 [128,000]</text>
+          </g>
+
+          {# NODE 3: Shared Log-Mel Spectrogram #}
+          <g class="arch-node" data-node="logmel" tabindex="0" role="button" aria-label="Inspect Shared Log-Mel Spectrogram extraction stage">
+            <rect class="node-box" x="356" y="168" width="156" height="164" rx="12"/>
+            <text class="node-kicker" x="370" y="190" fill="#fbbf24">waveform_to_logmel()</text>
+            <text class="node-title" x="370" y="210">Log-Mel Tensor</text>
+            <text class="node-sub" x="370" y="227">n_fft=1024 · hop=256</text>
+            <g id="vizMelGrid" transform="translate(370, 238)">
+              {% for r in range(4) %}
+                {% for c in range(12) %}
+                <rect class="mel-cell" data-mr="{{ r }}" data-mc="{{ c }}" x="{{ c * 10.6 }}" y="{{ r * 11 }}" width="8.6" height="9" rx="1.5" fill="#f59e0b" opacity="0.35"/>
+                {% endfor %}
+              {% endfor %}
+            </g>
+            <text class="node-dim" x="370" y="302">Tensor [1, 64, 501]</text>
+            <text class="node-dim-sub" x="370" y="318">32,064 T-F cells · 40–8k Hz</text>
+          </g>
+
+          {# NODE 4A (TOP BRANCH): SourceCountCNN #}
+          <g class="arch-node is-selected" data-node="counter" tabindex="0" role="button" aria-label="Inspect SourceCountCNN counting branch">
+            <rect class="node-box branch-amber" x="586" y="42" width="248" height="114" rx="12"/>
+            <text class="node-kicker" x="602" y="63" fill="#f59e0b">BRANCH A · counting.py</text>
+            <text class="node-title" x="602" y="83">SourceCountCNN + MC-Dropout</text>
+            <text class="node-sub" x="602" y="100">Conv 16→32→64 · Pool 4×16 · Linear 256</text>
+            <g id="vizCounterBars" transform="translate(602, 110)">
+              <rect class="b-pill" x="0" y="0" width="48" height="14" rx="3" fill="rgba(245,158,11,0.22)" stroke="#f59e0b" stroke-width="1"/>
+              <text x="24" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#fde68a">Conv×3</text>
+              <rect class="b-pill" x="54" y="0" width="54" height="14" rx="3" fill="rgba(245,158,11,0.22)" stroke="#f59e0b" stroke-width="1"/>
+              <text x="81" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#fde68a">30× MC</text>
+              <rect class="b-pill" x="114" y="0" width="102" height="14" rx="3" fill="rgba(245,158,11,0.28)" stroke="#f59e0b" stroke-width="1"/>
+              <text x="165" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#fef3c7" id="vizCountOut">K̂ ∈ [2..31] ± σ</text>
+            </g>
+            <text class="node-dim" x="602" y="143">2.15M params · Isotonic + K≤8 Specialist</text>
+          </g>
+
+          {# NODE 4B (MIDDLE BRANCH): Open-Vocabulary Audio Tagger #}
+          <g class="arch-node" data-node="tagger" tabindex="0" role="button" aria-label="Inspect Open-Vocabulary Audio Tagger branch">
+            <rect class="node-box branch-teal" x="586" y="193" width="248" height="114" rx="12"/>
+            <text class="node-kicker" x="602" y="214" fill="#12b5a6">BRANCH B · tagging.py</text>
+            <text class="node-title" x="602" y="234">GroupFineTagger + AST + CLAP</text>
+            <text class="node-sub" x="602" y="251">5 Groups · 32 Fine · 527 AudioSet · Zero-Shot</text>
+            <g id="vizTaggerBars" transform="translate(602, 261)">
+              <rect class="b-pill" x="0" y="0" width="66" height="14" rx="3" fill="rgba(18,181,166,0.2)" stroke="#12b5a6" stroke-width="1"/>
+              <text x="33" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#99f6e4">CNN (5/32)</text>
+              <rect class="b-pill" x="72" y="0" width="66" height="14" rx="3" fill="rgba(18,181,166,0.2)" stroke="#12b5a6" stroke-width="1"/>
+              <text x="105" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#99f6e4">AST-527</text>
+              <rect class="b-pill" x="144" y="0" width="72" height="14" rx="3" fill="rgba(18,181,166,0.26)" stroke="#12b5a6" stroke-width="1"/>
+              <text x="180" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#ccfbf1">CLAP 48k</text>
+            </g>
+            <text class="node-dim" x="602" y="294">Frame-level time ranges &amp; confidence</text>
+          </g>
+
+          {# NODE 4C (BOTTOM BRANCH): Speaker Clustering & Separation #}
+          <g class="arch-node" data-node="separator" tabindex="0" role="button" aria-label="Inspect Speaker Clustering and Source Separation branch">
+            <rect class="node-box branch-violet" x="586" y="344" width="248" height="114" rx="12"/>
+            <text class="node-kicker" x="602" y="365" fill="#a78bfa">BRANCH C · separation.py</text>
+            <text class="node-title" x="602" y="385">ECAPA-TDNN + SepFormer / Wiener</text>
+            <text class="node-sub" x="602" y="402">192-D Speaker Emb · 2-Spk Speech · Query Mask</text>
+            <g id="vizSepBars" transform="translate(602, 412)">
+              <rect class="b-pill" x="0" y="0" width="72" height="14" rx="3" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1"/>
+              <text x="36" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#ddd6fe">ECAPA 192D</text>
+              <rect class="b-pill" x="78" y="0" width="68" height="14" rx="3" fill="rgba(167,139,250,0.2)" stroke="#a78bfa" stroke-width="1"/>
+              <text x="112" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#ddd6fe">SepFormer</text>
+              <rect class="b-pill" x="152" y="0" width="64" height="14" rx="3" fill="rgba(167,139,250,0.26)" stroke="#a78bfa" stroke-width="1"/>
+              <text x="184" y="10" text-anchor="middle" font-family="var(--mono)" font-size="8.5" fill="#ede9fe">Residual</text>
+            </g>
+            <text class="node-dim" x="602" y="445">8.0 s windows · 2.0 s cross-fade</text>
+          </g>
+
+          {# NODE 5: Output Fusion & 3 Quality Gates #}
+          <g class="arch-node" data-node="fusion" tabindex="0" role="button" aria-label="Inspect Output Fusion and 3 Quality Gates stage">
+            <rect class="node-box" x="924" y="152" width="216" height="196" rx="12"/>
+            <text class="node-kicker" x="938" y="174" fill="#c8f04a">quality.py · app.py</text>
+            <text class="node-title" x="938" y="194">Fusion &amp; Quality Gates</text>
+            <text class="node-sub" x="938" y="211">3-Gate Verification + ZIP</text>
+            <g id="vizGateList" transform="translate(936, 224)">
+              <rect class="gate-pill" x="0" y="0" width="192" height="22" rx="5" fill="rgba(18,181,166,0.14)" stroke="rgba(18,181,166,0.45)"/>
+              <text x="8" y="14" font-family="var(--mono)" font-size="8.1" fill="#99f6e4">✓ Gate 1: Corr &lt;0.90 · Cos &lt;0.82</text>
+              <rect class="gate-pill" x="0" y="28" width="192" height="22" rx="5" fill="rgba(18,181,166,0.14)" stroke="rgba(18,181,166,0.45)"/>
+              <text x="8" y="42" font-family="var(--mono)" font-size="8.1" fill="#99f6e4">✓ Gate 2: Energy L2 ±5%</text>
+              <rect class="gate-pill" x="0" y="56" width="192" height="22" rx="5" fill="rgba(18,181,166,0.14)" stroke="rgba(18,181,166,0.45)"/>
+              <text x="8" y="70" font-family="var(--mono)" font-size="8.1" fill="#99f6e4">✓ Gate 3: Self-Consistency Gate</text>
+            </g>
+            <text class="node-dim" x="938" y="322">Count + Labels + WAV Stems</text>
+            <text class="node-dim-sub" x="938" y="337">+ manifest.json ZIP bundle</text>
+          </g>
+
+          {# Animated Data-Flow Packets Layer (positioned via getPointAtLength in archview.js) #}
+          <g id="archPackets" pointer-events="none"></g>
+        </svg>
       </div>
+
       <div class="arch-legend">
-        <span><i style="background:#FF5A1F"></i>Audio / Waveform</span>
-        <span><i style="background:#fbbf24"></i>Log-Mel Tensor <code>[1, 64, 501]</code> → 3 Models</span>
-        <span><i style="background:#12b5a6"></i>Tagger Output</span>
-        <span><i style="background:#a78bfa"></i>Speaker / Sep Output</span>
-        <span class="fine" style="margin-left:auto">Click any block to inspect its layers &amp; live metrics</span>
+        <span><i style="background:#38bdf8"></i>Waveform / PCM <code>16 kHz</code></span>
+        <span><i style="background:#f59e0b"></i>Log-Mel <code>[1, 64, 501]</code> &amp; Counter Branch</span>
+        <span><i style="background:#12b5a6"></i>Open-Vocab Tagger Branch</span>
+        <span><i style="background:#a78bfa"></i>Speaker &amp; Separation Branch</span>
+        <span><i style="background:#c8f04a"></i>Quality-Gated Output</span>
       </div>
     </div>
 
-    <div class="panel arch-inspector" id="archInspector"></div>
+    <div class="panel arch-inspector" id="archInspector" aria-live="polite"></div>
   </section>
 </div>
 {% endblock %}
-{% block scripts %}<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" crossorigin="anonymous"></script><script src="{{ url_for('static', filename='analyze.js', v=asset_v) }}"></script><script src="{{ url_for('static', filename='archview.js', v=asset_v) }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='waves.js') }}"></script><script src="{{ url_for('static', filename='analyze.js') }}"></script><script src="{{ url_for('static', filename='archview.js') }}"></script>{% endblock %}

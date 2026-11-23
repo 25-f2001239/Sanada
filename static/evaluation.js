@@ -171,7 +171,7 @@
         "</tbody>";
     }
 
-    // Render Confusion Matrix Table
+    // Render Confusion Matrix Heatmap Table
     const cmTbl = $("#evCmTable");
     if (cmTbl && d.confusion_matrix) {
       const cm = d.confusion_matrix;
@@ -180,13 +180,83 @@
         .join("");
       const rowsHtml = cm.rows
         .map((r) => {
+          const denom = Math.max(1, r.n || 1);
           const counts = cm.classes
-            .map((c) => `<td>${r.counts[c] || 0}</td>`)
+            .map((c) => {
+              const v = r.counts[c] || 0;
+              const ratio = Math.min(1, v / denom);
+              const isDiag = String(c) === String(r.true_k);
+              const bg = v
+                ? isDiag
+                  ? `rgba(18, 181, 166, ${(0.14 + ratio * 0.52).toFixed(2)})`
+                  : `rgba(255, 90, 31, ${(0.08 + ratio * 0.42).toFixed(2)})`
+                : "transparent";
+              return `<td style="background:${bg}">${v}</td>`;
+            })
             .join("");
           return `<tr><th scope="row">True K = ${r.true_k}</th><td>${r.n}</td>${counts}<td><strong>${r.exact_accuracy_pct.toFixed(1)}%</strong></td></tr>`;
         })
         .join("");
       cmTbl.innerHTML = `<thead><tr><th scope="col">True Count</th><th scope="col">n</th>${thCols}<th scope="col">Exact %</th></tr></thead><tbody>${rowsHtml}</tbody>`;
+    }
+
+    // Render Tagging & Separation panels from approved public_summary
+    const pub = d.public_summary || {};
+    const tag = pub.tagging || {};
+    const tagMetrics = $("#evTagMetrics");
+    const tagTbl = $("#evTagTable");
+    if (tagMetrics && tag.group_test_macro_map != null) {
+      tagMetrics.innerHTML =
+        metric("Group mAP (test)", tag.group_test_macro_map.toFixed(3), "5 sound groups") +
+        metric("Fine-32 mAP (test)", tag.fine_32_test_macro_map.toFixed(3), `F1 ${tag.fine_32_test_macro_f1.toFixed(3)}`) +
+        metric("AST + CLAP AP", tag.ast_clap_macro_ap.toFixed(3), `${tag.open_vocab_classes_evaluated} classes / ${tag.open_vocab_held_out_clips} clips`);
+    }
+    if (tagTbl && tag.per_class_held_out) {
+      const entries = Object.entries(tag.per_class_held_out);
+      tagTbl.innerHTML =
+        '<thead><tr><th scope="col">Sound Class</th><th scope="col">AST+CLAP AP</th><th scope="col">Combined AP</th><th scope="col">Combined F1</th></tr></thead><tbody>' +
+        entries
+          .map(
+            ([cls, m]) =>
+              `<tr><th scope="row">${esc(cls)}</th><td><strong>${Number(m.ast_clap_ap).toFixed(3)}</strong></td><td>${Number(m.combined_ap).toFixed(3)}</td><td>${Number(m.combined_f1).toFixed(3)}</td></tr>`,
+          )
+          .join("") +
+        "</tbody>";
+    }
+
+    const sep = pub.separation || {};
+    const gates = pub.quality_gates || {};
+    const sepMetrics = $("#evSepMetrics");
+    const sepGates = $("#evSepGates");
+    const sepTbl = $("#evSepTable");
+    if (sepMetrics && sep.overall_mean_sisdri_db != null) {
+      sepMetrics.innerHTML =
+        metric("Mean SI-SDRi", `${sg(sep.overall_mean_sisdri_db)} dB`, `${sep.total_stems_evaluated} stems`) +
+        metric("Self-consistency", pct(sep.self_consistency_pass_rate || 0), "re-tag gate") +
+        metric("Energy pass", pct(sep.energy_conservation_pass_rate || 0), "with residual");
+    }
+    if (sepGates && gates.max_correlation_threshold != null) {
+      sepGates.textContent = `SepFormer 2-speaker speech + ECAPA-TDNN verification + 3 quality gates: pairwise corr < ${gates.max_correlation_threshold}, speaker cosine < ${gates.max_speaker_cosine_threshold}, energy L2 tolerance ±${Math.round(gates.energy_relative_l2_tolerance * 100)}%.`;
+    }
+    if (sepTbl && sep.by_k) {
+      const kRows = Object.entries(sep.by_k)
+        .map(
+          ([k, v]) =>
+            `<tr><th scope="row">${esc(k)}</th><td>${v.n_stems} stems</td><td><strong>${sg(v.mean_sisdri_db)} dB</strong></td></tr>`,
+        )
+        .join("");
+      const clsRows = Object.entries(sep.per_class_sisdri || {})
+        .slice(0, 8)
+        .map(
+          ([cls, v]) =>
+            `<tr><th scope="row">${esc(cls)}</th><td>${v.n_stems} stems</td><td>${sg(v.mean_sisdri_db)} dB (med ${sg(v.median_sisdri_db)} dB)</td></tr>`,
+        )
+        .join("");
+      sepTbl.innerHTML =
+        '<thead><tr><th scope="col">Slice / Class</th><th scope="col">Stems</th><th scope="col">Mean SI-SDRi</th></tr></thead><tbody>' +
+        kRows +
+        clsRows +
+        "</tbody>";
     }
 
     // Render Validation Reliability & Uncertainty Composition Table
