@@ -21,7 +21,6 @@ from config import (
     N_FFT,
     SAMPLE_RATE,
     SEPARATOR_PATH,
-    env_float,
     env_int,
     get_group_for_class,
     load_config,
@@ -31,16 +30,12 @@ SEPARATOR_ARCHITECTURE = "IterativeMaskSeparator"
 SEPARATION_SAMPLE_RATE = SAMPLE_RATE
 MAX_PASSES = 32
 MAX_SEPARABLE = env_int("MAX_SEPARABLE", 8)
-RESIDUAL_THRESHOLD = env_float("RESIDUAL_THRESHOLD", 0.01)
 WINDOW_SECONDS = 8.0
 OVERLAP_SECONDS = 2.0
 
 POWERSHELL_DOWNLOAD_COMMANDS = (
-    "cd C:\\coding\\SANADA\\Sanada\n"
-    ".\\.venv\\Scripts\\python -m pip install huggingface_hub speechbrain torchaudio\n"
-    '.\\.venv\\Scripts\\python -c "from huggingface_hub import snapshot_download; '
-    "snapshot_download('speechbrain/sepformer-wsj02mix', local_dir='models/sepformer-wsj02mix'); "
-    "snapshot_download('speechbrain/spkrec-ecapa-voxceleb', local_dir='models/spkrec-ecapa-voxceleb')\""
+    "# From the EchoCount project root:\n"
+    ".\\.venv\\Scripts\\python scripts\\download_models.py"
 )
 
 _ECAPA_CACHE: Any | None = None
@@ -217,8 +212,7 @@ def separator_status(path: Path | str = SEPARATOR_PATH) -> dict[str, Any]:
 
 def pretrained_speech_status() -> dict[str, Any]:
     """Check whether pretrained SpeechBrain SepFormer and ECAPA weights exist in models/."""
-    cfg_dir = Path(load_config().get("models_dir", str(MODELS_DIR)))
-    models_root = cfg_dir if cfg_dir.is_dir() else MODELS_DIR
+    models_root = Path(load_config().get("models_dir", str(MODELS_DIR)))
     sep2_dir, sep3_dir, ecapa_dir = (
         (models_root / "sepformer-wsj02mix").resolve(),
         (models_root / "sepformer-wsj03mix").resolve(),
@@ -245,9 +239,6 @@ def pretrained_speech_status() -> dict[str, Any]:
         if (has_sep2 or has_sep3)
         else "Pretrained speech separator weights (models/sepformer-wsj02mix) are not installed on disk.",
     }
-
-
-pretrained_speech_separator_status = pretrained_speech_status
 
 
 def _get_ecapa_encoder() -> Any | None:
@@ -676,24 +667,17 @@ def _separate_window_by_queries(
         )
         wq = (hp**1.35) * freq_w * time_w[None, :] * temp_gate
         if idx < len(neural_masks):
-            wq = 0.65 * wq + 0.35 * (mag**1.35) * neural_masks[idx]
+            wq = 0.90 * wq + 0.10 * (mag**1.35) * neural_masks[idx]
         raw_weights.append(wq.astype(np.float32))
 
     stack_w = np.stack(raw_weights, axis=0)
     for idx in range(num_q):
-        stack_w[idx] = (stack_w[idx] / (float(np.sqrt(np.mean(stack_w[idx] ** 2))) + 1e-8)) ** 3.8
+        stack_w[idx] = (stack_w[idx] / (float(np.sqrt(np.mean(stack_w[idx] ** 2))) + 1e-8)) ** 2.2
     masks = stack_w / (
         np.sum(stack_w, axis=0, keepdims=True)
-        + 0.08 * np.mean(stack_w, axis=0, keepdims=True)
+        + 0.18 * np.mean(stack_w, axis=0, keepdims=True)
         + 1e-12
     )
-    # Light 3-frame temporal smoothing prevents metallic chatter while keeping stems distinct
-    if n_frames >= 3:
-        k_sm = np.array([0.2, 0.6, 0.2], dtype=np.float32)
-        for idx in range(num_q):
-            masks[idx] = np.apply_along_axis(lambda r: np.convolve(r, k_sm, mode="same"), 1, masks[idx])
-        mask_sum = np.sum(masks, axis=0, keepdims=True)
-        masks = np.where(mask_sum > 1.0, masks / (mask_sum + 1e-12), masks)
     return [
         librosa.istft(stft_c * masks[i], hop_length=HOP_LENGTH, length=n_samples).astype(np.float32)
         for i in range(num_q)
@@ -748,6 +732,29 @@ def separate_long_audio_windowed(
     )
 
 
+def _sep_fail(reason: str) -> dict[str, Any]:
+    return {
+        "available": False,
+        "stems": [],
+        "residual_stem": None,
+        "queries": [],
+        "used_pretrained_speech": False,
+        "reason": reason,
+    }
+
+
+def _speech_queries(n: int) -> list[dict[str, str]]:
+    return [
+        {
+            "name": f"Human {i + 1}",
+            "friendly_name": f"Human {i + 1}",
+            "class": "Speech",
+            "group": "Human voice",
+        }
+        for i in range(n)
+    ]
+
+
 def separate_by_queries(
     waveform: np.ndarray,
     k: int,
@@ -766,14 +773,7 @@ def separate_by_queries(
 
     if speech_mode and not non_speech:
         if k_int < 2 or k_int > max_spk:
-            return {
-                "available": False,
-                "stems": [],
-                "residual_stem": None,
-                "queries": [],
-                "used_pretrained_speech": False,
-                "reason": f"Separation is supported for up to {max_spk} speakers.",
-            }
+            return _sep_fail(f"Separation is supported for up to {max_spk} speakers.")
 
         def _sep_spk(seg: np.ndarray, _off: float) -> list[np.ndarray]:
             out = separate_speech_pretrained(seg, k_int, sample_rate=sr)
@@ -794,29 +794,13 @@ def separate_by_queries(
 
         stems = separate_long_audio_windowed(y, _sep_spk, sr=sr)
         if not stems:
-            return {
-                "available": False,
-                "stems": [],
-                "residual_stem": None,
-                "queries": [],
-                "used_pretrained_speech": False,
-                "reason": "Speech separation model failed.",
-            }
+            return _sep_fail("Speech separation model failed.")
         residual = (y - np.sum(np.stack(stems, axis=0), axis=0)).astype(np.float32)
-        queries = [
-            {
-                "name": f"Human {i + 1}",
-                "friendly_name": f"Human {i + 1}",
-                "class": "Speech",
-                "group": "Human voice",
-            }
-            for i in range(len(stems))
-        ]
         return {
             "available": True,
             "stems": stems,
             "residual_stem": residual,
-            "queries": queries,
+            "queries": _speech_queries(len(stems)),
             "used_pretrained_speech": True,
             "model_name": f"sepformer-wsj0{k_int}mix",
             "stopped_early": False,
@@ -825,14 +809,7 @@ def separate_by_queries(
         }
 
     if k_int > MAX_SEPARABLE:
-        return {
-            "available": False,
-            "stems": [],
-            "residual_stem": None,
-            "queries": [],
-            "used_pretrained_speech": False,
-            "reason": "Too many overlapping sounds to separate reliably.",
-        }
+        return _sep_fail("Too many overlapping sounds to separate reliably.")
 
     queries, seen = [], set()
     for s in named:
@@ -868,14 +845,7 @@ def separate_by_queries(
                 )
 
     if not queries:
-        return {
-            "available": False,
-            "stems": [],
-            "residual_stem": None,
-            "queries": [],
-            "used_pretrained_speech": False,
-            "reason": "Separation not available for this recording.",
-        }
+        return _sep_fail("Separation not available for this recording.")
 
     queries = queries[: min(len(queries), MAX_SEPARABLE)]
     stems = separate_long_audio_windowed(
@@ -884,14 +854,7 @@ def separate_by_queries(
         sr=sr,
     )
     if not stems:
-        return {
-            "available": False,
-            "stems": [],
-            "residual_stem": None,
-            "queries": [],
-            "used_pretrained_speech": False,
-            "reason": "Separation not available for this recording.",
-        }
+        return _sep_fail("Separation not available for this recording.")
     residual = (y - np.sum(np.stack(stems, axis=0), axis=0)).astype(np.float32)
     return {
         "available": True,
@@ -902,5 +865,101 @@ def separate_by_queries(
         "model_name": "QueryConditionedWiener+IterativeMaskSeparator",
         "stopped_early": False,
         "residual_energy_ratio": round(float(np.sum(residual**2) / (np.sum(y**2) + 1e-12)), 4),
+        "reason": None,
+    }
+
+
+def _lsq_scale(ref: np.ndarray, est: np.ndarray) -> np.ndarray:
+    """Project est onto ref via least-squares positive gain for residual subtraction."""
+    denom = float(np.dot(est, est)) + 1e-12
+    gain = float(np.dot(ref, est)) / denom
+    if gain <= 0.0:
+        gain = float(np.dot(ref, -est)) / denom
+        est = -est
+    gain = float(np.clip(gain, 0.05, 1.5))
+    return (est * gain).astype(np.float32)
+
+
+def separate_speech_recursive(
+    waveform: np.ndarray,
+    k: int,
+    sample_rate: int = SAMPLE_RATE,
+    residual_stop_ratio: float = 0.04,
+) -> dict[str, Any]:
+    """Additive recursive speech separator up to K=8 using pretrained SepFormer (2-mix / 3-mix).
+
+    Repeatedly splits the current residual: uses sepformer-wsj03mix directly when 3 speakers
+    remain (if installed), otherwise extracts one cleaner speaker via sepformer-wsj02mix and
+    subtracts its least-squares projection. Stops at target K or when residual energy drops
+    below residual_stop_ratio. Does not modify any existing checkpoint.
+    """
+    y = np.asarray(waveform, dtype=np.float32).reshape(-1)
+    target_k = int(np.clip(int(k), 2, 8))
+    st = pretrained_speech_status()
+    if not st.get("has_2spk_model") and not st.get("has_3spk_model"):
+        return _sep_fail("Pretrained SepFormer weights are not installed.")
+
+    total_energy = float(np.sum(y**2)) + 1e-12
+    residual = y.copy()
+    stems: list[np.ndarray] = []
+    stopped_early = False
+
+    while len(stems) < target_k:
+        rem = target_k - len(stems)
+        res_ratio = float(np.sum(residual**2)) / total_energy
+        if len(stems) >= 1 and res_ratio < residual_stop_ratio:
+            stopped_early = True
+            break
+
+        if rem == 3 and st.get("has_3spk_model"):
+            out3 = separate_speech_pretrained(residual, 3, sample_rate=sample_rate)
+            if out3.get("available") and len(out3.get("stems", [])) == 3:
+                for s in out3["stems"]:
+                    stems.append(_lsq_scale(residual, s))
+                residual = (y - np.sum(np.stack(stems, axis=0), axis=0)).astype(np.float32)
+                break
+
+        if rem == 2:
+            out2 = separate_speech_pretrained(residual, 2, sample_rate=sample_rate)
+            if not out2.get("available") or len(out2.get("stems", [])) < 2:
+                stopped_early = True
+                break
+            s_a = _lsq_scale(residual, out2["stems"][0])
+            s_b = _lsq_scale(residual - s_a, out2["stems"][1])
+            stems.extend([s_a, s_b])
+            residual = (y - np.sum(np.stack(stems, axis=0), axis=0)).astype(np.float32)
+            break
+
+        # General step (rem >= 3 without 3-mix or rem >= 4): split 1-vs-rest via SepFormer-2mix
+        out2 = separate_speech_pretrained(residual, 2, sample_rate=sample_rate)
+        if not out2.get("available") or len(out2.get("stems", [])) < 2:
+            stopped_early = True
+            break
+        cands = [_lsq_scale(residual, s) for s in out2["stems"][:2]]
+
+        # Prefer the sparser/cleaner single-speaker candidate (higher peak-to-RMS / lower flatness)
+        def _spikiness(sig: np.ndarray) -> float:
+            rms = float(np.sqrt(np.mean(sig**2))) + 1e-8
+            p95 = float(np.percentile(np.abs(sig), 95))
+            return p95 / rms
+
+        pick = 0 if _spikiness(cands[0]) >= _spikiness(cands[1]) else 1
+        chosen = cands[pick]
+        stems.append(chosen)
+        residual = (residual - chosen).astype(np.float32)
+
+    if not stems:
+        return _sep_fail("Recursive speech separation produced no stems.")
+
+    residual = (y - np.sum(np.stack(stems, axis=0), axis=0)).astype(np.float32)
+    return {
+        "available": True,
+        "stems": stems,
+        "residual_stem": residual,
+        "queries": _speech_queries(len(stems)),
+        "used_pretrained_speech": True,
+        "model_name": "sepformer-recursive",
+        "stopped_early": stopped_early,
+        "residual_energy_ratio": round(float(np.sum(residual**2)) / total_energy, 4),
         "reason": None,
     }

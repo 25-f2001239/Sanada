@@ -125,6 +125,27 @@
         {% else %}
         <p class="fine">Quality gate thresholds: not measured.</p>
         {% endif %}
+
+        {% if capabilities and capabilities.modes %}
+        <h3>Separation capability registry (policy-gated from held-out benchmarks)</h3>
+        <p class="fine">Policy: <strong>enabled</strong> when held-out mean SI-SDRi ≥ {{ capabilities.policy.enabled_min_sisdri_db }} dB and self-consistency ≥ {{ (capabilities.policy.enabled_min_self_consistency * 100)|int }}%; <strong>experimental</strong> between {{ capabilities.policy.experimental_min_sisdri_db }} and {{ capabilities.policy.enabled_min_sisdri_db }} dB; <strong>disabled</strong> below {{ capabilities.policy.experimental_min_sisdri_db }} dB.</p>
+        <div class="table-wrap">
+          <table class="kv">
+            <thead><tr><th>Mode</th><th>Model / Licence</th><th>Enabled K</th><th>Experimental K</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for mid, m in capabilities.modes.items() %}
+              <tr>
+                <td><strong>{{ mid }}</strong><br><small>{{ m.label }}</small></td>
+                <td><code>{{ m.model }}</code><br><small>{{ m.licence }}{% if m.size_mb %} · {{ m.size_mb }} MB{% endif %}</small></td>
+                <td>{{ m.enabled_k|join(', ') if m.enabled_k else '—' }}</td>
+                <td>{{ m.experimental_k|join(', ') if m.experimental_k else '—' }}</td>
+                <td><span class="mini-chip">{{ m.status }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
       </section>
 
       <section id="train">
