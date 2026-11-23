@@ -8,13 +8,11 @@
   <title>{% block title %}EchoCount{% endblock %} · EchoCount</title>
   <meta name="description" content="EchoCount estimates how many sounds overlap in a single-channel recording.">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500..800&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_v) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>document.documentElement.classList.add('js')</script>
 </head>
-<body data-page="{% block page %}{% endblock %}" data-trained="{{ 'true' if status.trained else 'false' }}" data-admin="{{ 'true' if is_admin else 'false' }}">
+{% set is_auth_screen = request.endpoint in ('login_page', 'register_page', 'forgot_password_page', 'reset_password_page', 'auth_verify_route', 'oauth_start', 'oauth_callback') %}
+<body data-page="{% block page %}{% endblock %}" data-trained="{{ 'true' if status.trained else 'false' }}" data-role="{{ effective_role }}" data-uid="{{ current_user.id if current_user else '' }}"{% if is_auth_screen %} class="is-auth-page"{% endif %}>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></symbol>
@@ -30,17 +28,29 @@
 </svg>
 <div class="scrollbar" id="scrollbar"></div>
 
+{% if not is_auth_screen %}
 <header class="nav" id="nav">
-  <a class="brand" href="{{ url_for('index') }}" aria-label="EchoCount home"><span class="mark"><i></i><i></i><i></i></span><span>EchoCount</span></a>
+  <a class="brand" href="{{ url_for('admin_page') if effective_role == 'admin' else url_for('index') }}" aria-label="EchoCount home"><span class="mark"><i></i><i></i><i></i></span><span>EchoCount</span></a>
   <nav class="links" id="links" aria-label="Main">
     <span class="ind" id="ind"></span>
-    <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>Home</a>
-    <a href="{{ url_for('analyze_page') }}" class="{{ 'active' if request.endpoint == 'analyze_page' }}">Analyze</a>
-    {% if is_admin %}<a href="{{ url_for('evaluation_page') }}" class="{{ 'active' if request.endpoint == 'evaluation_page' }}">Evaluation</a>{% endif %}
-    <a href="{{ url_for('history_page') }}" class="{{ 'active' if request.endpoint == 'history_page' }}">History</a>
-    <a href="{{ url_for('how_page') }}" class="{{ 'active' if request.endpoint == 'how_page' }}">How it works</a>
-    <a href="{{ url_for('docs_page') }}" class="{{ 'active' if request.endpoint == 'docs_page' }}">Docs</a>
-    {% if is_admin %}<a href="{{ url_for('admin_page') }}" class="{{ 'active' if request.endpoint == 'admin_page' }}">Admin</a>{% endif %}
+    {% if effective_role == 'admin' %}
+      <a href="{{ url_for('admin_page') }}" class="{{ 'active' if request.endpoint == 'admin_page' }}" {% if request.endpoint == 'admin_page' %}aria-current="page"{% endif %}>Admin</a>
+      <a href="{{ url_for('evaluation_page') }}" class="{{ 'active' if request.endpoint == 'evaluation_page' }}" {% if request.endpoint == 'evaluation_page' %}aria-current="page"{% endif %}>Evaluation</a>
+      <a href="{{ url_for('index', preview='user') }}" class="{{ 'active' if request.endpoint == 'index' }}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>Product View</a>
+      <a href="{{ url_for('analyze_page') }}" class="{{ 'active' if request.endpoint == 'analyze_page' }}" {% if request.endpoint == 'analyze_page' %}aria-current="page"{% endif %}>Analyze</a>
+      <a href="{{ url_for('history_page') }}" class="{{ 'active' if request.endpoint == 'history_page' }}" {% if request.endpoint == 'history_page' %}aria-current="page"{% endif %}>History</a>
+    {% elif effective_role == 'developer' %}
+      <a href="{{ url_for('evaluation_page') }}" class="{{ 'active' if request.endpoint == 'evaluation_page' }}" {% if request.endpoint == 'evaluation_page' %}aria-current="page"{% endif %}>Evaluation</a>
+      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>Portal</a>
+      <a href="{{ url_for('analyze_page') }}" class="{{ 'active' if request.endpoint == 'analyze_page' }}" {% if request.endpoint == 'analyze_page' %}aria-current="page"{% endif %}>Analyze</a>
+      <a href="{{ url_for('history_page') }}" class="{{ 'active' if request.endpoint == 'history_page' }}" {% if request.endpoint == 'history_page' %}aria-current="page"{% endif %}>History</a>
+      <a href="{{ url_for('docs_page') }}" class="{{ 'active' if request.endpoint == 'docs_page' }}" {% if request.endpoint == 'docs_page' %}aria-current="page"{% endif %}>Docs</a>
+    {% else %}
+      <a href="{{ url_for('index', preview='user') if admin_preview else url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>Home</a>
+      <a href="{{ url_for('analyze_page', preview='user') if admin_preview else url_for('analyze_page') }}" class="{{ 'active' if request.endpoint == 'analyze_page' }}" {% if request.endpoint == 'analyze_page' %}aria-current="page"{% endif %}>Analyze</a>
+      <a href="{{ url_for('history_page') }}" class="{{ 'active' if request.endpoint == 'history_page' }}" {% if request.endpoint == 'history_page' %}aria-current="page"{% endif %}>My Recordings</a>
+      <a href="{{ url_for('how_page') }}" class="{{ 'active' if request.endpoint == 'how_page' }}" {% if request.endpoint == 'how_page' %}aria-current="page"{% endif %}>How it works</a>
+    {% endif %}
   </nav>
   <div class="nav-right">
     <button class="cmd-btn" id="cmdBtn" type="button" aria-label="Open command menu"><svg class="ic"><use href="#i-search"/></svg>Search <span class="kbd">Ctrl K</span></button>
@@ -49,27 +59,26 @@
     {% if current_user %}
     <div class="acct-wrap" id="acctWrap">
       <button class="acct-btn" id="acctBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu" aria-label="Account menu for {{ current_user.email }}">
-        {% if current_user.role == 'admin' %}<span class="acct-badge" title="Administrator"><i></i>Admin</span>{% endif %}
+        {% if current_user.role == 'admin' %}<span class="acct-badge" title="Administrator"><i></i>Admin</span>{% elif current_user.role == 'developer' %}<span class="acct-badge dev" title="Developer"><i></i>Dev</span>{% endif %}
         <span class="acct-label">{{ current_user.email }}</span>
         <svg class="ic acct-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="acct-menu" id="acctMenu" role="menu" aria-labelledby="acctBtn" hidden>
         <div class="acct-meta">
           <div class="acct-full-email">{{ current_user.email }}</div>
-          <div class="acct-role">{{ 'Administrator' if current_user.role == 'admin' else 'Signed-in member' }}</div>
+          <div class="acct-role">{{ 'Administrator' if current_user.role == 'admin' else ('Developer' if current_user.role == 'developer' else 'EchoCount Member') }}</div>
         </div>
+        {% if current_user.role == 'admin' %}
         <hr class="acct-sep">
-        {% if is_admin %}
-        <a class="acct-item" href="{{ url_for('admin_page') }}" role="menuitem">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-          <span>Admin dashboard</span>
-        </a>
-        <a class="acct-item" href="{{ url_for('evaluation_page') }}" role="menuitem">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span>Evaluation</span>
-        </a>
+        <a class="acct-item" role="menuitem" href="{{ url_for('admin_page') }}"><span>Admin Console</span></a>
+        <a class="acct-item" role="menuitem" href="{{ url_for('evaluation_page') }}"><span>Developer Evaluation</span></a>
+        <a class="acct-item" role="menuitem" href="{{ url_for('index', preview='user') }}"><span>Preview User Portal</span></a>
+        {% elif current_user.role == 'developer' %}
         <hr class="acct-sep">
+        <a class="acct-item" role="menuitem" href="{{ url_for('evaluation_page') }}"><span>Evaluation Console</span></a>
+        <a class="acct-item" role="menuitem" href="{{ url_for('index') }}"><span>User Portal</span></a>
         {% endif %}
+        <hr class="acct-sep">
         <button class="acct-item danger" id="logoutBtn" type="button" role="menuitem">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Sign out</span>
@@ -87,12 +96,28 @@
 </header>
 
 <div class="sheet" id="sheet" aria-hidden="true" inert>
-  <a style="--i:0" href="{{ url_for('index') }}">Home</a><a style="--i:1" href="{{ url_for('analyze_page') }}">Analyze</a>
-  <a style="--i:2" href="{{ url_for('history_page') }}">History</a>{% if is_admin %}<a style="--i:5" href="{{ url_for('evaluation_page') }}">Evaluation</a><a style="--i:5" href="{{ url_for('admin_page') }}">Admin</a>{% endif %}<a style="--i:3" href="{{ url_for('how_page') }}">How it works</a><a style="--i:4" href="{{ url_for('docs_page') }}">Docs</a>
+  {% if effective_role == 'admin' %}
+    <a style="--i:0" href="{{ url_for('admin_page') }}">Admin Console</a>
+    <a style="--i:1" href="{{ url_for('evaluation_page') }}">Evaluation</a>
+    <a style="--i:2" href="{{ url_for('index', preview='user') }}">Product View</a>
+    <a style="--i:3" href="{{ url_for('analyze_page') }}">Analyze</a>
+    <a style="--i:4" href="{{ url_for('history_page') }}">History</a>
+  {% elif effective_role == 'developer' %}
+    <a style="--i:0" href="{{ url_for('evaluation_page') }}">Evaluation</a>
+    <a style="--i:1" href="{{ url_for('index') }}">Portal</a>
+    <a style="--i:2" href="{{ url_for('analyze_page') }}">Analyze</a>
+    <a style="--i:3" href="{{ url_for('history_page') }}">History</a>
+    <a style="--i:4" href="{{ url_for('docs_page') }}">Docs</a>
+  {% else %}
+    <a style="--i:0" href="{{ url_for('index') }}">Home</a>
+    <a style="--i:1" href="{{ url_for('analyze_page') }}">Analyze</a>
+    <a style="--i:2" href="{{ url_for('history_page') }}">My Recordings</a>
+    <a style="--i:3" href="{{ url_for('how_page') }}">How it works</a>
+  {% endif %}
   {% if current_user %}
   <div class="sheet-acct">
     <div class="sheet-acct-info">
-      {% if current_user.role == 'admin' %}<span class="acct-badge"><i></i>Admin</span>{% endif %}
+      {% if current_user.role == 'admin' %}<span class="acct-badge"><i></i>Admin</span>{% elif current_user.role == 'developer' %}<span class="acct-badge dev"><i></i>Dev</span>{% endif %}
       <span>{{ current_user.email }}</span>
     </div>
     <button class="btn sm" id="sheetLogoutBtn" type="button">Sign out</button>
@@ -109,19 +134,41 @@
     <div class="cmdk-foot"><span><span class="kbd">↑</span> <span class="kbd">↓</span> move</span><span><span class="kbd">Enter</span> open</span><span><span class="kbd">Esc</span> close</span></div>
   </div>
 </div>
+{% endif %}
 
-<main id="main">{% block content %}{% endblock %}</main>
+<main id="main">
+{% if admin_preview %}
+<div class="preview-toolbar-wrap wrap">
+  <div class="preview-toolbar" role="status" aria-label="Administrator preview mode">
+    <div class="preview-toolbar-info">
+      <span class="preview-pill"><i></i>ADMIN PREVIEW</span>
+      <span class="preview-toolbar-text">Viewing the product as a regular user · Administrator permissions remain active.</span>
+    </div>
+    <a class="btn sm primary preview-return-btn" href="{{ url_for('admin_page') }}">Return to Admin Console</a>
+  </div>
+</div>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
 
+{% if not is_auth_screen %}
 <footer class="foot wrap">
   <div class="foot-top">
-    <div><strong>EchoCount</strong><p>Research prototype. Counts, names, and separates overlapping sounds with measured quality gates.</p></div>
-    <nav aria-label="Footer"><a href="{{ url_for('analyze_page') }}">Analyze</a><a href="{{ url_for('history_page') }}">History</a><a href="{{ url_for('how_page') }}">How it works</a><a href="{{ url_for('docs_page') }}">Docs</a></nav>
+    <div><strong>EchoCount</strong><p>Sanada Acoustic Intelligence. Counts, names, and separates overlapping sounds with measured quality gates.</p></div>
+    <nav aria-label="Footer">
+      <a href="{{ url_for('analyze_page') }}">Analyze</a>
+      <a href="{{ url_for('history_page') }}">History</a>
+      <a href="{{ url_for('how_page') }}">How it works</a>
+      {% if effective_role in ('developer', 'admin') %}<a href="{{ url_for('evaluation_page') }}">Evaluation</a>{% endif %}
+      {% if effective_role == 'admin' %}<a href="{{ url_for('admin_page') }}">Admin</a>{% endif %}
+    </nav>
   </div>
   <div class="foot-word" aria-hidden="true">EchoCount</div>
 </footer>
+{% endif %}
 
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
-<script src="{{ url_for('static', filename='main.js', v=asset_v) }}"></script>
+<script src="{{ url_for('static', filename='main.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

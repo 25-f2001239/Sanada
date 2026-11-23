@@ -31,36 +31,40 @@
       setTimeout(() => t.remove(), 360);
     }, 3400);
   }
-  const KEY = "echocount.history.v1";
+  function clearHistoryCache() {
+    for (const store of [localStorage, sessionStorage]) {
+      try {
+        for (let i = store.length - 1; i >= 0; i--) {
+          const k = store.key(i);
+          if (k && k.startsWith("echocount.history")) store.removeItem(k);
+        }
+      } catch {}
+    }
+  }
+  // One-time purge of legacy un-scoped browser history (never import into any account)
+  try {
+    localStorage.removeItem("echocount.history.v1");
+  } catch {}
+  (() => {
+    const uid = document.body?.dataset?.uid || "";
+    try {
+      const prev = sessionStorage.getItem("echocount.active_uid") || "";
+      if (!uid || (prev && prev !== uid)) {
+        clearHistoryCache();
+      }
+      if (uid) sessionStorage.setItem("echocount.active_uid", uid);
+      else sessionStorage.removeItem("echocount.active_uid");
+    } catch {}
+  })();
+  // History is persisted server-side per authenticated account; keep a safe non-persisting stub.
   const H = {
-    all() {
-      try {
-        const value = JSON.parse(localStorage.getItem(KEY));
-        return Array.isArray(value) ? value : [];
-      } catch {
-        return [];
-      }
-    },
-    save(a) {
-      try {
-        localStorage.setItem(KEY, JSON.stringify(a));
-      } catch {
-        toast("Could not save history in this browser.", "err");
-      }
-    },
-    add(e) {
-      const a = H.all();
-      a.unshift(e);
-      H.save(a.slice(0, 200));
-    },
-    remove(id) {
-      H.save(H.all().filter((x) => x.id !== id));
-    },
-    clear() {
-      H.save([]);
-    },
+    all: () => [],
+    save() {},
+    add() {},
+    remove() {},
+    clear: clearHistoryCache,
   };
-  window.EC = { $, esc, fmtTime, toast, H };
+  window.EC = { $, esc, fmtTime, toast, H, clearHistoryCache };
 
   /* ---- theme: saved choice wins, otherwise follow the OS; first paint is handled by the inline script in base.html ---- */
   const root = document.documentElement,
@@ -77,11 +81,14 @@
   };
   const applyTheme = (t) => {
     root.dataset.theme = t;
-    themeBtn.setAttribute(
-      "aria-label",
-      t === "dark" ? "Switch to light theme" : "Switch to dark theme",
-    );
-    if (themeMeta) themeMeta.content = t === "dark" ? "#121214" : "#EEEDE9";
+    if (themeBtn) {
+      themeBtn.setAttribute(
+        "aria-label",
+        t === "dark" ? "Switch to light theme" : "Switch to dark theme",
+      );
+    }
+    if (themeMeta) themeMeta.content = t === "dark" ? "#0b1120" : "#EEEDE9";
+    window.dispatchEvent(new CustomEvent("ec:theme", { detail: t }));
   };
   const toggleTheme = () => {
     const next = root.dataset.theme === "dark" ? "light" : "dark";
@@ -92,8 +99,9 @@
     } catch {}
     setTimeout(() => root.classList.remove("theme-anim"), 450);
   };
+  window.EC.toggleTheme = toggleTheme;
   applyTheme(root.dataset.theme || "light");
-  themeBtn.addEventListener("click", toggleTheme);
+  themeBtn?.addEventListener("click", toggleTheme);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
     if (!stored()) applyTheme(e.matches ? "dark" : "light");
   });
@@ -107,31 +115,34 @@
     links = $("#links"),
     ind = $("#ind"),
     bar = $("#scrollbar");
-  const move = (a) => {
-    if (!a || innerWidth <= 1024) return;
-    ind.style.opacity = 1;
-    ind.style.left = a.offsetLeft + "px";
-    ind.style.width = a.offsetWidth + "px";
-  };
-  const active = () => $("a.active", links);
-  const home = () => (active() ? move(active()) : (ind.style.opacity = 0));
-  $$("a", links).forEach((a) =>
-    a.addEventListener("pointerenter", () => move(a)),
-  );
-  links.addEventListener("pointerleave", home);
-  addEventListener("resize", home);
-  home();
-  document.fonts && document.fonts.ready.then(home);
-  const onScroll = () => {
-    nav.classList.toggle("scrolled", scrollY > 10);
-    const m = document.documentElement.scrollHeight - innerHeight;
-    bar.style.transform = `scaleX(${m > 0 ? scrollY / m : 0})`;
-  };
-  addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
+  if (nav && links && ind) {
+    const move = (a) => {
+      if (!a || innerWidth <= 1024) return;
+      ind.style.opacity = 1;
+      ind.style.left = a.offsetLeft + "px";
+      ind.style.width = a.offsetWidth + "px";
+    };
+    const active = () => $("a.active", links);
+    const home = () => (active() ? move(active()) : (ind.style.opacity = 0));
+    $$("a", links).forEach((a) =>
+      a.addEventListener("pointerenter", () => move(a)),
+    );
+    links.addEventListener("pointerleave", home);
+    addEventListener("resize", home);
+    home();
+    document.fonts && document.fonts.ready.then(home);
+    const onScroll = () => {
+      nav.classList.toggle("scrolled", scrollY > 10);
+      const m = document.documentElement.scrollHeight - innerHeight;
+      if (bar) bar.style.transform = `scaleX(${m > 0 ? scrollY / m : 0})`;
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  }
   const sheet = $("#sheet"),
     burger = $("#burger");
   const setSheet = (on) => {
+    if (!sheet || !burger) return;
     sheet.classList.toggle("open", on);
     sheet.setAttribute("aria-hidden", !on);
     sheet.inert = !on;
@@ -139,13 +150,18 @@
     burger.innerHTML = `<svg class="ic"><use href="#i-${on ? "x" : "menu"}"/></svg>`;
     document.body.style.overflow = on ? "hidden" : "";
   };
-  burger.addEventListener("click", () =>
-    setSheet(!sheet.classList.contains("open")),
-  );
-  $$("a", sheet).forEach((a) => {
-    if (a.pathname === location.pathname) a.classList.add("active");
-    a.addEventListener("click", () => setSheet(false));
-  });
+  if (burger && sheet) {
+    burger.addEventListener("click", () =>
+      setSheet(!sheet.classList.contains("open")),
+    );
+    $$("a", sheet).forEach((a) => {
+      if (a.pathname === location.pathname) a.classList.add("active");
+      a.addEventListener("click", () => setSheet(false));
+    });
+    addEventListener("resize", () => {
+      if (innerWidth > 1024 && sheet.classList.contains("open")) setSheet(false);
+    });
+  }
 
   /* ---- command menu (Ctrl/Cmd + K) ---- */
   const cmdk = $("#cmdk"),
@@ -205,36 +221,21 @@
           .catch(() => toast("Could not access the clipboard.", "err")),
     },
     {
-      t: "Clear my history",
+      t: "Clear saved history",
       k: "×",
       s: "Action",
-      run: async () => {
-        if (!confirm("Clear all saved results from your account history?")) return;
-        const csrf = $('meta[name="csrf-token"]')?.content || "";
-        try {
-          const r = await fetch("/api/history", {
-            method: "DELETE",
-            credentials: "same-origin",
-            headers: { "X-CSRF-Token": csrf },
-          });
-          if (r.status === 401) return toast("Sign in first to clear your history.", "err");
-          if (!r.ok) throw new Error();
+      run: () => {
+        if (
+          H.all().length &&
+          confirm("Delete all saved results from this browser?")
+        ) {
           H.clear();
           toast("History cleared.");
           if (location.pathname === "/history") location.reload();
-        } catch {
-          toast("Could not clear history.", "err");
         }
       },
     },
   ];
-  if (document.body.dataset.admin === "true")
-    cmds.splice(
-      4,
-      0,
-      { t: "Admin dashboard", k: "⛨", s: "Admin", run: () => (location.href = "/admin") },
-      { t: "Evaluation results", k: "E", s: "Admin", run: () => (location.href = "/evaluation") },
-    );
   let sel = 0,
     shown = cmds;
   function paint() {
@@ -251,6 +252,7 @@
       : "<li>No results</li>";
   }
   const openCmd = (on) => {
+    if (!cmdk || !cin || !clist) return;
     cmdk.classList.toggle("open", on);
     cmdk.setAttribute("aria-hidden", !on);
     cmdk.inert = !on;
@@ -268,51 +270,53 @@
       c.run();
     }
   };
-  $("#cmdBtn").addEventListener("click", () => openCmd(true));
-  cmdk.addEventListener("pointerdown", (e) => {
-    if (e.target === cmdk) openCmd(false);
-  });
-  cin.addEventListener("input", () => {
-    sel = 0;
-    paint();
-  });
-  clist.addEventListener("click", (e) => {
-    const li = e.target.closest("li[data-i]");
-    if (li) exec(+li.dataset.i);
-  });
-  clist.addEventListener("pointermove", (e) => {
-    const li = e.target.closest("li[data-i]");
-    if (li && +li.dataset.i !== sel) {
-      sel = +li.dataset.i;
+  if (cmdk && cin && clist) {
+    $("#cmdBtn")?.addEventListener("click", () => openCmd(true));
+    cmdk.addEventListener("pointerdown", (e) => {
+      if (e.target === cmdk) openCmd(false);
+    });
+    cin.addEventListener("input", () => {
+      sel = 0;
       paint();
-    }
-  });
-  addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      openCmd(!cmdk.classList.contains("open"));
-      return;
-    }
-    if (e.key === "Escape") {
-      openCmd(false);
-      setSheet(false);
-    }
-    if (!cmdk.classList.contains("open")) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      sel = (sel + 1) % shown.length;
-      paint();
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      sel = (sel - 1 + shown.length) % shown.length;
-      paint();
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      exec(sel);
-    }
-  });
+    });
+    clist.addEventListener("click", (e) => {
+      const li = e.target.closest("li[data-i]");
+      if (li) exec(+li.dataset.i);
+    });
+    clist.addEventListener("pointermove", (e) => {
+      const li = e.target.closest("li[data-i]");
+      if (li && +li.dataset.i !== sel) {
+        sel = +li.dataset.i;
+        paint();
+      }
+    });
+    addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        openCmd(!cmdk.classList.contains("open"));
+        return;
+      }
+      if (e.key === "Escape") {
+        openCmd(false);
+        setSheet(false);
+      }
+      if (!cmdk.classList.contains("open")) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        sel = (sel + 1) % shown.length;
+        paint();
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        sel = (sel - 1 + shown.length) % shown.length;
+        paint();
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        exec(sel);
+      }
+    });
+  }
 
   /* ---- motion helpers ---- */
   document.addEventListener("pointermove", (e) => {
@@ -490,6 +494,10 @@
 
   const doLogout = async () => {
     const csrf = $('meta[name="csrf-token"]')?.content || "";
+    clearHistoryCache();
+    try {
+      sessionStorage.removeItem("echocount.active_uid");
+    } catch {}
     try {
       await fetch("/auth/logout", {
         method: "POST",
@@ -497,6 +505,7 @@
         headers: { "X-CSRF-Token": csrf },
       });
     } finally {
+      clearHistoryCache();
       location.href = "/login";
     }
   };
@@ -652,5 +661,26 @@
       });
       frame();
     }
+  }
+
+  /* ---- Calm wave field reuse on Home hero & Analyze header + heading scroll-reveal on How/Eval ---- */
+  const initCalmWaves = () => {
+    if (!window.initWaveField) return;
+    ["#homeWaveField", "#analyzeWaveField"].forEach((sel) => {
+      const el = $(sel);
+      if (el) window.initWaveField(el, { intensity: "calm", pointerInteraction: false });
+    });
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initCalmWaves, { once: true });
+  } else {
+    initCalmWaves();
+  }
+  if (!reduce && (document.body.dataset.page === "how" || document.body.dataset.page === "evaluation")) {
+    const hObs = new IntersectionObserver(
+      (es) => es.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), hObs.unobserve(e.target))),
+      { threshold: 0.15 },
+    );
+    $$("main h1, main h2, main h3").forEach((h) => (h.classList.add("rv"), hObs.observe(h)));
   }
 })();

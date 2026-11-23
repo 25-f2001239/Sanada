@@ -1,9 +1,10 @@
-"""Authentication, OAuth 2.0/OIDC (Google, Microsoft, Yahoo), Argon2id, and session management."""
+"""Authentication, OAuth 2.0/OIDC (Google, Microsoft, GitHub, Yahoo), RBAC, Argon2id, and sessions."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -20,7 +21,7 @@ from typing import Any
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from authlib.integrations.flask_client import OAuth
-from flask import g, jsonify, redirect, request, session, url_for
+from flask import g, jsonify, redirect, render_template, request, session, url_for
 
 from config import DATA_DIR
 
@@ -31,7 +32,8 @@ TOKEN_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "1800"))
 MIN_PASSWORD_LEN = 10
 MAX_PASSWORD_LEN = 128
 
-SUPPORTED_PROVIDERS = ("google", "microsoft", "yahoo")
+SUPPORTED_PROVIDERS = ("google", "microsoft", "github", "yahoo")
+VALID_ROLES = ("user", "developer", "admin")
 
 GOOGLE_DOMAINS = {"gmail.com", "googlemail.com"}
 MICROSOFT_DOMAINS = {
@@ -147,68 +149,41 @@ def init_db() -> None:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(users)").fetchall()}
         if "role" not in cols:
             con.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
-        if "disabled" not in cols:
-            con.execute("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0")
-        con.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS admin_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                actor_id INTEGER,
-                actor_email TEXT NOT NULL,
-                action TEXT NOT NULL,
-                target_id INTEGER,
-                target_email TEXT,
-                detail TEXT,
-                created_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS admin_invites (
-                email TEXT PRIMARY KEY,
-                invited_by TEXT NOT NULL,
-                created_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS analyses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                job_id TEXT,
-                filename TEXT NOT NULL,
-                duration_s REAL,
-                predicted_k INTEGER,
-                confidence REAL,
-                gt_true_k INTEGER,
-                gt_dataset TEXT,
-                total_ms REAL,
-                created_at REAL NOT NULL,
-                user_deleted INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_analyses_created ON analyses(created_at);
-            CREATE INDEX IF NOT EXISTS idx_analyses_user ON analyses(user_id);
-            """
-        )
-        a_cols = {r["name"] for r in con.execute("PRAGMA table_info(analyses)").fetchall()}
-        if "user_deleted" not in a_cols:
-            con.execute("ALTER TABLE analyses ADD COLUMN user_deleted INTEGER NOT NULL DEFAULT 0")
+        if "is_active" not in cols:
+            con.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        jcols = {r["name"] for r in con.execute("PRAGMA table_info(user_jobs)").fetchall()}
+        if "status" not in jcols:
+            con.execute("ALTER TABLE user_jobs ADD COLUMN status TEXT NOT NULL DEFAULT 'analyzed'")
+        if "summary_json" not in jcols:
+            con.execute("ALTER TABLE user_jobs ADD COLUMN summary_json TEXT")
     admin_email = os.getenv("ECHOCOUNT_ADMIN_EMAIL", "").strip()
     admin_pw = os.getenv("ECHOCOUNT_ADMIN_PASSWORD", "")
     if admin_email and admin_pw:
         ensure_admin_account(admin_email, admin_pw)
-    bootstrap = bootstrap_admin_emails()
-    if bootstrap:
+    cfg_admins = _admin_email_set()
+    if cfg_admins:
         with _conn() as con:
-            con.executemany(
-                "UPDATE users SET role = 'admin' WHERE email = ?", [(e,) for e in bootstrap]
-            )
+            for em in cfg_admins:
+                con.execute("UPDATE users SET role = 'admin' WHERE email = ?", (em,))
 
 
-def bootstrap_admin_emails() -> set[str]:
-    """Emails that are always administrators (ECHOCOUNT_ADMIN_EMAIL + comma list ECHOCOUNT_ADMIN_EMAILS)."""
-    raw = os.getenv("ECHOCOUNT_ADMIN_EMAILS", "") + "," + os.getenv("ECHOCOUNT_ADMIN_EMAIL", "")
-    return {normalize_email(e) for e in raw.split(",") if normalize_email(e)}
+def _admin_email_set() -> set[str]:
+    raw = os.getenv("ADMIN_EMAILS", "")
+    return {normalize_email(x) for x in raw.split(",") if x.strip()}
 
 
 def get_or_create_secret_key(key_file: Path | None = None) -> str:
-    """Return SECRET_KEY from env or persist a stable random key locally across restarts."""
+    """Return SECRET_KEY from env or persist a stable random key locally (dev only)."""
     env_key = os.getenv("SECRET_KEY", "").strip()
-    if env_key:
+    is_prod = (
+        os.getenv("ECHOCOUNT_ENV", "").strip().lower() == "production"
+        or os.getenv("FLASK_ENV", "").strip().lower() == "production"
+    )
+    if is_prod and (not env_key or len(env_key) < 32 or "replace-with" in env_key.lower()):
+        raise RuntimeError(
+            "Production mode requires a strong SECRET_KEY (>=32 chars) in environment/.env."
+        )
+    if env_key and "replace-with" not in env_key.lower():
         return env_key
     target = key_file or (DB_PATH.parent / ".secret_key")
     if target.is_file():
@@ -277,15 +252,26 @@ def init_oauth(app: Any) -> None:
             server_metadata_url="https://api.login.yahoo.com/.well-known/openid-configuration",
             client_kwargs={"scope": "openid email"},
         )
+    if os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET"):
+        _oauth.register(
+            name="github",
+            client_id=os.getenv("GITHUB_CLIENT_ID"),
+            client_secret=os.getenv("GITHUB_CLIENT_SECRET"),
+            access_token_url="https://github.com/login/oauth/access_token",
+            authorize_url="https://github.com/login/oauth/authorize",
+            api_base_url="https://api.github.com/",
+            client_kwargs={"scope": "read:user user:email"},
+        )
 
 
 def provider_availability() -> dict[str, bool]:
-    """Return which of the three allowed OAuth providers have server credentials configured."""
+    """Return which supported OAuth providers have server credentials configured."""
     return {
         "google": bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET")),
         "microsoft": bool(
             os.getenv("MICROSOFT_CLIENT_ID") and os.getenv("MICROSOFT_CLIENT_SECRET")
         ),
+        "github": bool(os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET")),
         "yahoo": bool(os.getenv("YAHOO_CLIENT_ID") and os.getenv("YAHOO_CLIENT_SECRET")),
     }
 
@@ -300,7 +286,9 @@ def _extra_allowed_domains() -> set[str]:
     return {d.strip().lower() for d in raw.split(",") if d.strip()}
 
 
-def validate_email_policy(raw_email: str, *, oauth_verified: bool = False) -> tuple[str | None, str | None]:
+def validate_email_policy(
+    raw_email: str, *, oauth_verified: bool = False
+) -> tuple[str | None, str | None]:
     """Normalize and validate an email against disposable blocklist and provider policy."""
     email = normalize_email(raw_email)
     if not email or not _EMAIL_RE.match(email):
@@ -429,26 +417,7 @@ def create_session(user_id: int) -> tuple[str, str]:
             (sid, user_id, csrf, now, now + SESSION_TTL_SECONDS),
         )
         con.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, user_id))
-        _apply_admin_grants(con, user_id)
     return sid, csrf
-
-
-def _apply_admin_grants(con: sqlite3.Connection, user_id: int) -> None:
-    """Promote a user on sign-in if their email is a bootstrap admin or has a pending admin invite."""
-    row = con.execute("SELECT email, role FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
-        return
-    email = row["email"]
-    invite = con.execute("SELECT invited_by FROM admin_invites WHERE email = ?", (email,)).fetchone()
-    if row["role"] != "admin" and (email in bootstrap_admin_emails() or invite):
-        con.execute("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
-        if invite:
-            con.execute(
-                "INSERT INTO admin_audit (actor_id, actor_email, action, target_id, target_email, detail, created_at) VALUES (NULL, ?, 'invite_accepted', ?, ?, NULL, ?)",
-                (invite["invited_by"], user_id, email, time.time()),
-            )
-    if invite:
-        con.execute("DELETE FROM admin_invites WHERE email = ?", (email,))
 
 
 def revoke_session(sid: str | None) -> None:
@@ -460,7 +429,7 @@ def revoke_session(sid: str | None) -> None:
 
 
 def get_current_user() -> dict[str, Any] | None:
-    """Load the authenticated user and session CSRF token from the HttpOnly cookie."""
+    """Load the authenticated active user and session CSRF token from the HttpOnly cookie."""
     if hasattr(g, "_auth_user"):
         return g._auth_user
     sid = request.cookies.get(SESSION_COOKIE)
@@ -471,14 +440,15 @@ def get_current_user() -> dict[str, Any] | None:
     with _conn() as con:
         row = con.execute(
             """
-            SELECT u.id, u.email, u.email_verified, u.role, u.disabled, s.csrf_token, s.expires_at, s.revoked
+            SELECT u.id, u.email, u.email_verified, u.role, COALESCE(u.is_active, 1) AS is_active,
+                   s.csrf_token, s.expires_at, s.revoked
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.id = ?
             """,
             (sid,),
         ).fetchone()
-    if not row or row["revoked"] or row["disabled"] or float(row["expires_at"]) < now:
+    if not row or row["revoked"] or not row["is_active"] or float(row["expires_at"]) < now:
         g._auth_user = None
         return None
     g._auth_user = {
@@ -486,6 +456,7 @@ def get_current_user() -> dict[str, Any] | None:
         "email": row["email"],
         "email_verified": bool(row["email_verified"]),
         "role": row["role"] or "user",
+        "is_active": True,
         "csrf_token": row["csrf_token"],
         "sid": sid,
     }
@@ -533,375 +504,273 @@ def clear_session_cookie(resp: Any) -> Any:
     return resp
 
 
+def default_landing_for_role(role: str | None) -> str:
+    """Return the post-login landing path based on verified database role."""
+    r = (role or "user").strip().lower()
+    if r == "admin":
+        return "/admin"
+    if r == "developer":
+        return "/admin/evaluation"
+    return "/"
+
+
+def _unauth_response() -> Any:
+    if request.path.startswith("/api/"):
+        return jsonify(
+            {"error": "Authentication required. Please sign in.", "auth_required": True}
+        ), 401
+    return redirect(url_for("login_page", next=request.path))
+
+
 def login_required(fn: Any) -> Any:
-    """Require an authenticated verified user for private API and analysis endpoints."""
+    """Require an authenticated active user for protected pages and private API endpoints."""
 
     @wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        user = get_current_user()
-        if not user:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Authentication required. Please sign in.", "auth_required": True}), 401
-            return redirect(url_for("login_page", next=request.path))
-        return fn(*args, **kwargs)
+        return fn(*args, **kwargs) if get_current_user() else _unauth_response()
 
     return wrapper
 
 
-def is_admin(user: dict[str, Any] | None = None) -> bool:
-    """Return True when the given (or current) user has the admin role."""
-    user = user if user is not None else get_current_user()
-    return bool(user and user.get("role") == "admin")
+def role_required(*allowed_roles: str) -> Any:
+    """Require an authenticated user whose database role is in allowed_roles."""
+
+    def decorator(fn: Any) -> Any:
+        @wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            user = get_current_user()
+            if not user:
+                return _unauth_response()
+            if user.get("role") not in allowed_roles:
+                if request.path.startswith("/api/"):
+                    return jsonify(
+                        {"error": "You do not have permission to access this resource."}
+                    ), 403
+                return (
+                    render_template(
+                        "403.html",
+                        required_roles=allowed_roles,
+                        status={
+                            "trained": True,
+                            "sample_rate": 16000,
+                            "clip_seconds": 8,
+                            "max_sources": 31,
+                        },
+                    ),
+                    403,
+                )
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
-def admin_required(fn: Any) -> Any:
-    """Require an administrator. Non-admins get 404 on pages (hides existence) and 403 on APIs."""
-
-    @wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        user = get_current_user()
-        is_api = request.path.startswith("/api/")
-        if not user:
-            if is_api:
-                return jsonify({"error": "Authentication required. Please sign in.", "auth_required": True}), 401
-            return redirect(url_for("login_page", next=request.path))
-        if not is_admin(user):
-            if is_api:
-                return jsonify({"error": "Administrator access required."}), 403
-            from flask import abort
-
-            abort(404)
-        if request.method not in ("GET", "HEAD", "OPTIONS") and not verify_csrf_request():
-            return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
-        return fn(*args, **kwargs)
-
-    return wrapper
-
-
-# ---------------------------------------------------------------------------
-# Admin: audit log, usage analytics, user management
-# ---------------------------------------------------------------------------
-
-DAY = 86400.0
-
-
-def log_admin_action(
-    actor: dict[str, Any], action: str, target_id: int | None = None,
-    target_email: str | None = None, detail: str | None = None,
+def register_user_job(
+    job_id: str, user_id: int, filename: str, summary: dict | None = None
 ) -> None:
+    """Persist job ownership and optional summary so users can view their own history."""
     with _conn() as con:
         con.execute(
-            "INSERT INTO admin_audit (actor_id, actor_email, action, target_id, target_email, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (actor.get("id"), actor.get("email", "system"), action, target_id, target_email, detail, time.time()),
+            "INSERT OR REPLACE INTO user_jobs (job_id, user_id, filename, created_at, status, summary_json) VALUES (?, ?, ?, ?, 'analyzed', ?)",
+            (job_id, user_id, filename, time.time(), json.dumps(summary) if summary else None),
         )
 
 
-def record_analysis(
-    user_id: int | None, job_id: str, filename: str, duration_s: float | None,
-    predicted_k: int | None, confidence: float | None, gt_true_k: int | None,
-    gt_dataset: str | None, total_ms: float | None,
-) -> None:
-    """Persist one analysis row for admin usage analytics (never stores audio)."""
-    try:
-        with _conn() as con:
-            con.execute(
-                "INSERT INTO analyses (user_id, job_id, filename, duration_s, predicted_k, confidence, gt_true_k, gt_dataset, total_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, job_id, filename, duration_s, predicted_k, confidence, gt_true_k, gt_dataset, total_ms, time.time()),
-            )
-    except Exception:
-        logger.exception("Could not record analysis row")
-
-
-def admin_overview() -> dict[str, Any]:
-    now = time.time()
+def update_user_job(job_id: str, status: str, summary: dict | None = None) -> None:
+    """Update status and summary metadata for a persisted user job."""
     with _conn() as con:
-        one = lambda sql, *p: con.execute(sql, p).fetchone()[0]  # noqa: E731
-        users = {
-            "total": one("SELECT COUNT(*) FROM users"),
-            "verified": one("SELECT COUNT(*) FROM users WHERE email_verified = 1"),
-            "admins": one("SELECT COUNT(*) FROM users WHERE role = 'admin'"),
-            "disabled": one("SELECT COUNT(*) FROM users WHERE disabled = 1"),
-            "new_7d": one("SELECT COUNT(*) FROM users WHERE created_at >= ?", now - 7 * DAY),
-            "active_24h": one("SELECT COUNT(*) FROM users WHERE last_login_at >= ?", now - DAY),
-            "active_7d": one("SELECT COUNT(*) FROM users WHERE last_login_at >= ?", now - 7 * DAY),
-            "online_sessions": one(
-                "SELECT COUNT(*) FROM sessions WHERE revoked = 0 AND expires_at > ?", now
-            ),
-        }
-        providers = {
-            r[0]: r[1]
-            for r in con.execute("SELECT provider, COUNT(DISTINCT user_id) FROM oauth_identities GROUP BY provider")
-        }
-        providers["password"] = one("SELECT COUNT(*) FROM users WHERE password_hash IS NOT NULL")
-        a = con.execute(
-            """SELECT COUNT(*), AVG(predicted_k), AVG(total_ms), SUM(gt_true_k IS NOT NULL),
-                      SUM(gt_true_k IS NOT NULL AND predicted_k = gt_true_k),
-                      SUM(gt_true_k IS NOT NULL AND ABS(predicted_k - gt_true_k) <= 1),
-                      SUM(created_at >= ?), SUM(created_at >= ?)
-               FROM analyses""",
-            (now - DAY, now - 7 * DAY),
-        ).fetchone()
-        daily = [
-            {"day": r[0], "analyses": r[1]}
-            for r in con.execute(
-                "SELECT date(created_at, 'unixepoch', 'localtime') d, COUNT(*) FROM analyses WHERE created_at >= ? GROUP BY d ORDER BY d",
-                (now - 14 * DAY,),
+        if summary is not None:
+            con.execute(
+                "UPDATE user_jobs SET status = ?, summary_json = ? WHERE job_id = ?",
+                (status, json.dumps(summary), job_id),
             )
-        ]
-        signups = [
-            {"day": r[0], "users": r[1]}
-            for r in con.execute(
-                "SELECT date(created_at, 'unixepoch', 'localtime') d, COUNT(*) FROM users WHERE created_at >= ? GROUP BY d ORDER BY d",
-                (now - 14 * DAY,),
-            )
-        ]
-        k_hist = [
-            {"k": r[0], "n": r[1]}
-            for r in con.execute(
-                "SELECT predicted_k, COUNT(*) FROM analyses WHERE predicted_k IS NOT NULL GROUP BY predicted_k ORDER BY predicted_k"
-            )
-        ]
-        top_users = [
-            dict(r)
-            for r in con.execute(
-                """SELECT u.email, COUNT(a.id) AS analyses FROM analyses a JOIN users u ON u.id = a.user_id
-                   GROUP BY a.user_id ORDER BY analyses DESC LIMIT 5"""
-            )
-        ]
-    gt_n = int(a[3] or 0)
-    return {
-        "users": users,
-        "providers": providers,
-        "analyses": {
-            "total": int(a[0] or 0),
-            "last_24h": int(a[6] or 0),
-            "last_7d": int(a[7] or 0),
-            "avg_predicted_k": round(a[1], 2) if a[1] is not None else None,
-            "avg_latency_ms": round(a[2], 0) if a[2] is not None else None,
-            "with_ground_truth": gt_n,
-            "gt_exact_accuracy": round((a[4] or 0) / gt_n, 4) if gt_n else None,
-            "gt_within_one": round((a[5] or 0) / gt_n, 4) if gt_n else None,
-            "daily_14d": daily,
-            "predicted_k_histogram": k_hist,
-            "top_users": top_users,
-        },
-        "signups_14d": signups,
+        else:
+            con.execute("UPDATE user_jobs SET status = ? WHERE job_id = ?", (status, job_id))
+
+
+def list_user_jobs(user_id: int, limit: int = 100) -> list[dict[str, Any]]:
+    """Return recent analysis jobs belonging solely to user_id."""
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT job_id, user_id, filename, created_at, status, summary_json FROM user_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (int(user_id), int(limit)),
+        ).fetchall()
+    return [_format_job_row(r) for r in rows]
+
+
+def list_all_jobs(user_id: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    """Return analysis jobs across all users (or filtered by user_id) for admin-only views."""
+    where = "WHERE j.user_id = ?" if user_id is not None else ""
+    params = (int(user_id), int(limit)) if user_id is not None else (int(limit),)
+    with _conn() as con:
+        rows = con.execute(
+            f"""
+            SELECT j.job_id, j.user_id, u.email AS user_email, j.filename, j.created_at, j.status, j.summary_json
+            FROM user_jobs j
+            JOIN users u ON u.id = j.user_id
+            {where}
+            ORDER BY j.created_at DESC LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    return [_format_job_row(r) for r in rows]
+
+
+def _format_job_row(r: sqlite3.Row) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    if r["summary_json"]:
+        try:
+            parsed = json.loads(r["summary_json"])
+            if isinstance(parsed, dict):
+                summary = parsed
+        except ValueError:
+            summary = {}
+    item: dict[str, Any] = {
+        "id": r["job_id"],
+        "job_id": r["job_id"],
+        "user_id": int(r["user_id"]),
+        "filename": r["filename"],
+        "created_at": r["created_at"],
+        "status": r["status"] or "analyzed",
+        "summary": summary,
     }
+    if "user_email" in r.keys():
+        item["user_email"] = r["user_email"]
+    return item
 
 
-def admin_list_users() -> list[dict[str, Any]]:
+def delete_user_job(job_id: str, user: dict[str, Any]) -> bool:
+    """Delete a job row only if owned by user or caller is admin."""
+    with _conn() as con:
+        if user.get("role") == "admin":
+            cur = con.execute("DELETE FROM user_jobs WHERE job_id = ?", (job_id,))
+        else:
+            cur = con.execute(
+                "DELETE FROM user_jobs WHERE job_id = ? AND user_id = ?",
+                (job_id, int(user["id"])),
+            )
+    return cur.rowcount > 0
+
+
+def clear_user_jobs(user_id: int) -> list[str]:
+    """Delete all persisted jobs belonging solely to user_id and return deleted job_ids."""
+    with _conn() as con:
+        ids = [
+            r["job_id"]
+            for r in con.execute(
+                "SELECT job_id FROM user_jobs WHERE user_id = ?", (int(user_id),)
+            ).fetchall()
+        ]
+        con.execute("DELETE FROM user_jobs WHERE user_id = ?", (int(user_id),))
+    return ids
+
+
+def delete_user_account(target_uid: int, actor_uid: int) -> tuple[bool, list[str], str | None]:
+    """Delete a user account and cascade its history/sessions; prevents self-deletion."""
+    if int(target_uid) == int(actor_uid):
+        return False, [], "You cannot delete your own administrator account."
+    with _conn() as con:
+        ids = [
+            r["job_id"]
+            for r in con.execute(
+                "SELECT job_id FROM user_jobs WHERE user_id = ?", (int(target_uid),)
+            ).fetchall()
+        ]
+        cur = con.execute("DELETE FROM users WHERE id = ?", (int(target_uid),))
+        if cur.rowcount == 0:
+            return False, [], "User account not found."
+    return True, ids, None
+
+
+def list_users() -> list[dict[str, Any]]:
+    """Return all user accounts with active session counts and job counts (for Admin Dashboard)."""
     now = time.time()
     with _conn() as con:
         rows = con.execute(
             """
-            SELECT u.id, u.email, u.role, u.email_verified, u.disabled, u.created_at, u.last_login_at,
-                   u.password_hash IS NOT NULL AS has_password,
-                   (SELECT GROUP_CONCAT(DISTINCT provider) FROM oauth_identities o WHERE o.user_id = u.id) AS providers,
-                   (SELECT COUNT(*) FROM analyses a WHERE a.user_id = u.id) AS analyses,
-                   (SELECT MAX(created_at) FROM analyses a WHERE a.user_id = u.id) AS last_analysis_at,
-                   (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked = 0 AND s.expires_at > ?) AS active_sessions
-            FROM users u ORDER BY u.created_at DESC
+            SELECT u.id, u.email, u.role, u.email_verified, COALESCE(u.is_active, 1) AS is_active,
+                   u.created_at, u.last_login_at,
+                   (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked = 0 AND s.expires_at > ?) AS active_sessions,
+                   (SELECT COUNT(*) FROM user_jobs j WHERE j.user_id = u.id) AS job_count
+            FROM users u
+            ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'developer' THEN 1 ELSE 2 END, u.created_at DESC
             """,
             (now,),
         ).fetchall()
-    protected = bootstrap_admin_emails()
-    out = []
-    for r in rows:
-        d = dict(r)
-        methods = [p for p in (d.pop("providers") or "").split(",") if p]
-        if d.pop("has_password"):
-            methods.append("password")
-        d["sign_in_methods"] = methods
-        d["email_verified"] = bool(d["email_verified"])
-        d["disabled"] = bool(d["disabled"])
-        d["protected"] = d["email"] in protected
-        out.append(d)
-    return out
+    return [
+        {
+            "id": int(r["id"]),
+            "email": r["email"],
+            "role": r["role"] or "user",
+            "email_verified": bool(r["email_verified"]),
+            "is_active": bool(r["is_active"]),
+            "created_at": r["created_at"],
+            "last_login_at": r["last_login_at"],
+            "active_sessions": int(r["active_sessions"]),
+            "job_count": int(r["job_count"]),
+        }
+        for r in rows
+    ]
 
 
-def _get_user_row(con: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
-    return con.execute("SELECT id, email, role, disabled FROM users WHERE id = ?", (user_id,)).fetchone()
-
-
-def _active_admin_count(con: sqlite3.Connection) -> int:
-    return con.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0").fetchone()[0]
-
-
-def admin_set_role(actor: dict[str, Any], user_id: int, role: str) -> tuple[bool, str]:
-    if role not in ("user", "admin"):
-        return False, "Role must be 'user' or 'admin'."
+def update_user_role(target_uid: int, new_role: str, actor_uid: int) -> tuple[bool, str | None]:
+    """Update a user's role; prevents an admin from demoting their own account."""
+    role = (new_role or "").strip().lower()
+    if role not in VALID_ROLES:
+        return False, f"Invalid role. Allowed roles: {', '.join(VALID_ROLES)}."
+    if int(target_uid) == int(actor_uid) and role != "admin":
+        return False, "You cannot remove administrator privileges from your own account."
     with _conn() as con:
-        row = _get_user_row(con, user_id)
-        if not row:
-            return False, "User not found."
-        if row["role"] == role:
-            return True, f"{row['email']} is already {role}."
-        if role == "user":
-            if int(row["id"]) == int(actor["id"]):
-                return False, "You cannot remove your own admin role. Ask another admin."
-            if row["email"] in bootstrap_admin_emails():
-                return False, "This admin is set in the server config (ECHOCOUNT_ADMIN_EMAIL[S]) and cannot be demoted here."
-            if _active_admin_count(con) <= 1:
-                return False, "At least one active admin must remain."
-        con.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
-    log_admin_action(actor, "promote" if role == "admin" else "demote", user_id, row["email"])
-    return True, f"{row['email']} is now {'an admin' if role == 'admin' else 'a regular user'}."
+        cur = con.execute("UPDATE users SET role = ? WHERE id = ?", (role, int(target_uid)))
+        if cur.rowcount == 0:
+            return False, "User account not found."
+    return True, None
 
 
-def admin_set_disabled(actor: dict[str, Any], user_id: int, disabled: bool) -> tuple[bool, str]:
+def set_user_active(target_uid: int, active: bool, actor_uid: int) -> tuple[bool, str | None]:
+    """Enable or disable a user account; prevents self-deactivation and revokes sessions when disabled."""
+    if int(target_uid) == int(actor_uid) and not active:
+        return False, "You cannot deactivate your own administrator account."
     with _conn() as con:
-        row = _get_user_row(con, user_id)
-        if not row:
-            return False, "User not found."
-        if int(row["id"]) == int(actor["id"]):
-            return False, "You cannot disable your own account."
-        if disabled and row["email"] in bootstrap_admin_emails():
-            return False, "Config-defined admins cannot be disabled here."
-        if disabled and row["role"] == "admin" and _active_admin_count(con) <= 1:
-            return False, "At least one active admin must remain."
-        con.execute("UPDATE users SET disabled = ? WHERE id = ?", (1 if disabled else 0, user_id))
-        if disabled:
-            con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (user_id,))
-    log_admin_action(actor, "disable" if disabled else "enable", user_id, row["email"])
-    return True, f"{row['email']} has been {'disabled and signed out' if disabled else 're-enabled'}."
-
-
-def admin_revoke_sessions(actor: dict[str, Any], user_id: int) -> tuple[bool, str]:
-    with _conn() as con:
-        row = _get_user_row(con, user_id)
-        if not row:
-            return False, "User not found."
-        q = "UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0"
-        params: tuple = (user_id,)
-        if int(row["id"]) == int(actor["id"]):
-            q += " AND id != ?"
-            params = (user_id, actor["sid"])
-        n = con.execute(q, params).rowcount
-    log_admin_action(actor, "revoke_sessions", user_id, row["email"], f"{n} session(s)")
-    return True, f"Signed {row['email']} out of {n} session(s)."
-
-
-def admin_delete_user(actor: dict[str, Any], user_id: int) -> tuple[bool, str]:
-    with _conn() as con:
-        row = _get_user_row(con, user_id)
-        if not row:
-            return False, "User not found."
-        if int(row["id"]) == int(actor["id"]):
-            return False, "You cannot delete your own account."
-        if row["email"] in bootstrap_admin_emails():
-            return False, "Config-defined admins cannot be deleted here."
-        if row["role"] == "admin" and _active_admin_count(con) <= 1:
-            return False, "At least one active admin must remain."
-        con.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    log_admin_action(actor, "delete_user", user_id, row["email"])
-    return True, f"{row['email']} was deleted."
-
-
-def admin_invite(actor: dict[str, Any], raw_email: str) -> tuple[bool, str]:
-    """Promote an existing user by email, or pre-authorize an email to become admin on first sign-in."""
-    email = normalize_email(raw_email)
-    if not email or not _EMAIL_RE.match(email):
-        return False, "Enter a valid email address."
-    with _conn() as con:
-        row = con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-        if not row:
-            con.execute(
-                "INSERT OR REPLACE INTO admin_invites (email, invited_by, created_at) VALUES (?, ?, ?)",
-                (email, actor["email"], time.time()),
-            )
-    if row:
-        return admin_set_role(actor, int(row["id"]), "admin")
-    log_admin_action(actor, "invite_admin", None, email)
-    return True, f"{email} will become an admin the first time they sign in."
-
-
-def admin_list_invites() -> list[dict[str, Any]]:
-    with _conn() as con:
-        return [dict(r) for r in con.execute("SELECT email, invited_by, created_at FROM admin_invites ORDER BY created_at DESC")]
-
-
-def admin_cancel_invite(actor: dict[str, Any], raw_email: str) -> tuple[bool, str]:
-    email = normalize_email(raw_email)
-    with _conn() as con:
-        n = con.execute("DELETE FROM admin_invites WHERE email = ?", (email,)).rowcount
-    if not n:
-        return False, "No pending invite for that email."
-    log_admin_action(actor, "cancel_invite", None, email)
-    return True, f"Invite for {email} cancelled."
-
-
-def admin_audit_log(limit: int = 100) -> list[dict[str, Any]]:
-    with _conn() as con:
-        return [
-            dict(r)
-            for r in con.execute(
-                "SELECT actor_email, action, target_email, detail, created_at FROM admin_audit ORDER BY id DESC LIMIT ?",
-                (limit,),
-            )
-        ]
-
-
-def admin_recent_analyses(limit: int = 50) -> list[dict[str, Any]]:
-    with _conn() as con:
-        return [
-            dict(r)
-            for r in con.execute(
-                """SELECT a.created_at, COALESCE(u.email, '(deleted user)') AS email, a.filename, a.duration_s,
-                          a.predicted_k, a.confidence, a.gt_true_k, a.gt_dataset, a.total_ms
-                   FROM analyses a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?""",
-                (limit,),
-            )
-        ]
-
-
-def user_history(user_id: int, limit: int = 200) -> list[dict[str, Any]]:
-    """Return analysis history belonging strictly to user_id (excluding items they cleared)."""
-    with _conn() as con:
-        rows = con.execute(
-            """SELECT id, job_id, filename, duration_s, predicted_k, confidence, gt_true_k, gt_dataset, created_at
-               FROM analyses
-               WHERE user_id = ? AND user_deleted = 0
-               ORDER BY id DESC LIMIT ?""",
-            (user_id, limit),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def delete_user_history_item(user_id: int, item_id: int) -> bool:
-    """Soft-delete one history item for its owner (admin Activity retains the record)."""
-    with _conn() as con:
-        n = con.execute(
-            "UPDATE analyses SET user_deleted = 1 WHERE id = ? AND user_id = ? AND user_deleted = 0",
-            (item_id, user_id),
-        ).rowcount
-    return n > 0
-
-
-def clear_user_history(user_id: int) -> int:
-    """Soft-delete all history items for user_id (admin Activity retains the records)."""
-    with _conn() as con:
-        return con.execute(
-            "UPDATE analyses SET user_deleted = 1 WHERE user_id = ? AND user_deleted = 0",
-            (user_id,),
-        ).rowcount
-
-
-def register_user_job(job_id: str, user_id: int, filename: str) -> None:
-    """Persist job ownership so users can never access another user's stems or ZIP."""
-    with _conn() as con:
-        con.execute(
-            "INSERT OR REPLACE INTO user_jobs (job_id, user_id, filename, created_at) VALUES (?, ?, ?, ?)",
-            (job_id, user_id, filename, time.time()),
+        cur = con.execute(
+            "UPDATE users SET is_active = ? WHERE id = ?", (1 if active else 0, int(target_uid))
         )
+        if cur.rowcount == 0:
+            return False, "User account not found."
+        if not active:
+            con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (int(target_uid),))
+    return True, None
+
+
+def revoke_user_sessions(target_uid: int) -> int:
+    """Revoke all active sessions for target_uid."""
+    with _conn() as con:
+        cur = con.execute(
+            "UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0", (int(target_uid),)
+        )
+        return int(cur.rowcount)
 
 
 def user_owns_job(job_id: str, user_id: int) -> bool:
     """Verify job_id belongs to user_id."""
     with _conn() as con:
-        row = con.execute(
-            "SELECT user_id FROM user_jobs WHERE job_id = ?", (job_id,)
-        ).fetchone()
+        row = con.execute("SELECT user_id FROM user_jobs WHERE job_id = ?", (job_id,)).fetchone()
     return bool(row and int(row["user_id"]) == int(user_id))
+
+
+def can_access_job(job_id: str, user: dict[str, Any] | None) -> bool:
+    """Allow job access only to its owner or an administrator."""
+    if not user or not job_id:
+        return False
+    if user.get("role") == "admin":
+        with _conn() as con:
+            row = con.execute("SELECT 1 FROM user_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        return row is not None
+    return user_owns_job(job_id, int(user["id"]))
+
+
+_USER_SELECT = "SELECT id, email, password_hash, email_verified, role, COALESCE(is_active, 1) AS is_active FROM users"
 
 
 def register_oauth_user(
@@ -923,18 +792,17 @@ def register_oauth_user(
             (provider, provider_sub),
         ).fetchone()
         if existing_oauth:
-            uid = int(existing_oauth["user_id"])
-            user = con.execute("SELECT id, email, email_verified, disabled FROM users WHERE id = ?", (uid,)).fetchone()
-            if user["disabled"]:
-                return None, "This account has been disabled. Contact an administrator."
+            user = con.execute(
+                f"{_USER_SELECT} WHERE id = ?", (int(existing_oauth["user_id"]),)
+            ).fetchone()
+            if not user or not user["is_active"]:
+                return None, "This account has been deactivated by an administrator."
             return dict(user), None
 
-        existing_user = con.execute(
-            "SELECT id, email, email_verified, disabled FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        existing_user = con.execute(f"{_USER_SELECT} WHERE email = ?", (email,)).fetchone()
         if existing_user:
-            if existing_user["disabled"]:
-                return None, "This account has been disabled. Contact an administrator."
+            if not existing_user["is_active"]:
+                return None, "This account has been deactivated by an administrator."
             if not existing_user["email_verified"]:
                 return (
                     None,
@@ -952,11 +820,12 @@ def register_oauth_user(
             "INSERT INTO oauth_identities (user_id, provider, provider_sub, email, email_verified, created_at) VALUES (?, ?, ?, ?, 1, ?)",
             (uid, provider, provider_sub, email, now),
         )
-        user = con.execute("SELECT id, email, email_verified FROM users WHERE id = ?", (uid,)).fetchone()
-        return dict(user), None
+        return dict(con.execute(f"{_USER_SELECT} WHERE id = ?", (uid,)).fetchone()), None
 
 
-def register_password_user(raw_email: str, password: str) -> tuple[int | None, str | None, str | None]:
+def register_password_user(
+    raw_email: str, password: str
+) -> tuple[int | None, str | None, str | None]:
     """Create a pending password-based account and return (user_id, raw_verify_token, error)."""
     email, err = validate_email_policy(raw_email, oauth_verified=False)
     if err or not email:
@@ -968,36 +837,43 @@ def register_password_user(raw_email: str, password: str) -> tuple[int | None, s
     pw_hash = hash_password(password)
     now = time.time()
     with _conn() as con:
-        existing = con.execute("SELECT id, email_verified FROM users WHERE email = ?", (email,)).fetchone()
+        existing = con.execute(
+            "SELECT id, email_verified FROM users WHERE email = ?", (email,)
+        ).fetchone()
         if existing:
             if existing["email_verified"]:
-                return None, None, "If this email is eligible, a verification link has been prepared."
-            # Refresh unverified pending registration safely
-            con.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, existing["id"]))
+                return (
+                    None,
+                    None,
+                    "If this email is eligible, a verification link has been prepared.",
+                )
+            con.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, existing["id"])
+            )
             uid = int(existing["id"])
         else:
+            role = "admin" if email in _admin_email_set() else "user"
             cur = con.execute(
-                "INSERT INTO users (email, password_hash, email_verified, created_at) VALUES (?, ?, 0, ?)",
-                (email, pw_hash, now),
+                "INSERT INTO users (email, password_hash, email_verified, role, created_at) VALUES (?, ?, 0, ?, ?)",
+                (email, pw_hash, role, now),
             )
             uid = int(cur.lastrowid)
-    token = create_auth_token(uid, "verify_email")
-    return uid, token, None
+    return uid, create_auth_token(uid, "verify_email"), None
 
 
-def authenticate_password_user(raw_email: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
+def authenticate_password_user(
+    raw_email: str, password: str
+) -> tuple[dict[str, Any] | None, str | None]:
     """Verify email + password with constant generic failure message on invalid credentials."""
     email = normalize_email(raw_email)
     if not email or not password:
         return None, "Invalid email or password."
     with _conn() as con:
-        row = con.execute(
-            "SELECT id, email, password_hash, email_verified, role, disabled FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        row = con.execute(f"{_USER_SELECT} WHERE email = ?", (email,)).fetchone()
     if not row or not row["password_hash"] or not verify_password(password, row["password_hash"]):
         return None, "Invalid email or password."
-    if row["disabled"]:
-        return None, "This account has been disabled. Contact an administrator."
+    if not row["is_active"]:
+        return None, "This account has been deactivated by an administrator."
     if not row["email_verified"]:
         return None, "Please verify your email address before signing in."
     return {

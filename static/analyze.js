@@ -107,7 +107,6 @@
     if (!keepInput) {
       el.input.value = "";
       show("empty");
-      window.dispatchEvent(new CustomEvent("ec:reset"));
     }
   }
   function info() {
@@ -143,18 +142,6 @@
         if (m > mx) mx = m;
       }
       peaks = p.map((v) => v / (mx || 1));
-      window.dispatchEvent(
-        new CustomEvent("ec:file", {
-          detail: {
-            filename: f.name,
-            size: f.size,
-            duration: buf.duration,
-            sampleRate: buf.sampleRate,
-            peaks,
-            samples: d,
-          },
-        }),
-      );
     } catch {
       peaks = null;
       toast(
@@ -376,9 +363,6 @@
     el.bar.style.width = "0%";
     el.loadTxt.textContent = "Uploading";
     setStages({ decode: "active" });
-    window.dispatchEvent(
-      new CustomEvent("ec:run-start", { detail: { filename: file.name } }),
-    );
     const fd = new FormData();
     fd.append("audio", file);
     const x = new XMLHttpRequest();
@@ -399,7 +383,6 @@
       el.loadTxt.textContent = "Decoding, counting and naming sounds";
       el.bar.classList.add("indet");
       setStages({ decode: "done", count: "active", tag: "active" });
-      window.dispatchEvent(new CustomEvent("ec:run-stage", { detail: { stage: "infer" } }));
     };
     x.onload = () => {
       if (id !== runId) return;
@@ -409,6 +392,7 @@
       } catch {}
       done();
       if (x.status === 401 || data.auth_required) {
+        window.EC.clearHistoryCache?.();
         fail("Please sign in to analyze recordings. Redirecting to sign in…");
         setTimeout(() => (location.href = "/login?next=/analyze"), 900);
         return;
@@ -445,7 +429,6 @@
   function fail(msg) {
     el.errTxt.textContent = msg;
     show("err");
-    window.dispatchEvent(new CustomEvent("ec:run-error", { detail: { error: msg } }));
   }
   el.go.addEventListener("click", run);
   el.retry.addEventListener("click", run);
@@ -456,7 +439,7 @@
   const fmtRange = (r) => `${fmtTime(r.start || 0)}–${fmtTime(r.end || 0)}`;
 
   function render(data) {
-    window.dispatchEvent(new CustomEvent("ec:run-result", { detail: data }));
+    window.dispatchEvent(new CustomEvent("ec:analysis-result", { detail: data }));
     if (!data.trained || !data.count) {
       el.res.innerHTML = `<div class="result"><div><h3>No counting model available</h3><p>${esc(data.message || "The counting checkpoint is missing or incompatible.")}</p></div>
         ${data.model_error ? `<div class="notice">${esc(data.model_error)}</div>` : ""}
@@ -556,9 +539,24 @@
         })
         .join("");
 
+      let overlapHtml = "";
+      if (overlaps.length > 0) {
+        const ovItems = overlaps
+          .map((o) => {
+            const pairName = (o.sounds || []).map((x) => esc(x)).join(" + ");
+            const ivs = (o.intervals || [])
+              .map((iv) => esc(fmtRange(iv)))
+              .join(", ");
+            return `<span><strong>${pairName}</strong> (${ivs})</span>`;
+          })
+          .join(" &nbsp;·&nbsp; ");
+        overlapHtml = `<p class="fine" style="margin-top:8px"><strong>Co-occurring overlapping sounds:</strong> ${ovItems}</p>`;
+      }
+
       namedSoundsHtml = `<section class="tag-section" aria-labelledby="namedH">
         <h3 id="namedH" class="sub">Detected sounds <small>${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} with time ranges</small></h3>
         <div class="named-sounds-list">${rows}</div>
+        ${overlapHtml}
       </section>`;
     }
 
@@ -694,14 +692,11 @@
       </details>`;
     }
 
-    const pmHtml =
-      c.rounded_count > 4 ? `<span class="count-pm">(±${spread})</span>` : "";
-
     el.res.innerHTML = `<div class="result">
       <div id="resStages" class="res-stages">${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "idle", zip: "idle" })}</div>
       <div class="count-card" role="group" aria-label="Model prediction">
         <div class="gt-col-head pred" style="margin-bottom:2px">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
-        <div class="count-main"><b id="bigN">≈${c.rounded_count}</b> ${pmHtml}<span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
+        <div class="count-main"><b id="bigN" class="count-ripple">≈${c.rounded_count}</b><span class="count-pm">(±${spread})</span><span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
         <p>${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
       </div>
       ${groundTruthHtml}
@@ -710,7 +705,7 @@
       <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
       ${warn}
       ${tagsHtml}
-      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the ${document.body.dataset.admin === "true" ? '<a href="/evaluation">Evaluation</a> tab' : '<a href="/how#findings">How it works</a> page'} for measured error by source count.</div>
+      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the <a href="/evaluation">Evaluation</a> tab for measured error by source count.</div>
       <section class="stems" aria-labelledby="stemsH"><h3 id="stemsH" class="sub">Separated stems</h3><div id="stemsBody"></div></section>
     </div>`;
 
@@ -729,8 +724,10 @@
     });
 
     show("res");
+    window.__ecWave_analyzeHeaderWave?.pulse?.(0.5, 0.5);
     sepState = s;
     stemsEmpty(s, c.rounded_count, namedSounds);
+    // Analysis history is persisted server-side per authenticated account (never in shared localStorage).
   }
 
   function stemsEmpty(s, roundedCount, namedSounds) {
@@ -750,28 +747,46 @@
     }
 
     // Phase 0.2 & Phase 2: Enable Separate button ONLY when a real trained separator supports the request.
-    // Otherwise hide the Separate button and show a plain "Separation not available for this recording" message.
-    if (s.can_separate && s.trained) {
-      let btnLabel = `Separate into ${roundedCount} stems`;
-      if (s.speech_mode) {
-        btnLabel = `Separate into ${roundedCount} speaker stems (Human 1, Human 2)`;
-      } else if (Array.isArray(namedSounds) && namedSounds.length > 0) {
-        const namesPreview = namedSounds
-          .slice(0, 3)
-          .map((x) => x.name || x.friendly_name)
-          .join(", ");
-        btnLabel = `Separate ${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} (${namesPreview}) + Residual`;
+    const extModes = Array.isArray(s.extended_modes) ? s.extended_modes : [];
+    const extBtnsHtml = extModes
+      .map((m) => {
+        const expTag = m.status === "experimental" ? " [Experimental]" : "";
+        const metricTxt =
+          typeof m.mean_sisdri_db === "number"
+            ? ` (held-out ${m.mean_sisdri_db >= 0 ? "+" : ""}${m.mean_sisdri_db} dB SI-SDRi)`
+            : "";
+        return `<button class="btn ${m.status === "enabled" ? "primary" : ""}" data-sep-mode="${esc(m.mode)}" type="button">${esc(m.label)}${esc(expTag)}${esc(metricTxt)}</button>`;
+      })
+      .join(" ");
+
+    if ((s.can_separate && s.trained) || extModes.length > 0) {
+      let btnHtml = "";
+      if (s.can_separate && s.trained) {
+        let btnLabel = `Separate into ${roundedCount} stems`;
+        if (s.speech_mode) {
+          btnLabel = `Separate into ${roundedCount} speaker stems (Human 1, Human 2)`;
+        } else if (Array.isArray(namedSounds) && namedSounds.length > 0) {
+          const namesPreview = namedSounds
+            .slice(0, 3)
+            .map((x) => x.name || x.friendly_name)
+            .join(", ");
+          btnLabel = `Separate ${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} (${namesPreview}) + Residual`;
+        }
+        btnHtml = `<button class="btn primary" id="sepBtn" type="button">${esc(btnLabel)}</button> `;
       }
-      body.innerHTML = `${speechOfflineHtml}<p class="fine">Extracts one audio stem per detected sound plus an <strong>Everything else (Residual)</strong> stem so nothing is lost.</p>
-        <button class="btn primary" id="sepBtn" type="button">${esc(btnLabel)}</button>`;
-      $("#sepBtn").addEventListener("click", separate);
+      body.innerHTML = `${speechOfflineHtml}<p class="fine">Extracts one audio stem per detected sound plus an <strong>Everything else (Residual)</strong> stem so nothing is lost. Runs in the background with quality-gate verification.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${btnHtml}${extBtnsHtml}</div>`;
+      $("#sepBtn")?.addEventListener("click", () => separate(null));
+      body.querySelectorAll("[data-sep-mode]").forEach((btn) =>
+        btn.addEventListener("click", () => separate(btn.dataset.sepMode)),
+      );
     } else {
       const msg = s.reason || "Separation not available for this recording.";
       body.innerHTML = `${speechOfflineHtml}<div class="state-inline" role="status"><strong>Separation not available for this recording</strong><p>${esc(msg)}</p></div>`;
     }
   }
 
-  function separate() {
+  function separate(requestedMode = null) {
     const body = $("#stemsBody"),
       my = runId;
     setStages({
@@ -780,16 +795,45 @@
       tag: tagDoneState,
       separate: "active",
     });
-    body.innerHTML = `<div role="status" aria-live="polite"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Separating named sounds &amp; verifying stem quality gates…</p></div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
-    fetch("/api/separate", {
+    const modeNote = requestedMode ? ` (${esc(requestedMode)})` : "";
+    body.innerHTML = `<div role="status" aria-live="polite"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Running background separation${modeNote} &amp; verifying stem quality gates…</p></div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
+
+    const payload = { job_id: jobId, async: true };
+    if (requestedMode) payload.mode = requestedMode;
+
+    const fetchAuthJson = (url, opts) =>
+      fetch(url, { credentials: "same-origin", cache: "no-store", ...opts }).then((r) => {
+        if (r.status === 401) {
+          window.EC?.clearHistoryCache?.();
+          location.href = "/login?next=/analyze";
+          throw new Error("Session expired.");
+        }
+        return r.json().then((d) => ({ ok: r.ok, status: r.status, d }));
+      });
+
+    const pollJob = (pollUrl) =>
+      fetchAuthJson(pollUrl).then(({ ok, d }) => {
+        if (my !== runId) return null;
+        if (!ok || d.status === "failed") throw new Error(d.error || "Separation failed.");
+        if (d.status === "running" || d.status === "idle") {
+          return new Promise((res) => setTimeout(res, 650)).then(() => pollJob(pollUrl));
+        }
+        return d;
+      });
+
+    fetchAuthJson("/api/separate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job_id: jobId }),
+      body: JSON.stringify(payload),
     })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (my !== runId) return;
+      .then(({ ok, status, d }) => {
+        if (my !== runId) return null;
         if (!ok) throw new Error(d.error || "Separation failed.");
+        if (status === 202 && d.poll_url) return pollJob(d.poll_url);
+        return d;
+      })
+      .then((d) => {
+        if (!d || my !== runId) return;
         const qFail = Boolean(d.quality_failed);
         const qc = d.quality_check || {};
         const sv = d.speaker_verification || {};
