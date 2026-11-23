@@ -1,107 +1,111 @@
 # EchoCount — Audio Source Counting, Sound Naming & Separation
 
-EchoCount is a Flask + PyTorch audio analysis web app. Upload a recording (WAV, MP3, or FLAC) and EchoCount:
-1. **Counts** how many distinct overlapping sources are present (`SourceCountCNN` with Sparse Specialist routing $K \le 8$, isotonic calibration, and 30-pass MC-dropout uncertainty).
-2. **Names every sound** with friendly labels (`"Hammer"`, `"Phone vibration"`, `"Dog bark"`, `"Cat meow"`, `"Cello"`, `"Scissors"`, `"Telephone ring"`, `"Human voice"`, `"Door knock"`, `"Keyboard typing"`, `"Water"`, `"Car horn"`, plus AudioSet-527 classes), confidence scores, and frame-level time ranges.
-3. **Separates each named sound** into its own stem plus an exact **`Everything else (Residual)`** stem (`mixture − sum(stems)`), verified by three measured quality gates (waveform correlation $< 0.90$, energy conservation, and self-consistency re-tagging) and downloadable as individual WAVs or a ZIP.
-
-> _Screenshot placeholder: add `docs/screenshot.png` of the `/analyze` UI here._
+EchoCount is a Flask + PyTorch audio analysis web app that estimates how many sounds overlap in a single-channel recording, names detected sounds with frame-level time ranges, separates stems with quality gates, and stores analysis history privately per account.
 
 ---
 
-## 1. Quick Setup (Windows PowerShell)
+## 1. Quick Start (3 Steps)
 
-**Requirements:** Python **3.11 – 3.14** (verified on Python `3.14.8`).
+**Python version:** `3.14.8` (see `.python-version`; compatible with Python `3.11 – 3.14`).
 
 ```powershell
+# 1. Clone and create a virtual environment
 git clone https://github.com/25-f2001239/Sanada.git
 cd Sanada
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+
+# 2. Install dependencies (~250 MB+ including PyTorch)
 pip install -r requirements.txt
-copy .env.example .env
+
+# 3. Start the app (auto-creates .env, database, and downloads models on first run)
+python app.py
 ```
 
-### Optional GPU Build of PyTorch (CUDA)
-`requirements.txt` installs CPU `torch==2.15.0` by default. On an NVIDIA GPU machine:
-```powershell
-.\.venv\Scripts\python.exe -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
+Open **http://127.0.0.1:5000** and create an account with email + password.
 
-### Download Pretrained Models & Trained Checkpoints
-Model weights are excluded from git. Download the pretrained HuggingFace models (`models/`) and trained checkpoints (`checkpoints/`):
-```powershell
-.\.venv\Scripts\python.exe scripts\download_models.py
-.\.venv\Scripts\python.exe scripts\download_models.py --check
-```
-*(If hosted checkpoints are not yet uploaded to GitHub Releases, the app still starts gracefully and reports `"Trained checkpoint not found, run scripts/download_models.py"`. You can also train checkpoints locally from your dataset using `scripts/train.py`.)*
+### What Downloads Automatically on First Run
+When you run `python app.py` on a fresh clone, EchoCount automatically creates `.env` (with a random `SECRET_KEY` for local development), initializes `data/echocount.db`, and fetches missing weights (~1.17 GB total, one-time download):
 
-### Run the App
+| Asset | Source | Size | Licence |
+|---|---|---:|---|
+| `source_count_clip.pt`, `tagger.pt`, `separator_iterative.pt` | GitHub Release `v1.0.0` (SHA-256 verified) | 12.84 MB | MIT |
+| `MIT/ast-finetuned-audioset-10-10-0.4593` (pinned revision) | Hugging Face | ~346 MB | BSD-3-Clause |
+| `laion/clap-htsat-unfused` (pinned revision) | Hugging Face | ~615 MB | Apache-2.0 / MIT |
+| `speechbrain/sepformer-wsj02mix` (pinned revision) | Hugging Face | ~113 MB | Apache-2.0 |
+| `speechbrain/spkrec-ecapa-voxceleb` (pinned revision) | Hugging Face | ~83 MB | Apache-2.0 |
+
+*(If you are offline, `python app.py` still starts cleanly and tells you which assets are missing. To skip auto-download on startup, set `ECHOCOUNT_SKIP_AUTO_DOWNLOAD=1`. You can also verify or download manually anytime with `python scripts/download_models.py --check`.)*
+
+---
+
+## 2. Optional Configuration (Admin & OAuth)
+
+- **Becoming an Admin**: Nobody is admin by default. Add your email(s) to `.env` and restart `python app.py`:
+  ```env
+  ADMIN_EMAILS=you@gmail.com
+  ```
+- **Google & Microsoft Sign-In (Optional)**: Email + password sign-up always works out of the box. Google and Microsoft OAuth buttons appear on `/login` **only** when their environment variables are set in `.env` (see `.env.example` for `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`).
+- **Production Mode**: Set `ECHOCOUNT_ENV=production` and supply a strong `SECRET_KEY` (>= 32 chars) in the environment; production mode refuses default or missing secret keys.
+
+---
+
+## 3. Running Tests
+
 ```powershell
-.\.venv\Scripts\python.exe app.py
-# Open http://127.0.0.1:5000
+# Per-user history privacy & isolation tests (14 checks)
+python tests/test_history_privacy.py
+
+# Template, auth, RBAC, and product regression tests
+python test_templates.py --full
+
+# Golden regression check (requires local dataset & checkpoints)
+python tests/golden_check.py --verify
 ```
 
 ---
 
-## 2. Tests, Training & Evaluation
+## 4. Measured Benchmarks & Honest Limits
+
+All figures are read from `evaluation/public_summary.json`, `evaluation/product_benchmarks.json`, and `evaluation/separation_results.json`:
+
+- **Source Counting (`n = 1,285` test mixtures)**: Overall `MAE = 1.65`, `Exact = 43.8%`, `Within ±1 = 64.3%`; Speech Test (`n = 695`): `MAE = 0.80`, `Exact = 53.1%`, `Within ±1 = 78.9%`.
+  - **Dense mixtures (`K > 6`)**: Accuracy drops sharply (`0.0%` exact at `K = 9`, `MAE = 2.81`); EchoCount warns users and disables separation above reliable sparse limits.
+  - **Unseen speakers (`n = 352`)**: `13.1%` exact (`MAE = 2.05`), reflecting a real domain generalization gap vs. seen speakers.
+- **Tagging**: 32-class FSD tagger Group mAP = `0.9926`, Fine-32 mAP = `0.8052`; AST + CLAP held-out 16-class macro AP = `0.9068`.
+- **Separation**:
+  - **2-speaker speech**: Enabled via pretrained `sepformer-wsj02mix` + ECAPA-TDNN speaker verification + 3 quality gates (correlation `< 0.90`, energy conservation, self-consistency re-tagging).
+  - **General multi-sound separation**: Synthetic `K = 2..5` benchmark mean SI-SDRi = `+2.51 dB`, self-consistency `39.3%`, energy conservation `100.0%`; stems failing quality gates are flagged and withheld from ZIP export.
+
+---
+
+## 5. Line Counting Method
+
+Hand-written source counts (Python, JavaScript, CSS, HTML/Jinja) exclude vendored code, virtual environments, models, checkpoints, datasets, caches, generated JSON, tests, and docs:
 
 ```powershell
-# Run product unit, route, and 5-clip regression tests
-.\.venv\Scripts\python.exe test_templates.py --full
-
-# Verify golden baseline (requires dataset & local checkpoints)
-.\.venv\Scripts\python.exe tests\golden_check.py --verify
-
-# Unified training CLI (--smoke or --full)
-.\.venv\Scripts\python.exe scripts\train.py counter --smoke
-.\.venv\Scripts\python.exe scripts\train.py all --full
-
-# Unified evaluation & latency profiler (--smoke or --full)
-# Regenerates evaluation/results.json (ignored from git due to size):
-.\.venv\Scripts\python.exe scripts\evaluate.py counter --full
-.\.venv\Scripts\python.exe scripts\evaluate.py all --full
-
-# Export committed aggregate-only stats for the Home and How-it-works pages:
-.\.venv\Scripts\python.exe scripts\evaluate.py --export-public
+cloc . --include-lang="Python,JavaScript,CSS,HTML" `
+  --exclude-dir=.venv,venv,node_modules,.git,models,checkpoints,data,uploads,work,outputs,deliverables,__pycache__,.pytest_cache,.ruff_cache,.mypy_cache,.cache,feature_cache,tests,evaluation `
+  --not-match-f="^test_.*\.py$"
 ```
 
 ---
 
-## 3. Measured Benchmarks
+## 6. Troubleshooting
 
-All figures below are read directly from `evaluation/results.json` (`SourceCountCNN-v3-speech-fsd-specialist`, `epoch=11`, `sha256: e003d018...`), `evaluation/product_benchmarks.json`, and `evaluation/separation_results.json`. (`evaluation/results.json` is excluded from git; regenerate it with `python scripts/evaluate.py counter --full`.)
-
-- **Source Counting (`evaluation/results.json`, `n=1,285` test mixtures):**
-  - Overall Test: `MAE = 1.6451`, `Exact = 43.8%`, `Within ±1 = 64.3%`.
-  - Speech Test (`n=695`): `MAE = 0.8014`, `Exact = 53.1%`, `Within ±1 = 78.9%`.
-  - Sparse Counts (Overall Test): `K=2` (`n=248`): `77.8%` exact (`99.2%` within ±1); `K=3` (`n=248`): `73.0%` exact (`96.0%` within ±1); `K=4` (`n=148`): `54.1%` exact (`90.5%` within ±1); `K=6` (`n=115`): `70.4%` exact (`93.9%` within ±1).
-  - **Held-Out Unseen Speakers (`Speaker_4_1`, `Speaker8`, `Speaker9`, `n=352`)**: `Exact = 13.1%` (`0.1307`), `Within ±1 = 29.6%` (`0.2955`), `MAE = 2.054`. *(Note: an earlier draft cited `69.9%` / `0.369`, which did not match `evaluation/results.json` for `epoch=11`; `13.1%` exact / `2.054` MAE is the actual measured result on unseen speakers.)*
-- **Tagging (`evaluation/results.json` & `evaluation/product_benchmarks.json`):**
-  - 32-Class FSD Hierarchical Tagger (`checkpoints/tagger.pt`, `epoch=8`): Group Test mAP = `0.9926`, Fine 32-Class Test mAP = `0.8052`, Test F1 = `0.7612`.
-  - Open-Vocabulary 16-Class FSD50K Held-Out Split (`96` clips): AST+CLAP mAP = `0.9068`, Combined Open-Tagger mAP = `0.6979`, F1 = `0.4317`.
-- **Separation (`evaluation/separation_results.json`, `32` held-out synthetic mixtures `K=2..5`, `112` stems):**
-  - Mean SI-SDRi = `+2.51 dB`, Self-Consistency Pass Rate = `39.3%`, Energy Conservation = `100.0%`.
-- **Latency (`evaluation/product_benchmarks.json`, CPU):**
-  - `8 s` clip: `analyze = 1.739 s`, `query_separation = 1.065 s`.
-  - `60 s` clip: `analyze = 1.707 s`, `query_separation = 10.188 s`.
+| Symptom | Cause | Fix |
+|---|---|---|
+| First startup takes a few minutes | Downloading ~1.17 GB of pretrained Hugging Face models & release checkpoints | Wait for progress to finish; subsequent startups skip verified files |
+| `"Some assets could not be downloaded"` on startup | Offline or network blocked | Re-run `python scripts/download_models.py` once online |
+| `pip install` fails on `torch` or `av` | Unsupported Python version or old `pip` | Use Python `3.11 – 3.14` (`.python-version` = `3.14.8`) and run `python -m pip install --upgrade pip` |
+| Google / Microsoft buttons not shown on `/login` | OAuth env vars not set | Intentional — configure `GOOGLE_CLIENT_ID`/`SECRET` or `MICROSOFT_CLIENT_ID`/`SECRET` in `.env` to enable |
+| `403 Forbidden` on `/admin` | Account role is `user` | Add your email to `ADMIN_EMAILS` in `.env` and restart `python app.py` |
+| Uploaded audio disappears after 30 minutes | Automatic privacy TTL cleanup | Expected behavior (`JOB_TTL_SECONDS=1800`); download ZIPs before expiry |
 
 ---
 
-## 4. Project Structure, Licences & Privacy
+## 7. Architecture, Privacy & Licences
 
-- See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the file map, request pipeline diagram, and `ECHOCOUNT_DEV` mode details.
-- **Licences:** EchoCount code is licensed under the **MIT License** ([LICENSE](LICENSE)). Licences differ per pretrained model; see **[THIRD_PARTY.md](THIRD_PARTY.md)**. Some models were trained on datasets with research-only terms (for example WSJ0 for the SepFormer separator).
-- **Datasets:** Not included in git (`FSD_Mix_*` and `Org_Mix_*` live outside the repo; FSD50K isolated clips come from `Fhrozen/FSD50k` / Zenodo `4060432`; real-room recording protocol is in [data/real_eval/RECORDING_GUIDE.md](data/real_eval/RECORDING_GUIDE.md)).
-- **Privacy:** No user audio or recordings of people are stored in the repository. Uploaded audio, stems, and ZIPs are processed in isolated `uploads/jobs/` directories deleted automatically after `JOB_TTL_SECONDS` (default 30 minutes) and on server startup. `evaluation/public_summary.json` contains aggregated metrics only (no filenames, paths, or hashes).
-
----
-
-## 5. Limitations (Measured)
-
-1. **Dense Mixtures ($K > 6$)**: Counting accuracy drops to `0.0%` exact at `K=9` (`MAE = 2.809`); EchoCount warns `"Too many overlapping sounds to separate reliably"` and disables separation.
-2. **Unseen-Speaker Generalization**: On held-out unseen speakers (`n=352`), exact count accuracy is `13.1%` (`MAE = 2.054`), showing a measurable domain/speaker generalization gap compared to seen-speaker mixtures (`53.1%` exact).
-3. **Speech Separation ($K \le 2$)**: `sepformer-wsj02mix` separates up to 2 simultaneous speakers; for $K \ge 3$ pure speech mixtures without `sepformer-wsj03mix`, separation is disabled.
-4. **Speaker Clustering ($K \le 3$)**: Windowed ECAPA-TDNN clustering is shown only for $K \le 3$ because simultaneous overlap blends 1-second window embeddings.
-5. **Co-Channel Broadband Overlap**: Non-speech sounds sharing identical frequency bands and timestamps share TF bins and may be flagged `"Low confidence"` by the self-consistency re-tagging gate (`39.3%` pass rate across `K=2..5` mixtures).
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for the file map and request pipeline.
+- Code is licensed under [LICENSE](LICENSE) (MIT). Pretrained model licences are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+- Analysis history is stored per authenticated user in local SQLite (`data/echocount.db`), never shared across accounts, and never committed to Git.

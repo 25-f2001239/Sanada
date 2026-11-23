@@ -90,17 +90,20 @@ class LogMelCountDataset(Dataset):
         return x, g_vec, f_vec
 
 
-def train_counter(
-    smoke: bool = False, epochs: int = 12, lr: float = 3e-4, batch_size: int = 32
-) -> None:
-    """Train SourceCountCNN on train/val mixtures (test split strictly excluded)."""
+def _load_train_val(smoke: bool, epochs: int) -> tuple[list[dict], list[dict], int]:
     recs = [
         r for r in scan_all_mixtures(include_duplicates=False) if r["split"] in ("train", "val")
     ]
     tr = [r for r in recs if r["split"] == "train"]
     va = [r for r in recs if r["split"] == "val"]
-    if smoke:
-        tr, va, epochs = tr[:64], va[:32], 2
+    return (tr[:64], va[:32], 2) if smoke else (tr, va, epochs)
+
+
+def train_counter(
+    smoke: bool = False, epochs: int = 12, lr: float = 3e-4, batch_size: int = 32
+) -> None:
+    """Train SourceCountCNN on train/val mixtures (test split strictly excluded)."""
+    tr, va, epochs = _load_train_val(smoke, epochs)
     min_k, max_k = 2, 31
     tr_dl = DataLoader(
         LogMelCountDataset(tr, min_k, "counter"), batch_size=batch_size, shuffle=True
@@ -161,13 +164,7 @@ def train_tagger(
     tax = load_taxonomy()
     groups = list(tax["groups"])
     vocab = sorted({c for fcs in tax["group_to_fine_classes"].values() for c in fcs})
-    recs = [
-        r for r in scan_all_mixtures(include_duplicates=False) if r["split"] in ("train", "val")
-    ]
-    tr = [r for r in recs if r["split"] == "train"]
-    va = [r for r in recs if r["split"] == "val"]
-    if smoke:
-        tr, va, epochs = tr[:64], va[:32], 2
+    tr, va, epochs = _load_train_val(smoke, epochs)
     tr_dl = DataLoader(
         LogMelCountDataset(tr, 2, "tagger", vocab, groups), batch_size=batch_size, shuffle=True
     )

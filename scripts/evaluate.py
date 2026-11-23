@@ -78,10 +78,9 @@ def eval_counter(smoke: bool = False) -> dict[str, Any]:
         errs.append(err)
         exacts.append(int(err == 0))
         w1s.append(int(err <= 1))
-    e_arr, ex_arr, w_arr = (
+    e_arr, ex_arr = (
         np.array(errs, dtype=np.float64),
         np.array(exacts, dtype=np.float64),
-        np.array(w1s, dtype=np.float64),
     )
     summary = {
         "n_test": len(test_recs),

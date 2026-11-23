@@ -3,7 +3,7 @@
 venv/
 env/
 
-# Python caches & coverage
+# Python caches, test & lint caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,7 +25,7 @@ node_modules/
 Thumbs.db
 *.log
 
-# Secrets & environment
+# Secrets & environment (keep .env.example)
 .env
 .env.*
 !.env.example
@@ -38,7 +38,7 @@ Thumbs.db
 credentials.json
 secrets.json
 
-# Runtime uploads, temp, work, archives & local DBs
+# Runtime uploads, temp, work, outputs, screenshots & archives
 uploads/
 user_uploads/
 jobs/
@@ -50,49 +50,51 @@ deliverables/
 dist/
 build/
 .cache/
+outputs/
+screenshots/
+playwright-report/
+test-results/
+backup-*/
+cleanup-trash/
 *.zip
 *.7z
+*.tar.gz
 *.bak
+*.orig
 *.dump
 *.db
 *.sqlite
 *.sqlite3
-*.db-journal
-*.sqlite3-journal
+*.db-*
+*.sqlite-*
+*.sqlite3-*
 instance/
 data/.secret_key
+data/ground_truth_index.json
 
-# Downloaded pretrained models & trained checkpoints
-models/
-checkpoints/*
+# Pretrained models & trained binary checkpoints (downloaded automatically on first run)
+models/*
+!models/.gitkeep
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.ckpt
+checkpoints/*.bin
+checkpoints/*.safetensors
+checkpoints/*.onnx
 !checkpoints/.gitkeep
-*.pt
-*.pth
-*.ckpt
-*.bin
-*.safetensors
-*.onnx
-*.h5
-*.keras
-*.tflite
-!checkpoints/source_count_clip.pt
-!checkpoints/tagger.pt
-!checkpoints/separator_iterative.pt
 
-# Datasets, generated indexes, private/eval audio & large generated JSON
+# Datasets & local recordings (keep schema/docs without audio)
 data/*
 !data/.gitkeep
-!data/ground_truth_index.json
 !data/real_eval/
 data/real_eval/*.wav
 data/real_eval/*.flac
 data/real_eval/*.mp3
 !data/real_eval/RECORDING_GUIDE.md
 !data/real_eval/manifest.json
-!data/isolated_sources/
-data/isolated_sources/*
-!data/isolated_sources/manifest.json
 
-# Keep evaluation results and public summary JSONs so /evaluation and /how work out of the box
-!evaluation/results.json
+# Large generated evaluation output (keep committed aggregate summaries)
+evaluation/results.json
 !evaluation/public_summary.json
+!evaluation/product_benchmarks.json
+!evaluation/separation_results.json
