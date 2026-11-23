@@ -453,10 +453,13 @@ def test_auth_security_and_ground_truth() -> None:
     _login_test_user(user_a, "user_a@outlook.com")
     _login_test_user(user_b, "user_b@yahoo.com")
     c_real = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
-    with open(c_real, "rb") as f:
-        ja = user_a.post("/api/analyze", data={"audio": (f, c_real.name)}, content_type="multipart/form-data").get_json()
+    has_real = c_real.is_file()
+    sample_clip = c_real if has_real else (BASE_DIR / "tests" / "fixtures" / "two_tone_test.wav")
+    with open(sample_clip, "rb") as f:
+        ja = user_a.post("/api/analyze", data={"audio": (f, sample_clip.name)}, content_type="multipart/form-data").get_json()
     jid = ja["job_id"]
-    assert ja.get("ground_truth", {}).get("available") is True
+    if has_real:
+        assert ja.get("ground_truth", {}).get("available") is True
     assert user_b.post("/api/separate", json={"job_id": jid}).status_code == 404
     assert user_b.get(f"/api/separate/{jid}").status_code == 404
     assert user_b.get(f"/api/download/{jid}.zip").status_code == 404
