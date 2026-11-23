@@ -221,6 +221,9 @@ def test_five_fixed_clips_regression() -> None:
     ds_root = cfg_mod.get_dataset_root(cfg_mod.load_config())
 
     c1 = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
+    if not c1.is_file():
+        print("  [SKIP] 5-clip regression (local private dataset not present on fresh clone).")
+        return
     with open(c1, "rb") as f:
         j1 = client.post(
             "/api/analyze", data={"audio": (f, c1.name)}, content_type="multipart/form-data"
