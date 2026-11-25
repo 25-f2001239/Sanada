@@ -127,10 +127,10 @@
     });
   });
 
-  const showFeedback = (msg, kind = "info", linkHtml = "") => {
+  const showFeedback = (msg, kind = "info") => {
     if (!feedback) return;
     feedback.className = `notice ${kind} auth-alert is-visible`;
-    feedback.innerHTML = linkHtml ? `<span>${msg}</span> ${linkHtml}` : msg;
+    feedback.textContent = String(msg || "");
     feedback.classList.remove("hidden");
     if (kind === "warn" && formBox && !reduced) {
       formBox.classList.remove("is-shake");

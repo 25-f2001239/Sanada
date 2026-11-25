@@ -18,6 +18,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import numpy as np
 from dotenv import load_dotenv
@@ -339,6 +340,18 @@ def docs_page():
     return render_template("docs.html", status=model_status())
 
 
+@app.before_request
+def enforce_same_origin_mutations():
+    """Defense-in-depth: reject cross-origin Origin headers on state-changing requests."""
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        origin = (request.headers.get("Origin") or "").strip()
+        if origin:
+            req_parts = urlsplit(request.host_url)
+            ori_parts = urlsplit(origin)
+            if (ori_parts.scheme, ori_parts.netloc) != (req_parts.scheme, req_parts.netloc):
+                return jsonify({"error": "Cross-origin request rejected."}), 403
+
+
 @app.after_request
 def apply_security_and_cache_headers(resp):
     """Apply baseline security headers to all responses and no-store to private routes."""
@@ -567,6 +580,11 @@ def _safe_next_url(raw: str | None, role: str | None = None) -> str:
     fallback = auth.default_landing_for_role(role)
     target = (raw or "").strip()
     if not target or target in ("/login", "/register"):
+        return fallback
+    if "\\" in target or any(ord(c) < 32 for c in target):
+        return fallback
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
         return fallback
     return target if target.startswith("/") and not target.startswith("//") else fallback
 
@@ -1995,9 +2013,14 @@ def stem_preview(job_id: str, filename: str):
     job = get_job(job_id)
     if job is None or not job["stems"] or filename not in job["stems"]:
         return jsonify({"error": "Stem not found or expired."}), 404
+    if Path(filename).name != filename:
+        return jsonify({"error": "Stem not found or expired."}), 404
+    stem_path = (JOB_DIR / job_id / filename).resolve()
+    if not stem_path.is_relative_to(JOB_DIR.resolve()):
+        return jsonify({"error": "Stem not found or expired."}), 404
     as_dl = request.args.get("download") == "1"
     return send_file(
-        JOB_DIR / job_id / filename,
+        stem_path,
         mimetype="audio/wav",
         as_attachment=as_dl,
         download_name=filename if as_dl else None,
@@ -2122,14 +2145,14 @@ def _bootstrap_first_run() -> None:
             f"# Auto-generated local development config (never commit .env)\n"
             f"SECRET_KEY={key}\n"
             f"# Optional: comma-separated emails that become admin on sign-up/restart\n"
-            f"# ADMIN_EMAILS=you@gmail.com\n",
+            f"# ADMIN_EMAILS=you@example.com\n",
             encoding="utf-8",
         )
         os.environ.setdefault("SECRET_KEY", key)
         app.secret_key = key
         print("[EchoCount] Created local .env with a fresh random SECRET_KEY.")
         print(
-            "[EchoCount] Nobody is admin by default. To promote an admin, set ADMIN_EMAILS=you@gmail.com in .env."
+            "[EchoCount] Nobody is admin by default. To promote an admin, set ADMIN_EMAILS=you@example.com in .env."
         )
 
     (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
