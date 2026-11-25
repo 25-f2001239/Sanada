@@ -91,7 +91,10 @@ def run_capture_or_verify(verify: bool = False) -> None:
         row = con.execute("SELECT id FROM users WHERE email = ?", ("golden@gmail.com",)).fetchone()
         if row:
             uid = int(row["id"])
-            con.execute("UPDATE users SET email_verified = 1, role = 'admin', is_active = 1 WHERE id = ?", (uid,))
+            con.execute(
+                "UPDATE users SET email_verified = 1, role = 'admin', is_active = 1 WHERE id = ?",
+                (uid,),
+            )
         else:
             uid = int(
                 con.execute(

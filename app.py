@@ -479,9 +479,8 @@ def history_list_route():
 
 @app.delete("/api/history/<job_id>")
 @auth.login_required
+@auth.csrf_required
 def history_delete_item_route(job_id: str):
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if not auth.delete_user_job(job_id, user):
         return jsonify({"error": "History item not found."}), 404
@@ -491,9 +490,8 @@ def history_delete_item_route(job_id: str):
 
 @app.delete("/api/history")
 @auth.login_required
+@auth.csrf_required
 def history_clear_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     deleted_ids = auth.clear_user_jobs(user["id"])
     _purge_job_files(deleted_ids)
@@ -604,17 +602,6 @@ def forgot_password_page():
     return render_template("auth.html", status=model_status(), mode="forgot", next_url="/analyze")
 
 
-@app.get("/reset-password")
-def reset_password_page():
-    return render_template(
-        "auth.html",
-        status=model_status(),
-        mode="reset",
-        token=request.args.get("token", ""),
-        next_url="/analyze",
-    )
-
-
 @app.get("/api/auth/me")
 @app.get("/api/me")
 def auth_me():
@@ -654,11 +641,8 @@ def _issue_login_session(user_id: int, role: str, next_raw: str | None = None):
 
 
 @app.post("/auth/login")
+@auth.csrf_required
 def auth_login_route():
-    if not auth.verify_csrf_request():
-        return jsonify(
-            {"error": "Invalid or expired security token. Refresh the page and try again."}
-        ), 403
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
@@ -691,7 +675,9 @@ def auth_login_route():
             return _issue_login_session(user["id"], "admin", next_raw)
         ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "admin_login", ip=ip)
         if not ok_otp:
-            return jsonify({"error": otp_err or "Email verification is not available right now."}), 503 if retry_s == 0 else 429
+            return jsonify(
+                {"error": otp_err or "Email verification is not available right now."}
+            ), 503 if retry_s == 0 else 429
         flask_session["_otp_pending"] = {
             "uid": user["id"],
             "email": email,
@@ -714,7 +700,9 @@ def auth_login_route():
     if not user["email_verified"]:
         ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
         if not ok_otp:
-            return jsonify({"error": otp_err or "Email verification is not available right now."}), 503 if retry_s == 0 else 429
+            return jsonify(
+                {"error": otp_err or "Email verification is not available right now."}
+            ), 503 if retry_s == 0 else 429
         flask_session["_otp_pending"] = {
             "uid": user["id"],
             "email": email,
@@ -751,11 +739,8 @@ def _render_auth_error(msg: str, code: int = 400):
 
 
 @app.post("/auth/register")
+@auth.csrf_required
 def auth_register_route():
-    if not auth.verify_csrf_request():
-        return jsonify(
-            {"error": "Invalid or expired security token. Refresh the page and try again."}
-        ), 403
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
@@ -779,7 +764,9 @@ def auth_register_route():
         ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
         if not ok_otp:
             code_status = 429 if retry_s > 0 else 503
-            return jsonify({"error": otp_err or "Email verification is not available right now."}), code_status
+            return jsonify(
+                {"error": otp_err or "Email verification is not available right now."}
+            ), code_status
         flask_session["_otp_pending"] = {
             "uid": uid,
             "email": email,
@@ -821,10 +808,9 @@ def auth_register_route():
 
 
 @app.post("/auth/signup/cancel")
+@auth.csrf_required
 def auth_signup_cancel_route():
     """Delete pending unverified account on 'Change email' and return the typed email."""
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     pending = flask_session.pop("_otp_pending", None) or {}
     email = str(pending.get("email") or "")
     uid = pending.get("uid")
@@ -833,9 +819,8 @@ def auth_signup_cancel_route():
 
 
 @app.post("/auth/otp/verify")
+@auth.csrf_required
 def auth_otp_verify_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     data = request.get_json(silent=True) or request.form
     purpose = str(data.get("purpose", "signup")).strip().lower()
     code = str(data.get("code", "")).strip()
@@ -846,7 +831,12 @@ def auth_otp_verify_route():
         return jsonify({"error": "Too many verification attempts. Please wait."}), 429
 
     if purpose == "admin_login":
-        if not auth.admin_requires_otp() or not pending or pending.get("purpose") != "admin_login" or (time.time() - float(pending.get("ts", 0))) > auth.OTP_TTL_SECONDS:
+        if (
+            not auth.admin_requires_otp()
+            or not pending
+            or pending.get("purpose") != "admin_login"
+            or (time.time() - float(pending.get("ts", 0))) > auth.OTP_TTL_SECONDS
+        ):
             return jsonify({"error": "Verification session expired. Please sign in again."}), 400
         email = pending["email"]
     elif purpose not in ("signup", "forgot"):
@@ -866,13 +856,17 @@ def auth_otp_verify_route():
         if not ok_pw:
             return jsonify({"error": pw_err or "Could not update password."}), 400
         flask_session.pop("_otp_pending", None)
-        return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
+        return jsonify(
+            {"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"}
+        )
 
     if purpose == "signup":
         user = auth.mark_email_verified(email)
         if not user or user["role"] == "admin":
             return jsonify({"error": "Invalid or expired verification code."}), 400
-        return _issue_login_session(int(user["id"]), user["role"], pending.get("next") or "/analyze")
+        return _issue_login_session(
+            int(user["id"]), user["role"], pending.get("next") or "/analyze"
+        )
 
     if purpose == "admin_login":
         uid = int(pending["uid"])
@@ -882,9 +876,8 @@ def auth_otp_verify_route():
 
 
 @app.post("/auth/otp/resend")
+@auth.csrf_required
 def auth_otp_resend_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     data = request.get_json(silent=True) or request.form
     purpose = str(data.get("purpose", "signup")).strip().lower()
     pending = flask_session.get("_otp_pending") or {}
@@ -902,46 +895,32 @@ def auth_otp_resend_route():
     elif purpose == "forgot":
         should_send = bool(u and u["role"] != "admin")
     elif purpose == "admin_login" and auth.admin_requires_otp():
-        should_send = bool(pending and pending.get("purpose") == "admin_login" and pending.get("email") == email)
+        should_send = bool(
+            pending and pending.get("purpose") == "admin_login" and pending.get("email") == email
+        )
 
     if should_send:
         ok, err, retry_s = auth.issue_email_otp(email, purpose, ip=ip)
         if not ok:
-            return jsonify({"error": err or "Could not resend code.", "cooldown": retry_s}), 429 if retry_s > 0 else 503
+            return jsonify(
+                {"error": err or "Could not resend code.", "cooldown": retry_s}
+            ), 429 if retry_s > 0 else 503
         return jsonify({"ok": True, "cooldown": retry_s, "message": generic_msg})
 
     return jsonify({"ok": True, "cooldown": auth.OTP_RESEND_COOLDOWN, "message": generic_msg})
 
 
-@app.get("/auth/verify")
-def auth_verify_route():
-    token = request.args.get("token", "")
-    uid = auth.consume_auth_token(token, "verify_email")
-    if not uid:
-        return _render_auth_error(
-            "Verification link is invalid or expired. Please verify using your 6-digit email code.", 400
-        )
-    with auth._conn() as con:
-        row = con.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
-        if not row or row["role"] == "admin":
-            return _render_auth_error("Verification link is invalid or expired.", 400)
-        con.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
-    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
-    sid, _ = auth.create_session(uid, rotate_from_sid=prev_sid)
-    resp = make_response(redirect(url_for("index")))
-    return auth.set_session_cookie(resp, sid)
-
-
 @app.post("/auth/forgot")
+@auth.csrf_required
 def auth_forgot_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     data = request.get_json(silent=True) or request.form
     email = auth.normalize_email(str(data.get("email", "")))
     ip = request.remote_addr or "local"
     if not auth.check_auth_rate_limit(f"forgot:ip:{auth.hash_ip(ip)}", limit=6, window_s=600.0):
         return jsonify({"error": "Too many reset requests. Please wait a few minutes."}), 429
-    generic_msg = "If an eligible account exists for that email, a 6-digit reset code has been sent."
+    generic_msg = (
+        "If an eligible account exists for that email, a 6-digit reset code has been sent."
+    )
     u = auth.get_user_by_email(email)
     # Never allow password reset via website for the locked admin account (generic non-enumerating reply)
     if u and u["role"] != "admin" and not auth.is_admin_email(email):
@@ -963,32 +942,9 @@ def auth_forgot_route():
     )
 
 
-@app.post("/auth/reset")
-def auth_reset_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
-    data = request.get_json(silent=True) or request.form
-    token = str(data.get("token", ""))
-    password = str(data.get("password", ""))
-    pw_err = auth.validate_password(password)
-    if pw_err:
-        return jsonify({"error": pw_err}), 400
-    uid = auth.consume_auth_token(token, "reset_password")
-    if not uid:
-        return jsonify({"error": "Reset link is invalid or expired."}), 400
-    with auth._conn() as con:
-        row = con.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
-        if not row or row["role"] == "admin":
-            return jsonify({"error": "Reset link is invalid or expired."}), 400
-        con.execute("UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?", (auth.hash_password(password), uid))
-        con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (uid,))
-    return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
-
-
 @app.post("/auth/logout")
+@auth.csrf_required
 def auth_logout_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if user:
         auth.revoke_session(user["session_id"])
@@ -1030,7 +986,9 @@ def oauth_callback(provider: str):
         auth.logger.warning("Google OAuth callback failed.")
         return _render_auth_error("Google sign-in could not be verified. Please try again.", 400)
     if not sub or not raw_email or not is_verified:
-        return _render_auth_error("Google did not return a verified identity and email address.", 400)
+        return _render_auth_error(
+            "Google did not return a verified identity and email address.", 400
+        )
     user, err = auth.register_oauth_user("google", sub, raw_email, is_verified)
     if err or not user:
         return _render_auth_error(err or "Could not sign in with Google.", 403)
@@ -1067,6 +1025,7 @@ def firebase_google_signin_route():
 # Settings -> Account (Download My Data, Deactivate, Permanent Delete)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/settings/account")
 @auth.login_required
 def account_settings_page():
@@ -1098,34 +1057,19 @@ def account_export_route():
     return resp
 
 
-@app.post("/api/account/reauth")
-@auth.login_required
-def account_reauth_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
-    user = auth.get_current_user()
-    ip_h = auth.hash_ip(request.remote_addr or "local")
-    if not auth.check_auth_rate_limit(f"acct:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"acct:ip:{ip_h}", limit=15, window_s=3600.0):
-        return jsonify({"error": "Too many account security attempts. Please try again later."}), 429
-    data = request.get_json(silent=True) or {}
-    pw = str(data.get("password", ""))
-    u_check, err = auth.authenticate_password_user(user["email"], pw)
-    if err or not u_check or int(u_check["id"]) != int(user["id"]):
-        return jsonify({"error": "Password confirmation failed."}), 401
-    auth.mark_reauthenticated(user["id"])
-    return jsonify({"ok": True})
-
-
 @app.post("/api/account/deactivate")
 @auth.login_required
+@auth.csrf_required
 def account_deactivate_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if user["role"] == "admin":
-        return jsonify({"error": "Administrator accounts cannot be deactivated from the website."}), 403
+        return jsonify(
+            {"error": "Administrator accounts cannot be deactivated from the website."}
+        ), 403
     ip_h = auth.hash_ip(request.remote_addr or "local")
-    if not auth.check_auth_rate_limit(f"deact:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"deact:ip:{ip_h}", limit=5, window_s=3600.0):
+    if not auth.check_auth_rate_limit(
+        f"deact:u:{user['id']}", limit=5, window_s=3600.0
+    ) or not auth.check_auth_rate_limit(f"deact:ip:{ip_h}", limit=5, window_s=3600.0):
         return jsonify({"error": "Too many attempts. Please try again later."}), 429
     data = request.get_json(silent=True) or {}
     pw = str(data.get("password", ""))
@@ -1135,7 +1079,11 @@ def account_deactivate_route():
         if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
             return jsonify({"error": "Invalid password confirmation."}), 401
     elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
-        return jsonify({"error": "Please re-authenticate with Google within the last 5 minutes before deactivating."}), 401
+        return jsonify(
+            {
+                "error": "Please re-authenticate with Google within the last 5 minutes before deactivating."
+            }
+        ), 401
 
     ok, target_email, err = auth.deactivate_user_account(user["id"])
     if not ok:
@@ -1148,33 +1096,44 @@ def account_deactivate_route():
             "Sign in again with your email and password anytime to reactivate it.",
             db_path=auth.DB_PATH,
         )
-    resp = make_response(jsonify({"ok": True, "status": "disabled", "redirect": "/login?deactivated=1"}))
+    resp = make_response(
+        jsonify({"ok": True, "status": "disabled", "redirect": "/login?deactivated=1"})
+    )
     return auth.clear_session_cookie(resp)
 
 
 @app.delete("/api/account")
 @auth.login_required
+@auth.csrf_required
 def account_delete_self_route():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if user["role"] == "admin":
         return jsonify({"error": "Administrator accounts cannot be deleted from the website."}), 403
     ip_h = auth.hash_ip(request.remote_addr or "local")
-    if not auth.check_auth_rate_limit(f"delacc:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"delacc:ip:{ip_h}", limit=5, window_s=3600.0):
+    if not auth.check_auth_rate_limit(
+        f"delacc:u:{user['id']}", limit=5, window_s=3600.0
+    ) or not auth.check_auth_rate_limit(f"delacc:ip:{ip_h}", limit=5, window_s=3600.0):
         return jsonify({"error": "Too many deletion attempts. Please try again later."}), 429
 
     data = request.get_json(silent=True) or {}
     if str(data.get("confirmation", "")).strip() != "DELETE":
-        return jsonify({"error": 'Type "DELETE" exactly to confirm permanent account deletion.'}), 400
+        return jsonify(
+            {"error": 'Type "DELETE" exactly to confirm permanent account deletion.'}
+        ), 400
 
     pw = str(data.get("password", ""))
     if user.get("has_password"):
         u_ok, err = auth.authenticate_password_user(user["email"], pw)
         if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
-            return jsonify({"error": "Current password confirmation is required before permanent deletion."}), 401
+            return jsonify(
+                {"error": "Current password confirmation is required before permanent deletion."}
+            ), 401
     elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
-        return jsonify({"error": "Fresh Google sign-in within the last 5 minutes is required before permanent deletion."}), 401
+        return jsonify(
+            {
+                "error": "Fresh Google sign-in within the last 5 minutes is required before permanent deletion."
+            }
+        ), 401
 
     ok, deleted_job_ids, deleted_email, err = auth.delete_user_account(user["id"], self_delete=True)
     if not ok:
@@ -1259,7 +1218,7 @@ def evaluation_export_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["section", "slice", "n", "exact_accuracy", "within_one", "mae", "bias", "notes"])
-    c = pub.get("counting", {})
+    c, t, sep = pub.get("counting", {}), pub.get("tagging", {}), pub.get("separation", {})
     for key, label in (
         ("overall", "Overall Test"),
         ("speech", "Speech Test"),
@@ -1281,6 +1240,7 @@ def evaluation_export_csv():
                 ]
             )
     for row in c.get("per_count_overall") or []:
+        note = "unreliable (n<30)" if row.get("unreliable") else "reliable"
         w.writerow(
             [
                 "counting_per_k",
@@ -1290,38 +1250,17 @@ def evaluation_export_csv():
                 row.get("within_one", ""),
                 row.get("mae", ""),
                 row.get("bias", ""),
-                "unreliable (n<30)" if row.get("unreliable") else "reliable",
+                note,
             ]
         )
-    t = pub.get("tagging", {})
-    w.writerow(
-        ["tagging", "Group Test Macro mAP", "", t.get("group_test_macro_map", ""), "", "", "", ""]
-    )
-    w.writerow(
-        [
-            "tagging",
-            "Fine-32 Test Macro mAP",
-            "",
-            t.get("fine_32_test_macro_map", ""),
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    w.writerow(
-        [
-            "tagging",
-            "AST+CLAP Open-Vocab Macro AP",
-            t.get("open_vocab_held_out_clips", ""),
-            t.get("ast_clap_macro_ap", ""),
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    sep = pub.get("separation", {})
+    for slc, n_key, val_key in (
+        ("Group Test Macro mAP", "", "group_test_macro_map"),
+        ("Fine-32 Test Macro mAP", "", "fine_32_test_macro_map"),
+        ("AST+CLAP Open-Vocab Macro AP", "open_vocab_held_out_clips", "ast_clap_macro_ap"),
+    ):
+        w.writerow(
+            ["tagging", slc, t.get(n_key, "") if n_key else "", t.get(val_key, ""), "", "", "", ""]
+        )
     w.writerow(
         [
             "separation",
@@ -1383,19 +1322,19 @@ def admin_overview_api():
 
 @app.post("/api/admin/users/<int:uid>/role")
 @auth.role_required("admin")
+@auth.csrf_required
 def admin_update_role_api(uid: int):
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     return jsonify(
-        {"error": "Roles are locked and cannot be changed through the website. Edit ADMIN_EMAILS in .env and restart."}
+        {
+            "error": "Roles are locked and cannot be changed through the website. Edit ADMIN_EMAILS in .env and restart."
+        }
     ), 403
 
 
 @app.post("/api/admin/users/<int:uid>/status")
 @auth.role_required("admin")
+@auth.csrf_required
 def admin_update_status_api(uid: int):
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     actor = auth.get_current_user()
     data = request.get_json(silent=True) or request.form
     active = bool(data.get("is_active"))
@@ -1407,18 +1346,16 @@ def admin_update_status_api(uid: int):
 
 @app.post("/api/admin/users/<int:uid>/revoke")
 @auth.role_required("admin")
+@auth.csrf_required
 def admin_revoke_sessions_api(uid: int):
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     revoked = auth.revoke_user_sessions(uid)
     return jsonify({"ok": True, "revoked": revoked})
 
 
 @app.delete("/api/admin/users/<int:uid>")
 @auth.role_required("admin")
+@auth.csrf_required
 def admin_delete_user_api(uid: int):
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     actor = auth.get_current_user()
     ok, deleted_job_ids, _deleted_email, err = auth.delete_user_account(uid, actor["id"])
     if not ok:
@@ -1436,9 +1373,8 @@ def admin_delete_user_api(uid: int):
 
 @app.post("/api/admin/cleanup")
 @auth.role_required("admin")
+@auth.csrf_required
 def admin_cleanup_api():
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
     before = len([p for p in JOB_DIR.iterdir() if p.is_dir()]) if JOB_DIR.is_dir() else 0
     sweep_jobs(startup=False)
     after = len([p for p in JOB_DIR.iterdir() if p.is_dir()]) if JOB_DIR.is_dir() else 0
@@ -1760,96 +1696,54 @@ def analyze():
     return jsonify(payload)
 
 
-def _execute_separation_job(
-    job_id: str, job: dict, requested_mode: str | None = None
-) -> tuple[dict, int]:
-    count, k, speech_mode = (
-        job["count"],
-        int(job["count"]["rounded_count"]),
-        bool(job.get("speech_detected", False)),
-    )
-    sep = separation.separator_status()
-    speech_sep_st = separation.pretrained_speech_status()
+def _validate_separation_request(
+    k: int, speech_mode: bool, req_mode: str, sep: dict, speech_sep_st: dict
+) -> tuple[dict, int] | None:
+    """Validate separation capability policy and return an error tuple if disallowed."""
     max_spk = int(speech_sep_st.get("max_supported_speakers") or 2)
     last_reliable_k, _, _ = get_dense_thresholds()
-    req_mode = (requested_mode or "").strip().lower()
-
     if req_mode in ("speech-3", "speech-recursive"):
         allowed = {
-            m["mode"]: m
-            for m in capabilities.get_extended_speech_modes_for_k(k, is_pure_speech=True)
+            m["mode"] for m in capabilities.get_extended_speech_modes_for_k(k, is_pure_speech=True)
         }
         if req_mode not in allowed:
             return {
                 "error": f"Separation mode '{req_mode}' is not enabled for K={k} under the capability policy."
             }, 409
-    else:
-        if not sep.get("trained", False) and not (speech_mode and speech_sep_st.get("available")):
-            return {
-                "error": "Separation not available for this recording: no trained separation model is active."
-            }, 503
-        if k < 2:
-            return {
-                "error": f"Separation not available for this recording: estimated {k} source."
-            }, 409
-        if k > last_reliable_k or k > separation.MAX_SEPARABLE:
-            return {"error": "Too many overlapping sounds to separate reliably."}, 409
-        if speech_mode and k > max_spk:
-            return {
-                "error": f"Separation is supported for up to {max_spk} speakers with the installed model."
-            }, 409
+        return None
+    if not sep.get("trained", False) and not (speech_mode and speech_sep_st.get("available")):
+        return {
+            "error": "Separation not available for this recording: no trained separation model is active."
+        }, 503
+    if k < 2:
+        return {"error": f"Separation not available for this recording: estimated {k} source."}, 409
+    if k > last_reliable_k or k > separation.MAX_SEPARABLE:
+        return {"error": "Too many overlapping sounds to separate reliably."}, 409
+    if speech_mode and k > max_spk:
+        return {
+            "error": f"Separation is supported for up to {max_spk} speakers with the installed model."
+        }, 409
+    return None
 
-    timings = {}
-    try:
-        t0 = time.perf_counter()
-        samples, _ = audio.decode_mono(job["original"], MAX_DURATION_SECONDS)
-        full_16k = audio.resample(samples, job["input_rate"], SAMPLE_RATE).astype(np.float32)
-        if req_mode == "speech-recursive":
-            q_out = separation.separate_speech_recursive(full_16k, k=k, sample_rate=SAMPLE_RATE)
-        else:
-            q_out = separation.separate_by_queries(
-                full_16k,
-                k=k,
-                named_sounds=job.get("named_sounds", []),
-                speech_mode=(True if req_mode == "speech-3" else speech_mode),
-                sr=SAMPLE_RATE,
-            )
-        if not q_out.get("available") or not q_out.get("stems"):
-            return {
-                "error": q_out.get("reason") or "Separation not available for this recording."
-            }, 409
-        stems, residual_16k, queries, used_speech = (
-            q_out["stems"],
-            q_out["residual_stem"],
-            q_out["queries"],
-            bool(q_out.get("used_pretrained_speech", False)),
-        )
-        timings["separate_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-    except Exception:
-        app.logger.exception("Separation failed")
-        return {"error": "Separation failed. Check the checkpoint and server logs."}, 503
 
-    t_gate = time.perf_counter()
-    sq = quality_mod.compute_stem_quality(stems, full_16k, residual=residual_16k)
-    sc_gate = quality_mod.evaluate_stem_self_consistency(stems, queries)
-    spk_ver = separation.verify_separated_speaker_stems(
-        stems, sample_rate=SAMPLE_RATE, speech_mode=speech_mode
-    )
-    timings["quality_gate_ms"] = round((time.perf_counter() - t_gate) * 1000, 1)
-
-    quality_failed = bool(sq["failed"] or (speech_mode and spk_ver["could_not_separate_speakers"]))
-    quality_reason = sq["failure_reason"]
-    if speech_mode and spk_ver["could_not_separate_speakers"]:
-        quality_reason = (
-            f"{spk_ver['reason']} Also: {quality_reason}" if quality_reason else spk_ver["reason"]
-        )
-
-    rate, job_dir = job["input_rate"], JOB_DIR / job_id
+def _write_stems_and_zip(
+    job_id: str,
+    job: dict,
+    stems: list,
+    residual_16k,
+    queries: list,
+    q_out: dict,
+    sq: dict,
+    sc_gate: dict,
+    spk_ver: dict,
+) -> tuple[list[str], list[dict], bytes]:
+    """Export peak-normalised stem WAVs, residual, manifest.json, and compressed ZIP bundle."""
+    rate, job_dir, count = job["input_rate"], JOB_DIR / job_id, job["count"]
+    k = int(count["rounded_count"])
     all_waves = list(stems) + ([residual_16k] if residual_16k is not None else [])
     energies = np.array([float(np.sum(np.square(s))) for s in all_waves])
     shares = (energies / (float(energies.sum()) or 1.0)).tolist()
 
-    t1 = time.perf_counter()
     stem_files, stem_entries = [], []
     for i, (stem, q_info, sc_info) in enumerate(zip(stems, queries, sc_gate["per_stem"]), 1):
         lbl = str(q_info.get("name") or q_info.get("friendly_name") or f"Sound {i}")
@@ -1922,12 +1816,15 @@ def _execute_separation_job(
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "stems": [
             {
-                "file": e["file"],
-                "label": e["label"],
-                "is_residual": e["is_residual"],
-                "energy_share": e["energy_share"],
-                "self_consistent": e["self_consistent"],
-                "low_confidence": e["low_confidence"],
+                fld: e[fld]
+                for fld in (
+                    "file",
+                    "label",
+                    "is_residual",
+                    "energy_share",
+                    "self_consistent",
+                    "low_confidence",
+                )
             }
             for e in stem_entries
         ],
@@ -1936,13 +1833,76 @@ def _execute_separation_job(
         "speaker_verification": spk_ver,
         "source_file": job["name"],
     }
-
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for fn in stem_files:
             archive.write(job_dir / fn, fn)
         archive.write(job["original"], f"original_mix{job['original'].suffix}")
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
+    return stem_files, stem_entries, buffer.getvalue()
+
+
+def _execute_separation_job(
+    job_id: str, job: dict, requested_mode: str | None = None
+) -> tuple[dict, int]:
+    """Run stem separation, evaluate 3 quality gates, and package downloadable WAV/ZIP artifacts."""
+    k = int(job["count"]["rounded_count"])
+    speech_mode = bool(job.get("speech_detected", False))
+    sep, speech_sep_st = separation.separator_status(), separation.pretrained_speech_status()
+    req_mode = (requested_mode or "").strip().lower()
+    err_resp = _validate_separation_request(k, speech_mode, req_mode, sep, speech_sep_st)
+    if err_resp:
+        return err_resp
+
+    timings: dict[str, float] = {}
+    try:
+        t0 = time.perf_counter()
+        samples, _ = audio.decode_mono(job["original"], MAX_DURATION_SECONDS)
+        full_16k = audio.resample(samples, job["input_rate"], SAMPLE_RATE).astype(np.float32)
+        if req_mode == "speech-recursive":
+            q_out = separation.separate_speech_recursive(full_16k, k=k, sample_rate=SAMPLE_RATE)
+        else:
+            q_out = separation.separate_by_queries(
+                full_16k,
+                k=k,
+                named_sounds=job.get("named_sounds", []),
+                speech_mode=(True if req_mode == "speech-3" else speech_mode),
+                sr=SAMPLE_RATE,
+            )
+        if not q_out.get("available") or not q_out.get("stems"):
+            return {
+                "error": q_out.get("reason") or "Separation not available for this recording."
+            }, 409
+        stems, residual_16k, queries, used_speech = (
+            q_out["stems"],
+            q_out["residual_stem"],
+            q_out["queries"],
+            bool(q_out.get("used_pretrained_speech", False)),
+        )
+        timings["separate_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    except Exception:
+        app.logger.exception("Separation failed")
+        return {"error": "Separation failed. Check the checkpoint and server logs."}, 503
+
+    t_gate = time.perf_counter()
+    sq = quality_mod.compute_stem_quality(stems, full_16k, residual=residual_16k)
+    sc_gate = quality_mod.evaluate_stem_self_consistency(stems, queries)
+    spk_ver = separation.verify_separated_speaker_stems(
+        stems, sample_rate=SAMPLE_RATE, speech_mode=speech_mode
+    )
+    timings["quality_gate_ms"] = round((time.perf_counter() - t_gate) * 1000, 1)
+
+    quality_failed = bool(sq["failed"] or (speech_mode and spk_ver["could_not_separate_speakers"]))
+    quality_reason = sq["failure_reason"]
+    if speech_mode and spk_ver["could_not_separate_speakers"]:
+        quality_reason = (
+            f"{spk_ver['reason']} Also: {quality_reason}" if quality_reason else spk_ver["reason"]
+        )
+
+    t1 = time.perf_counter()
+    stem_files, stem_entries, zip_bytes = _write_stems_and_zip(
+        job_id, job, stems, residual_16k, queries, q_out, sq, sc_gate, spk_ver
+    )
     timings["zip_ms"] = round((time.perf_counter() - t1) * 1000, 1)
 
     result_payload = {
@@ -1966,7 +1926,7 @@ def _execute_separation_job(
         job.update(
             {
                 "stems": stem_files,
-                "zip": buffer.getvalue(),
+                "zip": zip_bytes,
                 "used_pretrained_speech": used_speech,
                 "sep_status": "completed",
                 "sep_result": result_payload,
@@ -2168,7 +2128,9 @@ def _bootstrap_first_run() -> None:
         os.environ.setdefault("SECRET_KEY", key)
         app.secret_key = key
         print("[EchoCount] Created local .env with a fresh random SECRET_KEY.")
-        print("[EchoCount] Nobody is admin by default. To promote an admin, set ADMIN_EMAILS=you@gmail.com in .env.")
+        print(
+            "[EchoCount] Nobody is admin by default. To promote an admin, set ADMIN_EMAILS=you@gmail.com in .env."
+        )
 
     (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
     JOB_DIR.mkdir(parents=True, exist_ok=True)

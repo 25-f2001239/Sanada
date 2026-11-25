@@ -111,7 +111,9 @@ class BrevoProvider:
 class SmtpProvider:
     name = "smtp"
 
-    def __init__(self, host: str, port: int, user: str, password: str, sender: str, use_tls: bool) -> None:
+    def __init__(
+        self, host: str, port: int, user: str, password: str, sender: str, use_tls: bool
+    ) -> None:
         self.host, self.port, self.user, self.password, self.sender, self.use_tls = (
             host,
             port,
@@ -194,11 +196,18 @@ def send_transactional_email(
         return False, "Daily email verification quota reached. Please try again later."
     ok, err = provider.send(to_email, subject, body)
     if ok:
-        logger.info("Sent email via %s (daily_count=%d, to=%s).", getattr(provider, "name", "custom"), count, mask_email(to_email))
+        logger.info(
+            "Sent email via %s (daily_count=%d, to=%s).",
+            getattr(provider, "name", "custom"),
+            count,
+            mask_email(to_email),
+        )
     return ok, err
 
 
-def send_otp_email(to_email: str, code: str, purpose: str, *, db_path: Path | None = None) -> tuple[bool, str | None]:
+def send_otp_email(
+    to_email: str, code: str, purpose: str, *, db_path: Path | None = None
+) -> tuple[bool, str | None]:
     labels = {
         "signup": "Verify your EchoCount account",
         "login_verify": "Verify your EchoCount email",

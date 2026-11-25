@@ -43,13 +43,11 @@ MIN_PASSWORD_LEN = 10
 ADMIN_MIN_PASSWORD_LEN = 14
 MAX_PASSWORD_LEN = 128
 
-SUPPORTED_PROVIDERS = ("google",)
-VALID_ROLES = ("user", "admin")
-
 
 def admin_requires_otp() -> bool:
     """Return True only when ADMIN_REQUIRE_OTP=1 (default 0: password-only sign-in)."""
     return os.getenv("ADMIN_REQUIRE_OTP", "0").strip() == "1"
+
 
 _EMAIL_RE = re.compile(r"^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\.[a-z]{2,24}$")
 _ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
@@ -112,7 +110,9 @@ def get_or_create_secret_key(key_file: Path | None = None) -> str:
     """Return SECRET_KEY from env or persist a stable random key locally (dev only)."""
     env_key = os.getenv("SECRET_KEY", "").strip()
     if _is_production() and (not env_key or len(env_key) < 32 or "replace-with" in env_key.lower()):
-        raise RuntimeError("Production mode requires a strong SECRET_KEY (>=32 chars) in environment/.env.")
+        raise RuntimeError(
+            "Production mode requires a strong SECRET_KEY (>=32 chars) in environment/.env."
+        )
     if env_key and "replace-with" not in env_key.lower():
         return env_key
     target = key_file or (DB_PATH.parent / ".secret_key")
@@ -137,7 +137,9 @@ def get_configured_admin_email() -> str | None:
             raise RuntimeError("ADMIN_EMAILS does not contain a valid email address.")
         return emails[0]
     if _is_production():
-        raise RuntimeError("Production mode requires ADMIN_EMAILS to contain exactly one admin email.")
+        raise RuntimeError(
+            "Production mode requires ADMIN_EMAILS to contain exactly one admin email."
+        )
     legacy = normalize_email(os.getenv("ECHOCOUNT_ADMIN_EMAIL", ""))
     if legacy and _EMAIL_RE.match(legacy):
         return legacy
@@ -293,10 +295,19 @@ def init_db() -> None:
         con.execute("DELETE FROM oauth_identities WHERE provider != 'google'")
         # One-time migration: mark all pre-existing accounts as verified (OTP applies only to new sign-ups)
         mig_name = "mark_preexisting_users_verified_v1"
-        if not con.execute("SELECT 1 FROM schema_migrations WHERE name = ?", (mig_name,)).fetchone():
+        if not con.execute(
+            "SELECT 1 FROM schema_migrations WHERE name = ?", (mig_name,)
+        ).fetchone():
             cur_v = con.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0")
-            con.execute("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", (mig_name, time.time()))
-            logger.info("Migration %s marked %d existing account(s) as verified.", mig_name, int(cur_v.rowcount))
+            con.execute(
+                "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (mig_name, time.time()),
+            )
+            logger.info(
+                "Migration %s marked %d existing account(s) as verified.",
+                mig_name,
+                int(cur_v.rowcount),
+            )
 
     admin_email = os.getenv("ECHOCOUNT_ADMIN_EMAIL", "").strip()
     admin_pw = os.getenv("ECHOCOUNT_ADMIN_PASSWORD", "")
@@ -334,6 +345,7 @@ def ensure_admin_account(raw_email: str, password: str) -> int:
 # ---------------------------------------------------------------------------
 # Google-only OAuth (Authlib default + optional Firebase ID-token verification)
 # ---------------------------------------------------------------------------
+
 
 def google_auth_mode() -> str:
     mode = os.getenv("AUTH_GOOGLE_MODE", "authlib").strip().lower()
@@ -426,6 +438,7 @@ def verify_firebase_google_token(
 # Email Syntax + Optional MX Check & Hardened Password Policy
 # ---------------------------------------------------------------------------
 
+
 def _domain_has_mx(domain: str) -> bool:
     """Short-timeout MX check; if DNS lookup is unavailable, fall back to accepting valid syntax."""
     if os.getenv("ECHOCOUNT_SKIP_MX_CHECK", "0") == "1":
@@ -459,7 +472,9 @@ def _domain_has_mx(domain: str) -> bool:
         return True
 
 
-def validate_email_policy(raw_email: str, *, check_mx: bool = False) -> tuple[str | None, str | None]:
+def validate_email_policy(
+    raw_email: str, *, check_mx: bool = False
+) -> tuple[str | None, str | None]:
     """Validate any syntactically valid email (including temporary-mail domains) + optional MX check."""
     email = normalize_email(raw_email)
     if not email or not _EMAIL_RE.match(email):
@@ -544,6 +559,7 @@ def clear_login_failures(key: str) -> None:
 # Email OTP Generation, HMAC-SHA256 Storage, Rate Limits & Purge
 # ---------------------------------------------------------------------------
 
+
 def _hash_otp(code: str, salt: str) -> str:
     key = get_or_create_secret_key().encode("utf-8")
     return hmac.new(key, f"{salt}:{code}".encode("utf-8"), hashlib.sha256).hexdigest()
@@ -565,7 +581,11 @@ def issue_email_otp(
     if not check_auth_rate_limit(f"otp:ip:{hash_ip(ip)}", limit=20, window_s=3600.0):
         return False, "Too many verification code requests. Please wait and try again.", 60
     if not check_auth_rate_limit(f"otp:email:{email}", limit=5, window_s=3600.0):
-        return False, "Too many verification codes requested for this email. Please wait an hour.", 60
+        return (
+            False,
+            "Too many verification codes requested for this email. Please wait an hour.",
+            60,
+        )
 
     with _conn() as con:
         latest = con.execute(
@@ -580,7 +600,10 @@ def issue_email_otp(
         salt = secrets.token_hex(16)
         code_hash = _hash_otp(code, salt)
         # Invalidate any prior unused codes for this (email, purpose)
-        con.execute("UPDATE email_otps SET used = 1 WHERE email = ? AND purpose = ? AND used = 0", (email, purpose))
+        con.execute(
+            "UPDATE email_otps SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
+            (email, purpose),
+        )
         con.execute(
             "INSERT INTO email_otps (email, purpose, code_hash, salt, expires_at, attempts, used, created_at) "
             "VALUES (?, ?, ?, ?, ?, 0, 0, ?)",
@@ -592,7 +615,10 @@ def issue_email_otp(
         if not ok:
             # Mark unused code invalidated so failed delivery doesn't leave dangling active code
             with _conn() as con:
-                con.execute("UPDATE email_otps SET used = 1 WHERE email = ? AND purpose = ? AND used = 0", (email, purpose))
+                con.execute(
+                    "UPDATE email_otps SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
+                    (email, purpose),
+                )
             return False, err or "Email verification is not available right now.", 0
     return True, None, OTP_RESEND_COOLDOWN
 
@@ -614,7 +640,10 @@ def verify_email_otp(raw_email: str, purpose: str, raw_code: str) -> tuple[bool,
             return False, "Invalid or expired verification code."
         if int(row["attempts"]) >= OTP_MAX_ATTEMPTS:
             con.execute("UPDATE email_otps SET used = 1 WHERE id = ?", (row["id"],))
-            return False, "Verification code invalidated after too many attempts. Request a new code."
+            return (
+                False,
+                "Verification code invalidated after too many attempts. Request a new code.",
+            )
 
         expected = _hash_otp(code, row["salt"])
         if not hmac.compare_digest(expected, row["code_hash"]):
@@ -625,7 +654,10 @@ def verify_email_otp(raw_email: str, purpose: str, raw_code: str) -> tuple[bool,
                 (new_attempts, invalidate, row["id"]),
             )
             if invalidate:
-                return False, "Verification code invalidated after too many attempts. Request a new code."
+                return (
+                    False,
+                    "Verification code invalidated after too many attempts. Request a new code.",
+                )
             return False, "Invalid or expired verification code."
 
         con.execute("UPDATE email_otps SET used = 1 WHERE id = ?", (row["id"],))
@@ -645,7 +677,10 @@ def purge_expired_auth_data(job_dir: Path | None = None) -> dict[str, int]:
             (cutoff,),
         )
         deleted_unverified = int(cur_u.rowcount)
-        cur_o = con.execute("DELETE FROM email_otps WHERE expires_at < ? OR (used = 1 AND created_at < ?)", (cutoff, cutoff))
+        cur_o = con.execute(
+            "DELETE FROM email_otps WHERE expires_at < ? OR (used = 1 AND created_at < ?)",
+            (cutoff, cutoff),
+        )
         deleted_otps = int(cur_o.rowcount)
         days = int(os.getenv("DISABLED_DELETE_DAYS", "0") or "0")
         if days > 0:
@@ -655,50 +690,28 @@ def purge_expired_auth_data(job_dir: Path | None = None) -> dict[str, int]:
                 (d_cut,),
             ).fetchall()
             for r in rows:
-                jids = [j["job_id"] for j in con.execute("SELECT job_id FROM user_jobs WHERE user_id = ?", (r["id"],)).fetchall()]
+                jids = [
+                    j["job_id"]
+                    for j in con.execute(
+                        "SELECT job_id FROM user_jobs WHERE user_id = ?", (r["id"],)
+                    ).fetchall()
+                ]
                 con.execute("DELETE FROM users WHERE id = ?", (r["id"],))
                 deleted_disabled += 1
                 if job_dir:
                     for jid in jids:
                         shutil.rmtree(job_dir / jid, ignore_errors=True)
-    return {"unverified_deleted": deleted_unverified, "otps_deleted": deleted_otps, "disabled_deleted": deleted_disabled}
-
-
-# Legacy token helpers kept for backwards compatibility with existing verification tests
-def _hash_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-
-
-def create_auth_token(user_id: int, purpose: str) -> str:
-    raw = secrets.token_urlsafe(32)
-    now = time.time()
-    with _conn() as con:
-        con.execute(
-            "INSERT INTO auth_tokens (user_id, token_hash, purpose, expires_at, used, created_at) VALUES (?, ?, ?, ?, 0, ?)",
-            (user_id, _hash_token(raw), purpose, now + 900, now),
-        )
-    return raw
-
-
-def consume_auth_token(raw_token: str, purpose: str) -> int | None:
-    if not raw_token:
-        return None
-    h = _hash_token(raw_token)
-    now = time.time()
-    with _conn() as con:
-        row = con.execute(
-            "SELECT id, user_id, expires_at, used FROM auth_tokens WHERE token_hash = ? AND purpose = ?",
-            (h, purpose),
-        ).fetchone()
-        if not row or row["used"] or float(row["expires_at"]) < now:
-            return None
-        con.execute("UPDATE auth_tokens SET used = 1 WHERE id = ?", (row["id"],))
-        return int(row["user_id"])
+    return {
+        "unverified_deleted": deleted_unverified,
+        "otps_deleted": deleted_otps,
+        "disabled_deleted": deleted_disabled,
+    }
 
 
 # ---------------------------------------------------------------------------
 # Sessions (Rotation on Login + Admin 30m Idle / 8h Absolute) & CSRF
 # ---------------------------------------------------------------------------
+
 
 def create_session(user_id: int, *, rotate_from_sid: str | None = None) -> tuple[str, str]:
     """Create a fresh rotated session ID (revoking any previous session cookie to prevent fixation)."""
@@ -716,7 +729,10 @@ def create_session(user_id: int, *, rotate_from_sid: str | None = None) -> tuple
             "VALUES (?, ?, ?, ?, ?, ?, 0)",
             (sid, int(user_id), csrf, now, now + ttl, now),
         )
-        con.execute("UPDATE users SET last_login_at = ?, reauth_at = ? WHERE id = ?", (now, now, int(user_id)))
+        con.execute(
+            "UPDATE users SET last_login_at = ?, reauth_at = ? WHERE id = ?",
+            (now, now, int(user_id)),
+        )
     return sid, csrf
 
 
@@ -805,8 +821,22 @@ def verify_csrf_request() -> bool:
     return bool(expected and supplied and hmac.compare_digest(expected, supplied))
 
 
+def csrf_required(fn: Any) -> Any:
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if not verify_csrf_request():
+            return jsonify(
+                {"error": "Invalid or expired security token. Refresh the page and try again."}
+            ), 403
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 def set_session_cookie(resp: Any, sid: str, *, is_admin: bool = False) -> Any:
-    secure = os.getenv("ECHOCOUNT_COOKIE_SECURE", "0") == "1" or is_https_base() or request.is_secure
+    secure = (
+        os.getenv("ECHOCOUNT_COOKIE_SECURE", "0") == "1" or is_https_base() or request.is_secure
+    )
     max_age = ADMIN_ABS_TTL_SECONDS if is_admin else SESSION_TTL_SECONDS
     resp.set_cookie(
         SESSION_COOKIE,
@@ -832,7 +862,9 @@ def default_landing_for_role(role: str | None) -> str:
 
 def _unauth_response() -> Any:
     if request.path.startswith("/api/"):
-        return jsonify({"error": "Authentication required. Please sign in.", "auth_required": True}), 401
+        return jsonify(
+            {"error": "Authentication required. Please sign in.", "auth_required": True}
+        ), 401
     return redirect(url_for("login_page", next=request.path))
 
 
@@ -853,12 +885,19 @@ def role_required(*allowed_roles: str) -> Any:
                 return _unauth_response()
             if user.get("role") not in allowed_roles:
                 if request.path.startswith("/api/"):
-                    return jsonify({"error": "You do not have permission to access this resource."}), 403
+                    return jsonify(
+                        {"error": "You do not have permission to access this resource."}
+                    ), 403
                 return (
                     render_template(
                         "403.html",
                         required_roles=allowed_roles,
-                        status={"trained": True, "sample_rate": 16000, "clip_seconds": 8, "max_sources": 31},
+                        status={
+                            "trained": True,
+                            "sample_rate": 16000,
+                            "clip_seconds": 8,
+                            "max_sources": 31,
+                        },
                     ),
                     403,
                 )
@@ -873,7 +912,10 @@ def role_required(*allowed_roles: str) -> Any:
 # Per-User History Jobs, Account Lifecycle & Admin Audit Log
 # ---------------------------------------------------------------------------
 
-def register_user_job(job_id: str, user_id: int, filename: str, summary: dict | None = None) -> None:
+
+def register_user_job(
+    job_id: str, user_id: int, filename: str, summary: dict | None = None
+) -> None:
     with _conn() as con:
         con.execute(
             "INSERT OR REPLACE INTO user_jobs (job_id, user_id, filename, created_at, status, summary_json) VALUES (?, ?, ?, ?, 'analyzed', ?)",
@@ -934,7 +976,9 @@ def list_user_jobs(user_id: int, limit: int = 100) -> list[dict[str, Any]]:
 
 def list_all_jobs(user_id: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
     """Return jobs across active users for admin-only views (hides disabled users; masks admin email)."""
-    where = "WHERE COALESCE(u.is_active, 1) = 1" + (" AND j.user_id = ?" if user_id is not None else "")
+    where = "WHERE COALESCE(u.is_active, 1) = 1" + (
+        " AND j.user_id = ?" if user_id is not None else ""
+    )
     params = (int(user_id), int(limit)) if user_id is not None else (int(limit),)
     with _conn() as con:
         rows = con.execute(
@@ -956,13 +1000,20 @@ def delete_user_job(job_id: str, user: dict[str, Any]) -> bool:
         if user.get("role") == "admin":
             cur = con.execute("DELETE FROM user_jobs WHERE job_id = ?", (job_id,))
         else:
-            cur = con.execute("DELETE FROM user_jobs WHERE job_id = ? AND user_id = ?", (job_id, int(user["id"])))
+            cur = con.execute(
+                "DELETE FROM user_jobs WHERE job_id = ? AND user_id = ?", (job_id, int(user["id"]))
+            )
     return cur.rowcount > 0
 
 
 def clear_user_jobs(user_id: int) -> list[str]:
     with _conn() as con:
-        ids = [r["job_id"] for r in con.execute("SELECT job_id FROM user_jobs WHERE user_id = ?", (int(user_id),)).fetchall()]
+        ids = [
+            r["job_id"]
+            for r in con.execute(
+                "SELECT job_id FROM user_jobs WHERE user_id = ?", (int(user_id),)
+            ).fetchall()
+        ]
         con.execute("DELETE FROM user_jobs WHERE user_id = ?", (int(user_id),))
     return ids
 
@@ -988,7 +1039,9 @@ def list_admin_audit(limit: int = 50) -> list[dict[str, Any]]:
 def deactivate_user_account(user_id: int) -> tuple[bool, str | None, str | None]:
     """Temporarily disable a non-admin account and immediately revoke all its sessions."""
     with _conn() as con:
-        row = con.execute("SELECT id, email, role FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        row = con.execute(
+            "SELECT id, email, role FROM users WHERE id = ?", (int(user_id),)
+        ).fetchone()
         if not row:
             return False, None, "Account not found."
         if row["role"] == "admin" or is_admin_email(row["email"]):
@@ -1011,7 +1064,9 @@ def reactivate_user_account(user_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def delete_user_account(target_uid: int, actor_uid: int | None = None, *, self_delete: bool = False) -> tuple[bool, list[str], str | None, str | None]:
+def delete_user_account(
+    target_uid: int, actor_uid: int | None = None, *, self_delete: bool = False
+) -> tuple[bool, list[str], str | None, str | None]:
     """Atomically delete a non-admin user, password hash, OAuth links, OTPs, sessions, and jobs.
 
     Returns (ok, deleted_job_ids, deleted_email, error).
@@ -1019,13 +1074,20 @@ def delete_user_account(target_uid: int, actor_uid: int | None = None, *, self_d
     if not self_delete and actor_uid is not None and int(target_uid) == int(actor_uid):
         return False, [], None, "You cannot delete your own administrator account."
     with _conn() as con:
-        row = con.execute("SELECT id, email, role FROM users WHERE id = ?", (int(target_uid),)).fetchone()
+        row = con.execute(
+            "SELECT id, email, role FROM users WHERE id = ?", (int(target_uid),)
+        ).fetchone()
         if not row:
             return False, [], None, "User account not found."
         if row["role"] == "admin" or is_admin_email(row["email"]):
             return False, [], None, "Administrator accounts cannot be deleted from the website."
         email = row["email"]
-        ids = [r["job_id"] for r in con.execute("SELECT job_id FROM user_jobs WHERE user_id = ?", (int(target_uid),)).fetchall()]
+        ids = [
+            r["job_id"]
+            for r in con.execute(
+                "SELECT job_id FROM user_jobs WHERE user_id = ?", (int(target_uid),)
+            ).fetchall()
+        ]
         con.execute("DELETE FROM email_otps WHERE email = ?", (email,))
         con.execute("DELETE FROM auth_tokens WHERE user_id = ?", (int(target_uid),))
         con.execute("DELETE FROM oauth_identities WHERE user_id = ?", (int(target_uid),))
@@ -1072,16 +1134,13 @@ def list_users() -> list[dict[str, Any]]:
     return out
 
 
-def update_user_role(_target_uid: int, _new_role: str, _actor_uid: int) -> tuple[bool, str | None]:
-    """Roles are locked to single-admin .env configuration; API role changes are forbidden."""
-    return False, "Roles cannot be changed through the website. Edit ADMIN_EMAILS in .env and restart."
-
-
 def set_user_active(target_uid: int, active: bool, actor_uid: int) -> tuple[bool, str | None]:
     if int(target_uid) == int(actor_uid):
         return False, "Administrator accounts cannot be disabled."
     with _conn() as con:
-        row = con.execute("SELECT id, email, role FROM users WHERE id = ?", (int(target_uid),)).fetchone()
+        row = con.execute(
+            "SELECT id, email, role FROM users WHERE id = ?", (int(target_uid),)
+        ).fetchone()
         if not row:
             return False, "User account not found."
         if row["role"] == "admin" or is_admin_email(row["email"]):
@@ -1098,7 +1157,9 @@ def set_user_active(target_uid: int, active: bool, actor_uid: int) -> tuple[bool
 
 def revoke_user_sessions(target_uid: int) -> int:
     with _conn() as con:
-        cur = con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0", (int(target_uid),))
+        cur = con.execute(
+            "UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0", (int(target_uid),)
+        )
         return int(cur.rowcount)
 
 
@@ -1151,7 +1212,10 @@ def register_oauth_user(
             if not u or u["role"] == "admin":
                 return None, "Invalid email or password."
             if not u["is_active"]:
-                return None, "This account is deactivated. Sign in with email and password to reactivate."
+                return (
+                    None,
+                    "This account is deactivated. Sign in with email and password to reactivate.",
+                )
             return dict(u), None
 
         existing_user = con.execute(f"{_USER_SELECT} WHERE email = ?", (email,)).fetchone()
@@ -1159,7 +1223,10 @@ def register_oauth_user(
             if existing_user["role"] == "admin":
                 return None, "Invalid email or password."
             if not existing_user["is_active"]:
-                return None, "This account is deactivated. Sign in with email and password to reactivate."
+                return (
+                    None,
+                    "This account is deactivated. Sign in with email and password to reactivate.",
+                )
             # Never auto-merge with an unverified password account
             if not existing_user["email_verified"]:
                 return None, "Verify your existing password account by email before linking Google."
@@ -1179,7 +1246,9 @@ def register_oauth_user(
         return dict(con.execute(f"{_USER_SELECT} WHERE id = ?", (uid,)).fetchone()), None
 
 
-def register_password_user(raw_email: str, password: str, *, check_mx: bool = False) -> tuple[int | None, str | None, str | None]:
+def register_password_user(
+    raw_email: str, password: str, *, check_mx: bool = False
+) -> tuple[int | None, str | None, str | None]:
     """Create an UNVERIFIED password account (never exposes admin or existing accounts)."""
     email, err = validate_email_policy(raw_email, check_mx=check_mx)
     if err or not email:
@@ -1194,11 +1263,16 @@ def register_password_user(raw_email: str, password: str, *, check_mx: bool = Fa
 
     now = time.time()
     with _conn() as con:
-        existing = con.execute("SELECT id, email_verified, role FROM users WHERE email = ?", (email,)).fetchone()
+        existing = con.execute(
+            "SELECT id, email_verified, role FROM users WHERE email = ?", (email,)
+        ).fetchone()
         if existing:
             if existing["role"] == "admin" or existing["email_verified"]:
                 return None, None, None
-            con.execute("UPDATE users SET password_hash = ?, created_at = ? WHERE id = ?", (pw_hash, now, existing["id"]))
+            con.execute(
+                "UPDATE users SET password_hash = ?, created_at = ? WHERE id = ?",
+                (pw_hash, now, existing["id"]),
+            )
             uid = int(existing["id"])
         else:
             cur = con.execute(
@@ -1206,10 +1280,12 @@ def register_password_user(raw_email: str, password: str, *, check_mx: bool = Fa
                 (email, pw_hash, now),
             )
             uid = int(cur.lastrowid)
-    return uid, create_auth_token(uid, "verify_email"), None
+    return uid, None, None
 
 
-def authenticate_password_user(raw_email: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
+def authenticate_password_user(
+    raw_email: str, password: str
+) -> tuple[dict[str, Any] | None, str | None]:
     """Verify email + password (returns user dict with status flags; generic error on mismatch)."""
     email = normalize_email(raw_email)
     if not email or not password:
@@ -1248,7 +1324,10 @@ def delete_unverified_signup(user_id: int, raw_email: str) -> bool:
             return False
         con.execute("DELETE FROM email_otps WHERE email = ?", (email,))
         con.execute("DELETE FROM auth_tokens WHERE user_id = ?", (int(user_id),))
-        con.execute("DELETE FROM users WHERE id = ? AND email_verified = 0 AND role != 'admin'", (int(user_id),))
+        con.execute(
+            "DELETE FROM users WHERE id = ? AND email_verified = 0 AND role != 'admin'",
+            (int(user_id),),
+        )
     return True
 
 

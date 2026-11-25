@@ -119,7 +119,9 @@ def test_1_legacy_oauth_removed_and_migration(mock_mail: _MockMail) -> None:
         *(ROOT / "templates").glob("*.html"),
         *(ROOT / "static").glob("*.js"),
     ]
-    pat = re.compile(r"microsoft|yahoo|github_client|/auth/oauth/github|github.*sign|sign.*github", re.I)
+    pat = re.compile(
+        r"microsoft|yahoo|github_client|/auth/oauth/github|github.*sign|sign.*github", re.I
+    )
     for fp in scan_targets:
         text = fp.read_text(encoding="utf-8", errors="ignore")
         assert not pat.search(text), f"Legacy OAuth reference still found in {fp.relative_to(ROOT)}"
@@ -134,14 +136,23 @@ def test_1_legacy_oauth_removed_and_migration(mock_mail: _MockMail) -> None:
     os.environ.pop("GOOGLE_CLIENT_SECRET", None)
     auth.init_oauth(app_mod.app)
     html_no_g = c.get("/login").get_data(as_text=True)
-    assert html_no_g.count("google-auth-btn") == 2, "Expected exactly 1 Google button per tab (2 total)"
+    assert html_no_g.count("google-auth-btn") == 2, (
+        "Expected exactly 1 Google button per tab (2 total)"
+    )
     assert "Continue with Google" in html_no_g and "Sign up with Google" in html_no_g
     assert html_no_g.count("Google sign-in is not set up on this server yet") == 2
     assert 'disabled aria-disabled="true"' in html_no_g
-    assert "#4285F4" in html_no_g and "#34A853" in html_no_g and "#FBBC05" in html_no_g and "#EA4335" in html_no_g
+    assert (
+        "#4285F4" in html_no_g
+        and "#34A853" in html_no_g
+        and "#FBBC05" in html_no_g
+        and "#EA4335" in html_no_g
+    )
     assert "Microsoft" not in html_no_g and "Yahoo" not in html_no_g and "GitHub" not in html_no_g
     r_g_unconf = c.get("/auth/oauth/google")
-    assert r_g_unconf.status_code == 503 and "not set up" in r_g_unconf.get_data(as_text=True).lower()
+    assert (
+        r_g_unconf.status_code == 503 and "not set up" in r_g_unconf.get_data(as_text=True).lower()
+    )
     assert "Traceback" not in r_g_unconf.get_data(as_text=True)
 
     os.environ["GOOGLE_CLIENT_ID"] = "fake-google-id"
@@ -152,11 +163,17 @@ def test_1_legacy_oauth_removed_and_migration(mock_mail: _MockMail) -> None:
     assert html_with_g.count('href="/auth/oauth/google"') == 2
     assert "Google sign-in is not set up on this server yet" not in html_with_g
     assert "Continue with Google" in html_with_g and "Sign up with Google" in html_with_g
-    assert "Microsoft" not in html_with_g and "Yahoo" not in html_with_g and "GitHub" not in html_with_g
+    assert (
+        "Microsoft" not in html_with_g
+        and "Yahoo" not in html_with_g
+        and "GitHub" not in html_with_g
+    )
 
     # Data migration: removes non-Google oauth_identities & marks pre-existing users verified ONCE
     with auth._conn() as con:
-        con.execute("DELETE FROM schema_migrations WHERE name = 'mark_preexisting_users_verified_v1'")
+        con.execute(
+            "DELETE FROM schema_migrations WHERE name = 'mark_preexisting_users_verified_v1'"
+        )
         cur = con.execute(
             "INSERT INTO users(email, password_hash, email_verified, role, is_active, created_at) VALUES (?, '', 0, 'user', 1, ?)",
             ("legacy_ms@example.test", time.time()),
@@ -170,13 +187,27 @@ def test_1_legacy_oauth_removed_and_migration(mock_mail: _MockMail) -> None:
     with auth._conn() as con:
         u_row = con.execute("SELECT email_verified FROM users WHERE id = ?", (uid,)).fetchone()
         assert u_row and u_row["email_verified"] == 1
-        assert con.execute("SELECT COUNT(*) FROM oauth_identities WHERE provider != 'google'").fetchone()[0] == 0
+        assert (
+            con.execute(
+                "SELECT COUNT(*) FROM oauth_identities WHERE provider != 'google'"
+            ).fetchone()[0]
+            == 0
+        )
     # New unverified user created AFTER migration stays unverified across subsequent init_db()
-    uid_new_unv, _, _ = auth.register_password_user("after_mig@example.test", "StrongPass!2026", check_mx=False)
+    uid_new_unv, _, _ = auth.register_password_user(
+        "after_mig@example.test", "StrongPass!2026", check_mx=False
+    )
     auth.init_db()
     with auth._conn() as con:
-        assert con.execute("SELECT email_verified FROM users WHERE id = ?", (uid_new_unv,)).fetchone()["email_verified"] == 0
-    print("  [PASS] 1. Always-visible Google button, legacy OAuth removal & one-time verification migration.")
+        assert (
+            con.execute("SELECT email_verified FROM users WHERE id = ?", (uid_new_unv,)).fetchone()[
+                "email_verified"
+            ]
+            == 0
+        )
+    print(
+        "  [PASS] 1. Always-visible Google button, legacy OAuth removal & one-time verification migration."
+    )
 
 
 def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
@@ -200,31 +231,62 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     # - OTP verify panel contains ZERO password inputs (code-only!)
     # - Forgot Reset Step 2 panel contains password + confirm password inputs
     login_html = r_login.get_data(as_text=True)
-    p_login = re.search(r'data-auth-panel="login".*?data-auth-panel="register"', login_html, re.S).group(0)
-    p_reg = re.search(r'data-auth-panel="register".*?data-auth-panel="forgot"', login_html, re.S).group(0)
-    p_otp = re.search(r'data-auth-panel="otp".*?data-auth-panel="forgot_reset"', login_html, re.S).group(0)
-    p_fgr = re.search(r'data-auth-panel="forgot_reset".*?data-auth-panel="reset"', login_html, re.S).group(0)
+    p_login = re.search(
+        r'data-auth-panel="login".*?data-auth-panel="register"', login_html, re.S
+    ).group(0)
+    p_reg = re.search(
+        r'data-auth-panel="register".*?data-auth-panel="forgot"', login_html, re.S
+    ).group(0)
+    p_otp = re.search(
+        r'data-auth-panel="otp".*?data-auth-panel="forgot_reset"', login_html, re.S
+    ).group(0)
+    p_fgr = re.search(r'data-auth-panel="forgot_reset".*?</form>', login_html, re.S).group(0)
     assert 'id="openForgotBtn"' in p_login
     assert "Forgot password" not in p_reg and 'name="password_confirm"' in p_reg
-    assert 'type="password"' not in p_otp and 'id="otpChangeEmailBtn"' in p_otp and "Step 2 of 2" in p_otp
+    assert (
+        'type="password"' not in p_otp
+        and 'id="otpChangeEmailBtn"' in p_otp
+        and "Step 2 of 2" in p_otp
+    )
     assert 'id="fgNewPassword"' in p_fgr and 'id="fgNewPasswordConfirm"' in p_fgr
 
     csrf = _csrf(c, "/login")
 
     # CSRF enforced on POST
-    assert c.post("/auth/register", json={"email": "a@b.test", "password": "StrongPassword!1", "password_confirm": "StrongPassword!1"}).status_code == 403
+    assert (
+        c.post(
+            "/auth/register",
+            json={
+                "email": "a@b.test",
+                "password": "StrongPassword!1",
+                "password_confirm": "StrongPassword!1",
+            },
+        ).status_code
+        == 403
+    )
 
     # Mismatched password confirmation rejected (400)
-    assert c.post(
-        "/auth/register",
-        json={"email": "mis@temp-mail.test", "password": "StrongPassword!2026", "password_confirm": "OtherPassword!2026"},
-        headers={"X-CSRF-Token": csrf},
-    ).status_code == 400
+    assert (
+        c.post(
+            "/auth/register",
+            json={
+                "email": "mis@temp-mail.test",
+                "password": "StrongPassword!2026",
+                "password_confirm": "OtherPassword!2026",
+            },
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 400
+    )
 
     # Common weak password rejected
     r_weak = c.post(
         "/auth/register",
-        json={"email": "weakuser@temp-mail.test", "password": "password123", "password_confirm": "password123"},
+        json={
+            "email": "weakuser@temp-mail.test",
+            "password": "password123",
+            "password_confirm": "password123",
+        },
         headers={"X-CSRF-Token": csrf},
     )
     assert r_weak.status_code == 400
@@ -233,14 +295,25 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     ch_email = "change_me@10minutemail.test"
     r_ch_reg = c.post(
         "/auth/register",
-        json={"email": ch_email, "password": "UniqueStrongPass!2026", "password_confirm": "UniqueStrongPass!2026"},
+        json={
+            "email": ch_email,
+            "password": "UniqueStrongPass!2026",
+            "password_confirm": "UniqueStrongPass!2026",
+        },
         headers={"X-CSRF-Token": csrf},
     )
     assert r_ch_reg.status_code == 201
     r_ch_can = c.post("/auth/signup/cancel", json={}, headers={"X-CSRF-Token": csrf})
-    assert r_ch_can.status_code == 200 and r_ch_can.get_json()["deleted"] is True and r_ch_can.get_json()["email"] == ch_email
+    assert (
+        r_ch_can.status_code == 200
+        and r_ch_can.get_json()["deleted"] is True
+        and r_ch_can.get_json()["email"] == ch_email
+    )
     with auth._conn() as con:
-        assert con.execute("SELECT COUNT(*) FROM users WHERE email = ?", (ch_email,)).fetchone()[0] == 0
+        assert (
+            con.execute("SELECT COUNT(*) FROM users WHERE email = ?", (ch_email,)).fetchone()[0]
+            == 0
+        )
 
     # Temp-mail signup succeeds -> OTP stored ONLY as HMAC hash (never plaintext)
     email = "temp_user@10minutemail.test"
@@ -254,53 +327,104 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     code1 = mock_mail.last_code(email)
 
     with auth._conn() as con:
-        row = con.execute("SELECT code_hash, salt FROM email_otps WHERE email = ?", (email,)).fetchone()
+        row = con.execute(
+            "SELECT code_hash, salt FROM email_otps WHERE email = ?", (email,)
+        ).fetchone()
         assert row and len(row["code_hash"]) == 64 and code1 not in row["code_hash"]
 
     # Unverified account signing in later opens code-only verify view (no session until verified)
     with auth._conn() as con:
         con.execute("UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (email,))
-    r_unv_login = c.post("/auth/login", json={"email": email, "password": pw}, headers={"X-CSRF-Token": csrf})
+    r_unv_login = c.post(
+        "/auth/login", json={"email": email, "password": pw}, headers={"X-CSRF-Token": csrf}
+    )
     assert r_unv_login.status_code == 200 and r_unv_login.get_json().get("otp_required") is True
     assert r_unv_login.get_json().get("purpose") == "signup"
     assert c.get("/api/history").status_code == 401
     code1 = mock_mail.last_code(email)
 
     # Immediate resend blocked by 60s cooldown
-    r_cd = c.post("/auth/otp/resend", json={"email": email, "purpose": "signup"}, headers={"X-CSRF-Token": csrf})
+    r_cd = c.post(
+        "/auth/otp/resend",
+        json={"email": email, "purpose": "signup"},
+        headers={"X-CSRF-Token": csrf},
+    )
     assert r_cd.status_code == 429
 
     # Wrong OTP x5 invalidates code so even the real code fails
     for _ in range(5):
         wrong = "000000" if code1 != "000000" else "999999"
-        rw = c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": wrong}, headers={"X-CSRF-Token": csrf})
+        rw = c.post(
+            "/auth/otp/verify",
+            json={"email": email, "purpose": "signup", "code": wrong},
+            headers={"X-CSRF-Token": csrf},
+        )
         assert rw.status_code == 400
-    r_after5 = c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": code1}, headers={"X-CSRF-Token": csrf})
+    r_after5 = c.post(
+        "/auth/otp/verify",
+        json={"email": email, "purpose": "signup", "code": code1},
+        headers={"X-CSRF-Token": csrf},
+    )
     assert r_after5.status_code == 400
 
     # Backdate previous OTP past cooldown, resend -> new code invalidates old code
     with auth._conn() as con:
         con.execute("UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (email,))
-    r_res = c.post("/auth/otp/resend", json={"email": email, "purpose": "signup"}, headers={"X-CSRF-Token": csrf})
+    r_res = c.post(
+        "/auth/otp/resend",
+        json={"email": email, "purpose": "signup"},
+        headers={"X-CSRF-Token": csrf},
+    )
     assert r_res.status_code == 200
     code2 = mock_mail.last_code(email)
 
     # Backdate again & resend -> code2 becomes invalidated by code3
     with auth._conn() as con:
         con.execute("UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (email,))
-    assert c.post("/auth/otp/resend", json={"email": email, "purpose": "signup"}, headers={"X-CSRF-Token": csrf}).status_code == 200
+    assert (
+        c.post(
+            "/auth/otp/resend",
+            json={"email": email, "purpose": "signup"},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 200
+    )
     code3 = mock_mail.last_code(email)
-    assert c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": code2}, headers={"X-CSRF-Token": csrf}).status_code == 400
+    assert (
+        c.post(
+            "/auth/otp/verify",
+            json={"email": email, "purpose": "signup", "code": code2},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 400
+    )
 
     # Expired OTP rejected
     with auth._conn() as con:
-        con.execute("UPDATE email_otps SET expires_at = ? WHERE email = ? AND used = 0", (time.time() - 10, email))
-    assert c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": code3}, headers={"X-CSRF-Token": csrf}).status_code == 400
+        con.execute(
+            "UPDATE email_otps SET expires_at = ? WHERE email = ? AND used = 0",
+            (time.time() - 10, email),
+        )
+    assert (
+        c.post(
+            "/auth/otp/verify",
+            json={"email": email, "purpose": "signup", "code": code3},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 400
+    )
 
     # Un-expire and verify -> logs in with HttpOnly, SameSite=Lax, and single-use OTP
     with auth._conn() as con:
-        con.execute("UPDATE email_otps SET expires_at = ? WHERE email = ? AND used = 0", (time.time() + 300, email))
-    r_ok = c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": code3}, headers={"X-CSRF-Token": csrf})
+        con.execute(
+            "UPDATE email_otps SET expires_at = ? WHERE email = ? AND used = 0",
+            (time.time() + 300, email),
+        )
+    r_ok = c.post(
+        "/auth/otp/verify",
+        json={"email": email, "purpose": "signup", "code": code3},
+        headers={"X-CSRF-Token": csrf},
+    )
     assert r_ok.status_code == 200 and r_ok.get_json()["ok"] is True
     set_cookie = " ".join(r_ok.headers.getlist("Set-Cookie"))
     assert "HttpOnly" in set_cookie and "SameSite=Lax" in set_cookie
@@ -309,13 +433,24 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
 
     # Reusing same OTP fails
     csrf_post_login = _csrf(c, "/history")
-    assert c.post("/auth/otp/verify", json={"email": email, "purpose": "signup", "code": code3}, headers={"X-CSRF-Token": csrf_post_login}).status_code == 400
+    assert (
+        c.post(
+            "/auth/otp/verify",
+            json={"email": email, "purpose": "signup", "code": code3},
+            headers={"X-CSRF-Token": csrf_post_login},
+        ).status_code
+        == 400
+    )
 
     # Existing verified user signs in directly: session rotates, ZERO OTP rows created, ZERO emails sent
     sent_before_login = len(mock_mail.sent)
     with auth._conn() as con:
         otps_before_login = con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0]
-    r_re = c.post("/auth/login", json={"email": email, "password": pw}, headers={"X-CSRF-Token": _csrf(c, "/history")})
+    r_re = c.post(
+        "/auth/login",
+        json={"email": email, "password": pw},
+        headers={"X-CSRF-Token": _csrf(c, "/history")},
+    )
     assert r_re.status_code == 200 and not r_re.get_json().get("otp_required")
     sid2 = _session_cookie_val(c)
     assert sid2 and sid2 != sid1
@@ -328,9 +463,15 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     c_bf = app_mod.app.test_client()
     csrf_bf = _csrf(c_bf, "/login")
     for _ in range(6):
-        r_bad = c_bf.post("/auth/login", json={"email": email, "password": "WrongPassword!999"}, headers={"X-CSRF-Token": csrf_bf})
+        r_bad = c_bf.post(
+            "/auth/login",
+            json={"email": email, "password": "WrongPassword!999"},
+            headers={"X-CSRF-Token": csrf_bf},
+        )
         assert r_bad.status_code == 401
-    r_lock = c_bf.post("/auth/login", json={"email": email, "password": pw}, headers={"X-CSRF-Token": csrf_bf})
+    r_lock = c_bf.post(
+        "/auth/login", json={"email": email, "password": pw}, headers={"X-CSRF-Token": csrf_bf}
+    )
     assert r_lock.status_code == 429
     _clear_rate_limits()
 
@@ -340,49 +481,91 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     with auth._conn() as con:
         otps_pre_dup = con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0]
     sent_pre_dup = len(mock_mail.sent)
-    r_dup = c2.post("/auth/register", json={"email": email, "password": "DifferentPassword!2026", "password_confirm": "DifferentPassword!2026"}, headers={"X-CSRF-Token": csrf2})
+    r_dup = c2.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": "DifferentPassword!2026",
+            "password_confirm": "DifferentPassword!2026",
+        },
+        headers={"X-CSRF-Token": csrf2},
+    )
     assert r_dup.status_code == 201 and r_dup.get_json()["message"] == r_reg.get_json()["message"]
     with auth._conn() as con:
-        assert con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0] == otps_pre_dup, "Duplicate signup must create zero OTP rows"
+        assert con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0] == otps_pre_dup, (
+            "Duplicate signup must create zero OTP rows"
+        )
     assert len(mock_mail.sent) == sent_pre_dup + 1
     dup_mail = mock_mail.sent[-1]
-    assert "sign in instead" in dup_mail["body"].lower() and not re.search(r"\b\d{6}\b", dup_mail["body"])
+    assert "sign in instead" in dup_mail["body"].lower() and not re.search(
+        r"\b\d{6}\b", dup_mail["body"]
+    )
 
     r_fg_real = c2.post("/auth/forgot", json={"email": email}, headers={"X-CSRF-Token": csrf2})
-    r_fg_none = c2.post("/auth/forgot", json={"email": "nobody_here@example.test"}, headers={"X-CSRF-Token": csrf2})
+    r_fg_none = c2.post(
+        "/auth/forgot", json={"email": "nobody_here@example.test"}, headers={"X-CSRF-Token": csrf2}
+    )
     assert r_fg_real.status_code == 200 and r_fg_none.status_code == 200
     assert r_fg_real.get_json()["message"] == r_fg_none.get_json()["message"]
 
     # Complete forgot-password OTP -> requires matching confirmation, updates password & revokes prior sessions
     fg_code = mock_mail.last_code(email)
     new_pw = "BrandNewStrongPass!2026"
-    assert c2.post(
-        "/auth/otp/verify",
-        json={"email": email, "purpose": "forgot", "code": fg_code, "password": new_pw, "password_confirm": "Mismatch!2026"},
-        headers={"X-CSRF-Token": csrf2},
-    ).status_code == 400
+    assert (
+        c2.post(
+            "/auth/otp/verify",
+            json={
+                "email": email,
+                "purpose": "forgot",
+                "code": fg_code,
+                "password": new_pw,
+                "password_confirm": "Mismatch!2026",
+            },
+            headers={"X-CSRF-Token": csrf2},
+        ).status_code
+        == 400
+    )
     # Re-issue a fresh forgot OTP since mismatch didn't consume it? Actually verify_email_otp consumed it before pw check — check!
     with auth._conn() as con:
-        con.execute("UPDATE email_otps SET used = 0 WHERE email = ? AND purpose = 'forgot'", (email,))
+        con.execute(
+            "UPDATE email_otps SET used = 0 WHERE email = ? AND purpose = 'forgot'", (email,)
+        )
     r_fgv = c2.post(
         "/auth/otp/verify",
-        json={"email": email, "purpose": "forgot", "code": fg_code, "password": new_pw, "password_confirm": new_pw},
+        json={
+            "email": email,
+            "purpose": "forgot",
+            "code": fg_code,
+            "password": new_pw,
+            "password_confirm": new_pw,
+        },
         headers={"X-CSRF-Token": csrf2},
     )
     assert r_fgv.status_code == 200
     assert c.get("/api/history").status_code == 401  # old session revoked
-    assert c2.post("/auth/login", json={"email": email, "password": new_pw}, headers={"X-CSRF-Token": csrf2}).status_code == 200
+    assert (
+        c2.post(
+            "/auth/login",
+            json={"email": email, "password": new_pw},
+            headers={"X-CSRF-Token": csrf2},
+        ).status_code
+        == 200
+    )
 
     # Per-email hourly limit (5/hr) & daily global budget enforcement
     _clear_rate_limits()
     lim_email = "limit_test@example.test"
     for i in range(5):
         with auth._conn() as con:
-            con.execute("UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (lim_email,))
+            con.execute(
+                "UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (lim_email,)
+            )
         ok, err, _ = auth.issue_email_otp(lim_email, "signup", ip="10.0.0.1")
-        assert ok, f"Unexpected failure on send #{i+1}: {err}"
+        assert ok, f"Unexpected failure on send #{i + 1}: {err}"
     with auth._conn() as con:
-        con.execute("UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (lim_email,))
+        con.execute(
+            "UPDATE email_otps SET created_at = created_at - 120 WHERE email = ?", (lim_email,)
+        )
     ok6, err6, _ = auth.issue_email_otp(lim_email, "signup", ip="10.0.0.1")
     assert not ok6 and "too many" in (err6 or "").lower()
 
@@ -390,7 +573,9 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     prev_budget = os.environ.get("OTP_DAILY_BUDGET")
     os.environ["OTP_DAILY_BUDGET"] = "1"
     try:
-        ok_b, err_b, _ = auth.issue_email_otp("budget_blocked@example.test", "signup", ip="10.0.0.2")
+        ok_b, err_b, _ = auth.issue_email_otp(
+            "budget_blocked@example.test", "signup", ip="10.0.0.2"
+        )
         assert not ok_b and "quota" in (err_b or "").lower()
     finally:
         if prev_budget is None:
@@ -416,16 +601,29 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
     mail_mod.set_provider(None)
     prev_env = os.environ.get("ECHOCOUNT_ENV")
     prev_dev = os.environ.get("ECHOCOUNT_DEV")
+    prev_sk = os.environ.get("SECRET_KEY")
     prev_brevo = os.environ.pop("BREVO_API_KEY", None)
     prev_smtp = os.environ.pop("SMTP_HOST", None)
     os.environ["ECHOCOUNT_ENV"] = "production"
     os.environ["ECHOCOUNT_DEV"] = "0"
+    # Verify production mode refuses missing/default SECRET_KEY, then supply strong test key
+    os.environ["SECRET_KEY"] = "replace-with-a-long-random-secret-key"
+    try:
+        auth.get_or_create_secret_key()
+        raise AssertionError("Production must refuse default SECRET_KEY")
+    except RuntimeError:
+        pass
+    os.environ["SECRET_KEY"] = "test-prod-secret-key-at-least-32-characters-long"
     try:
         c3 = app_mod.app.test_client()
         csrf3 = _csrf(c3, "/login")
         r_nomail = c3.post(
             "/auth/register",
-            json={"email": "nomail@example.test", "password": "StrongPassword!2026", "password_confirm": "StrongPassword!2026"},
+            json={
+                "email": "nomail@example.test",
+                "password": "StrongPassword!2026",
+                "password_confirm": "StrongPassword!2026",
+            },
             headers={"X-CSRF-Token": csrf3},
         )
         assert r_nomail.status_code == 503
@@ -439,22 +637,32 @@ def test_2_email_otp_security_and_hardening(mock_mail: _MockMail) -> None:
             os.environ.pop("ECHOCOUNT_DEV", None)
         else:
             os.environ["ECHOCOUNT_DEV"] = prev_dev
+        if prev_sk is None:
+            os.environ.pop("SECRET_KEY", None)
+        else:
+            os.environ["SECRET_KEY"] = prev_sk
         if prev_brevo is not None:
             os.environ["BREVO_API_KEY"] = prev_brevo
         if prev_smtp is not None:
             os.environ["SMTP_HOST"] = prev_smtp
         mail_mod.set_provider(mock_mail)
 
-    print("  [PASS] 2. Email OTP lifecycle, HMAC storage, limits, budget, purge, forgot-pw, CSRF & headers.")
+    print(
+        "  [PASS] 2. Email OTP lifecycle, HMAC storage, limits, budget, purge, forgot-pw, CSRF & headers."
+    )
 
 
 def test_3_google_authlib_and_firebase(mock_mail: _MockMail) -> None:
     """Phase 3: Authlib Google OIDC rules (sub match, no unverified merge, no admin) & Firebase RS256 verification."""
     _clear_rate_limits()
     # Unverified password account must NOT be auto-merged by Google OAuth
-    uid_unv, _, err = auth.register_password_user("unverified_merge@example.test", "StrongPassword!2026", check_mx=False)
+    uid_unv, _, err = auth.register_password_user(
+        "unverified_merge@example.test", "StrongPassword!2026", check_mx=False
+    )
     assert uid_unv and not err
-    u_res, u_err = auth.register_oauth_user("google", "g-sub-unv", "unverified_merge@example.test", True)
+    u_res, u_err = auth.register_oauth_user(
+        "google", "g-sub-unv", "unverified_merge@example.test", True
+    )
     assert u_res is None and u_err and "verify" in u_err.lower()
 
     # Unverified Google email rejected
@@ -481,7 +689,9 @@ def test_3_google_authlib_and_firebase(mock_mail: _MockMail) -> None:
         parts = tok.split(".")
         assert len(parts) == 3
         sig = base64.urlsafe_b64decode(parts[2] + "===")
-        pub1.verify(sig, f"{parts[0]}.{parts[1]}".encode("ascii"), _padding.PKCS1v15(), _hashes.SHA256())
+        pub1.verify(
+            sig, f"{parts[0]}.{parts[1]}".encode("ascii"), _padding.PKCS1v15(), _hashes.SHA256()
+        )
         return json.loads(base64.urlsafe_b64decode(parts[1] + "===").decode("utf-8"))
 
     prev_mode = os.environ.get("AUTH_GOOGLE_MODE")
@@ -491,7 +701,9 @@ def test_3_google_authlib_and_firebase(mock_mail: _MockMail) -> None:
     os.environ["FIREBASE_PROJECT_ID"] = "echocount-test-proj"
     os.environ["FIREBASE_WEB_API_KEY"] = "fake-web-key"
     orig_vfn = auth.verify_firebase_google_token
-    auth.verify_firebase_google_token = lambda tok, **kw: orig_vfn(tok, verifier=_rs256_verify, **kw)
+    auth.verify_firebase_google_token = lambda tok, **kw: orig_vfn(
+        tok, verifier=_rs256_verify, **kw
+    )
     try:
         now = int(time.time())
         base_claims = {
@@ -528,7 +740,9 @@ def test_3_google_authlib_and_firebase(mock_mail: _MockMail) -> None:
         # Route POST /auth/firebase/google works end-to-end
         cf = app_mod.app.test_client()
         csrf_f = _csrf(cf, "/login")
-        rf = cf.post("/auth/firebase/google", json={"id_token": good_tok}, headers={"X-CSRF-Token": csrf_f})
+        rf = cf.post(
+            "/auth/firebase/google", json={"id_token": good_tok}, headers={"X-CSRF-Token": csrf_f}
+        )
         assert rf.status_code == 200 and rf.get_json()["ok"] is True
         assert cf.get("/api/me").get_json()["email"] == "fbuser@example.test"
     finally:
@@ -571,7 +785,9 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
         os.environ["ADMIN_EMAILS"] = "one@example.test,two@example.test"
         try:
             auth.enforce_single_admin()
-            raise AssertionError("Expected RuntimeError when ADMIN_EMAILS has >1 address in production")
+            raise AssertionError(
+                "Expected RuntimeError when ADMIN_EMAILS has >1 address in production"
+            )
         except RuntimeError:
             pass
 
@@ -592,7 +808,11 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
             os.environ.pop("ECHOCOUNT_ENV", None)
         else:
             os.environ["ECHOCOUNT_ENV"] = prev_env
-    assert enf["demoted"] >= 1 and enf["active_admins"] == 1 and admin_local not in (enf["configured_masked"] or "")
+    assert (
+        enf["demoted"] >= 1
+        and enf["active_admins"] == 1
+        and admin_local not in (enf["configured_masked"] or "")
+    )
     with auth._conn() as con:
         admins = con.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
         assert len(admins) == 1 and admins[0]["email"] == admin_email
@@ -605,9 +825,13 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
     c_anon = app_mod.app.test_client()
     csrf_a = _csrf(c_anon, "/login")
     sent_before = len(mock_mail.sent)
-    r_adm_fg = c_anon.post("/auth/forgot", json={"email": admin_email}, headers={"X-CSRF-Token": csrf_a})
+    r_adm_fg = c_anon.post(
+        "/auth/forgot", json={"email": admin_email}, headers={"X-CSRF-Token": csrf_a}
+    )
     assert r_adm_fg.status_code == 200
-    assert len(mock_mail.sent) == sent_before, "Forgot password must NOT send an OTP for admin email"
+    assert len(mock_mail.sent) == sent_before, (
+        "Forgot password must NOT send an OTP for admin email"
+    )
 
     # Admin password policy requires 14+ characters
     try:
@@ -624,9 +848,19 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
     sent_pre_adm = len(mock_mail.sent)
     with auth._conn() as con:
         otps_pre_adm = con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0]
-    r_direct = c_adm.post("/auth/login", json={"email": admin_email, "password": admin_pw}, headers={"X-CSRF-Token": csrf_l})
-    assert r_direct.status_code == 200 and r_direct.get_json()["role"] == "admin" and not r_direct.get_json().get("otp_required")
-    assert len(mock_mail.sent) == sent_pre_adm, "Admin login with ADMIN_REQUIRE_OTP=0 must send zero emails"
+    r_direct = c_adm.post(
+        "/auth/login",
+        json={"email": admin_email, "password": admin_pw},
+        headers={"X-CSRF-Token": csrf_l},
+    )
+    assert (
+        r_direct.status_code == 200
+        and r_direct.get_json()["role"] == "admin"
+        and not r_direct.get_json().get("otp_required")
+    )
+    assert len(mock_mail.sent) == sent_pre_adm, (
+        "Admin login with ADMIN_REQUIRE_OTP=0 must send zero emails"
+    )
     with auth._conn() as con:
         assert con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0] == otps_pre_adm
 
@@ -635,7 +869,11 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
     try:
         c_adm2 = app_mod.app.test_client()
         csrf_l2 = _csrf(c_adm2, "/login")
-        r_step1 = c_adm2.post("/auth/login", json={"email": admin_email, "password": admin_pw}, headers={"X-CSRF-Token": csrf_l2})
+        r_step1 = c_adm2.post(
+            "/auth/login",
+            json={"email": admin_email, "password": admin_pw},
+            headers={"X-CSRF-Token": csrf_l2},
+        )
         assert r_step1.status_code == 200 and r_step1.get_json().get("otp_required") is True
         assert r_step1.get_json().get("purpose") == "admin_login"
         assert c_adm2.get("/api/admin/overview").status_code == 401
@@ -652,16 +890,41 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
     # Role-change API is permanently locked (403)
     adm_csrf = _csrf(c_adm, "/admin")
     with auth._conn() as con:
-        rogue_id = con.execute("SELECT id FROM users WHERE email = 'rogue_admin@example.test'").fetchone()["id"]
-    assert c_adm.post(f"/api/admin/users/{rogue_id}/role", json={"role": "admin"}, headers={"X-CSRF-Token": adm_csrf}).status_code == 403
+        rogue_id = con.execute(
+            "SELECT id FROM users WHERE email = 'rogue_admin@example.test'"
+        ).fetchone()["id"]
+    assert (
+        c_adm.post(
+            f"/api/admin/users/{rogue_id}/role",
+            json={"role": "admin"},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 403
+    )
 
     # Admin cannot deactivate or delete self via website
-    assert c_adm.post("/api/account/deactivate", json={"password": admin_pw}, headers={"X-CSRF-Token": adm_csrf}).status_code == 403
-    assert c_adm.delete("/api/account", json={"password": admin_pw, "confirmation": "DELETE", "code": "123456"}, headers={"X-CSRF-Token": adm_csrf}).status_code == 403
+    assert (
+        c_adm.post(
+            "/api/account/deactivate",
+            json={"password": admin_pw},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 403
+    )
+    assert (
+        c_adm.delete(
+            "/api/account",
+            json={"password": admin_pw, "confirmation": "DELETE", "code": "123456"},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 403
+    )
 
     # Seed a job for admin so admin row also appears in history/exports, then sweep EVERY page & API for ZERO leaks!
     adm_uid = auth.get_user_by_email(admin_email)["id"]
-    auth.register_user_job(uuid.uuid4().hex, adm_uid, "adm_clip.wav", {"rounded_count": 2, "top_sounds": ["Speech"]})
+    auth.register_user_job(
+        uuid.uuid4().hex, adm_uid, "adm_clip.wav", {"rounded_count": 2, "top_sounds": ["Speech"]}
+    )
 
     for path in (
         "/",
@@ -688,10 +951,15 @@ def test_4_single_locked_admin_and_zero_leak(mock_mail: _MockMail) -> None:
     # Admin idle timeout (30 min) expires admin session
     sid_adm = _session_cookie_val(c_adm)
     with auth._conn() as con:
-        con.execute("UPDATE sessions SET last_seen_at = ? WHERE id = ?", (time.time() - (auth.ADMIN_IDLE_TTL_SECONDS + 30), sid_adm))
+        con.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+            (time.time() - (auth.ADMIN_IDLE_TTL_SECONDS + 30), sid_adm),
+        )
     assert c_adm.get("/api/admin/overview").status_code == 401
 
-    print("  [PASS] 4. Single locked admin, step-up OTP, role 403, idle TTL & ZERO email leaks verified.")
+    print(
+        "  [PASS] 4. Single locked admin, step-up OTP, role 403, idle TTL & ZERO email leaks verified."
+    )
 
 
 def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) -> None:
@@ -710,18 +978,31 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
 
     c1 = app_mod.app.test_client()
     csrf1 = _csrf(c1, "/login")
-    assert c1.post("/auth/login", json={"email": u1_email, "password": u1_pw}, headers={"X-CSRF-Token": csrf1}).status_code == 200
+    assert (
+        c1.post(
+            "/auth/login",
+            json={"email": u1_email, "password": u1_pw},
+            headers={"X-CSRF-Token": csrf1},
+        ).status_code
+        == 200
+    )
 
     # Create a real job dir on disk for U1
     jid1 = uuid.uuid4().hex
     jdir1 = app_mod.JOB_DIR / jid1
     jdir1.mkdir(parents=True, exist_ok=True)
     (jdir1 / "original.wav").write_bytes(b"RIFFtest")
-    auth.register_user_job(jid1, uid1, "u1_recording.wav", {"rounded_count": 3, "top_sounds": ["Speech"]})
+    auth.register_user_job(
+        jid1, uid1, "u1_recording.wav", {"rounded_count": 3, "top_sounds": ["Speech"]}
+    )
 
     # Settings -> Account page + JSON & CSV data export (caller's rows only)
     acct_html = c1.get("/settings/account").get_data(as_text=True)
-    assert "Download JSON" in acct_html and "Deactivate Account" in acct_html and "Delete Account Permanently" in acct_html
+    assert (
+        "Download JSON" in acct_html
+        and "Deactivate Account" in acct_html
+        and "Delete Account Permanently" in acct_html
+    )
     exp_json = c1.get("/api/account/export?format=json").get_json()
     assert [x["job_id"] for x in exp_json["analyses"]] == [jid1]
     exp_csv = c1.get("/api/account/export?format=csv").get_data(as_text=True)
@@ -729,7 +1010,9 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
 
     # Deactivate U1 (reversible): revokes sessions, hides history from admin default view, sends confirmation email
     csrf1_a = _csrf(c1, "/settings/account")
-    r_deact = c1.post("/api/account/deactivate", json={"password": u1_pw}, headers={"X-CSRF-Token": csrf1_a})
+    r_deact = c1.post(
+        "/api/account/deactivate", json={"password": u1_pw}, headers={"X-CSRF-Token": csrf1_a}
+    )
     assert r_deact.status_code == 200 and r_deact.get_json()["status"] == "disabled"
     assert c1.get("/api/history").status_code == 401  # session revoked immediately
     assert any("deactivated" in m["subject"].lower() for m in mock_mail.sent if m["to"] == u1_email)
@@ -737,7 +1020,11 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
     # Admin default /api/admin/history hides deactivated user's history (direct admin login, no OTP)
     c_adm = app_mod.app.test_client()
     csrf_al = _csrf(c_adm, "/login")
-    r_adml = c_adm.post("/auth/login", json={"email": admin_email, "password": admin_pw}, headers={"X-CSRF-Token": csrf_al})
+    r_adml = c_adm.post(
+        "/auth/login",
+        json={"email": admin_email, "password": admin_pw},
+        headers={"X-CSRF-Token": csrf_al},
+    )
     assert r_adml.status_code == 200 and not r_adml.get_json().get("otp_required")
     adm_hist_ids = [x["job_id"] for x in c_adm.get("/api/admin/history").get_json()["items"]]
     assert jid1 not in adm_hist_ids, "Deactivated user's history must be hidden from default views"
@@ -747,7 +1034,11 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
     sent_pre_react = len(mock_mail.sent)
     with auth._conn() as con:
         otps_pre_react = con.execute("SELECT COUNT(*) FROM email_otps").fetchone()[0]
-    r_re1 = c1.post("/auth/login", json={"email": u1_email, "password": u1_pw}, headers={"X-CSRF-Token": csrf1_r})
+    r_re1 = c1.post(
+        "/auth/login",
+        json={"email": u1_email, "password": u1_pw},
+        headers={"X-CSRF-Token": csrf1_r},
+    )
     assert r_re1.status_code == 200 and not r_re1.get_json().get("otp_required")
     assert len(mock_mail.sent) == sent_pre_react
     with auth._conn() as con:
@@ -756,9 +1047,28 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
 
     # Permanent delete of U1 (no OTP): rejects missing DELETE, rejects wrong/missing password, succeeds with password + DELETE
     csrf1_d = _csrf(c1, "/settings/account")
-    assert c1.delete("/api/account", json={"password": u1_pw, "confirmation": "delete"}, headers={"X-CSRF-Token": csrf1_d}).status_code == 400
-    assert c1.delete("/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf1_d}).status_code == 401
-    assert c1.delete("/api/account", json={"password": "WrongPassword!999", "confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf1_d}).status_code == 401
+    assert (
+        c1.delete(
+            "/api/account",
+            json={"password": u1_pw, "confirmation": "delete"},
+            headers={"X-CSRF-Token": csrf1_d},
+        ).status_code
+        == 400
+    )
+    assert (
+        c1.delete(
+            "/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf1_d}
+        ).status_code
+        == 401
+    )
+    assert (
+        c1.delete(
+            "/api/account",
+            json={"password": "WrongPassword!999", "confirmation": "DELETE"},
+            headers={"X-CSRF-Token": csrf1_d},
+        ).status_code
+        == 401
+    )
 
     r_del = c1.delete(
         "/api/account",
@@ -770,15 +1080,39 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
     assert c1.get("/api/history").status_code == 401
     with auth._conn() as con:
         assert con.execute("SELECT COUNT(*) FROM users WHERE id = ?", (uid1,)).fetchone()[0] == 0
-        assert con.execute("SELECT COUNT(*) FROM user_jobs WHERE user_id = ?", (uid1,)).fetchone()[0] == 0
-        assert con.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (uid1,)).fetchone()[0] == 0
-        assert con.execute("SELECT COUNT(*) FROM email_otps WHERE email = ?", (u1_email,)).fetchone()[0] == 0
-    assert any("permanently deleted" in m["subject"].lower() for m in mock_mail.sent if m["to"] == u1_email)
+        assert (
+            con.execute("SELECT COUNT(*) FROM user_jobs WHERE user_id = ?", (uid1,)).fetchone()[0]
+            == 0
+        )
+        assert (
+            con.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (uid1,)).fetchone()[0]
+            == 0
+        )
+        assert (
+            con.execute("SELECT COUNT(*) FROM email_otps WHERE email = ?", (u1_email,)).fetchone()[
+                0
+            ]
+            == 0
+        )
+    assert any(
+        "permanently deleted" in m["subject"].lower() for m in mock_mail.sent if m["to"] == u1_email
+    )
 
     # Same email can register fresh again after deletion
     c_new = app_mod.app.test_client()
     csrf_n = _csrf(c_new, "/login")
-    assert c_new.post("/auth/register", json={"email": u1_email, "password": "FreshAccountPass!2026", "password_confirm": "FreshAccountPass!2026"}, headers={"X-CSRF-Token": csrf_n}).status_code == 201
+    assert (
+        c_new.post(
+            "/auth/register",
+            json={
+                "email": u1_email,
+                "password": "FreshAccountPass!2026",
+                "password_confirm": "FreshAccountPass!2026",
+            },
+            headers={"X-CSRF-Token": csrf_n},
+        ).status_code
+        == 201
+    )
 
     # Password-less Google user: stale re-auth rejected (401); fresh Google re-auth allows deactivate & delete (no OTP)
     _clear_rate_limits()
@@ -789,14 +1123,29 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
     csrf_g = _csrf(cg, "/settings/account")
     with auth._conn() as con:
         con.execute("UPDATE users SET reauth_at = ? WHERE id = ?", (time.time() - 600, u_g["id"]))
-    assert cg.post("/api/account/deactivate", json={}, headers={"X-CSRF-Token": csrf_g}).status_code == 401
-    assert cg.delete("/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf_g}).status_code == 401
+    assert (
+        cg.post("/api/account/deactivate", json={}, headers={"X-CSRF-Token": csrf_g}).status_code
+        == 401
+    )
+    assert (
+        cg.delete(
+            "/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf_g}
+        ).status_code
+        == 401
+    )
     auth.mark_reauthenticated(u_g["id"])
-    assert cg.delete("/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf_g}).status_code == 200
+    assert (
+        cg.delete(
+            "/api/account", json={"confirmation": "DELETE"}, headers={"X-CSRF-Token": csrf_g}
+        ).status_code
+        == 200
+    )
     assert cg.get("/api/history").status_code == 401
 
     # Admin controls: disable, enable, permanently delete non-admin + refuse admin + ID-only audit log
-    uid_t, _, _ = auth.register_password_user("target_nonadmin@example.test", "TargetPass!2026", check_mx=False)
+    uid_t, _, _ = auth.register_password_user(
+        "target_nonadmin@example.test", "TargetPass!2026", check_mx=False
+    )
     jid_t = uuid.uuid4().hex
     jdir_t = app_mod.JOB_DIR / jid_t
     jdir_t.mkdir(parents=True, exist_ok=True)
@@ -805,11 +1154,35 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
 
     adm_csrf = _csrf(c_adm, "/admin")
     adm_uid = auth.get_user_by_email(admin_email)["id"]
-    assert c_adm.post(f"/api/admin/users/{adm_uid}/status", json={"is_active": False}, headers={"X-CSRF-Token": adm_csrf}).status_code == 400
-    assert c_adm.delete(f"/api/admin/users/{adm_uid}", headers={"X-CSRF-Token": adm_csrf}).status_code == 400
+    assert (
+        c_adm.post(
+            f"/api/admin/users/{adm_uid}/status",
+            json={"is_active": False},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 400
+    )
+    assert (
+        c_adm.delete(f"/api/admin/users/{adm_uid}", headers={"X-CSRF-Token": adm_csrf}).status_code
+        == 400
+    )
 
-    assert c_adm.post(f"/api/admin/users/{uid_t}/status", json={"is_active": False}, headers={"X-CSRF-Token": adm_csrf}).status_code == 200
-    assert c_adm.post(f"/api/admin/users/{uid_t}/status", json={"is_active": True}, headers={"X-CSRF-Token": adm_csrf}).status_code == 200
+    assert (
+        c_adm.post(
+            f"/api/admin/users/{uid_t}/status",
+            json={"is_active": False},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 200
+    )
+    assert (
+        c_adm.post(
+            f"/api/admin/users/{uid_t}/status",
+            json={"is_active": True},
+            headers={"X-CSRF-Token": adm_csrf},
+        ).status_code
+        == 200
+    )
     r_admdel = c_adm.delete(f"/api/admin/users/{uid_t}", headers={"X-CSRF-Token": adm_csrf})
     assert r_admdel.status_code == 200 and not jdir_t.exists()
 
@@ -821,7 +1194,9 @@ def test_5_account_deactivate_delete_and_admin_controls(mock_mail: _MockMail) ->
     audit_dump = json.dumps(audit_rows)
     assert "target_nonadmin@example.test" not in audit_dump and admin_email not in audit_dump
 
-    print("  [PASS] 5. Account export, deactivate/reactivate, permanent delete (DB+disk), re-signup & admin audit log.")
+    print(
+        "  [PASS] 5. Account export, deactivate/reactivate, permanent delete (DB+disk), re-signup & admin audit log."
+    )
 
 
 def test_6_part_a_compact_analyze_and_gt_gating() -> None:
@@ -829,12 +1204,24 @@ def test_6_part_a_compact_analyze_and_gt_gating() -> None:
     # Verify _rank_and_cap_pairs across K = 2, 3, 9, 20, 31 synthetic detections (up to 33 sounds -> 528 pairs)
     for k, n_snd in ((2, 2), (3, 3), (9, 30), (20, 31), (31, 33)):
         sounds = [
-            {"name": f"Sound {i}", "group": ["Human voice", "Music", "Household", "Transport", "Environment/other"][i % 5], "confidence": round(0.95 - i * 0.015, 4), "time_ranges": [{"start": 0.0, "end": 4.0}]}
+            {
+                "name": f"Sound {i}",
+                "group": ["Human voice", "Music", "Household", "Transport", "Environment/other"][
+                    i % 5
+                ],
+                "confidence": round(0.95 - i * 0.015, 4),
+                "time_ranges": [{"start": 0.0, "end": 4.0}],
+            }
             for i in range(n_snd)
         ]
         raw_pairs = [
-            {"sounds": [sounds[i]["name"], sounds[j]["name"]], "intervals": [{"start": 0.0, "end": round(1.0 + ((i + j) % 7), 1)}], "total_overlap_seconds": round(1.0 + ((i + j) % 7), 1)}
-            for i in range(n_snd) for j in range(i + 1, n_snd)
+            {
+                "sounds": [sounds[i]["name"], sounds[j]["name"]],
+                "intervals": [{"start": 0.0, "end": round(1.0 + ((i + j) % 7), 1)}],
+                "total_overlap_seconds": round(1.0 + ((i + j) % 7), 1),
+            }
+            for i in range(n_snd)
+            for j in range(i + 1, n_snd)
         ]
         top, all_r, tot = app_mod._rank_and_cap_pairs(sounds, raw_pairs, limit=12)
         expected_tot = n_snd * (n_snd - 1) // 2
@@ -843,7 +1230,16 @@ def test_6_part_a_compact_analyze_and_gt_gating() -> None:
         # Verify descending order by overlap_duration * confidence
         scores = [p["score"] for p in top]
         assert scores == sorted(scores, reverse=True)
-        payload_bytes = len(json.dumps({"named_sounds": sounds, "visible_default": 8, "overlapping_sounds": top, "overlapping_pairs_total": tot}).encode("utf-8"))
+        payload_bytes = len(
+            json.dumps(
+                {
+                    "named_sounds": sounds,
+                    "visible_default": 8,
+                    "overlapping_sounds": top,
+                    "overlapping_pairs_total": tot,
+                }
+            ).encode("utf-8")
+        )
         assert payload_bytes < 150 * 1024, f"K={k} payload exceeded 150 KB: {payload_bytes}"
 
     # Verify GROUND_TRUTH_PUBLIC gating helper
@@ -861,16 +1257,27 @@ def test_6_part_a_compact_analyze_and_gt_gating() -> None:
             os.environ["GROUND_TRUTH_PUBLIC"] = prev_gtp
 
     # Verify /api/jobs/<id>/pairs enforces owner/admin scope (404 for non-owner)
-    u_own, _, _ = auth.register_password_user("pairs_owner@example.test", "StrongPass!2026", check_mx=False)
-    u_oth, _, _ = auth.register_password_user("pairs_other@example.test", "StrongPass!2026", check_mx=False)
+    u_own, _, _ = auth.register_password_user(
+        "pairs_owner@example.test", "StrongPass!2026", check_mx=False
+    )
+    u_oth, _, _ = auth.register_password_user(
+        "pairs_other@example.test", "StrongPass!2026", check_mx=False
+    )
     with auth._conn() as con:
         con.execute("UPDATE users SET email_verified = 1 WHERE id IN (?, ?)", (u_own, u_oth))
     jid = uuid.uuid4().hex
     auth.register_user_job(jid, u_own, "clip.wav", {"rounded_count": 3})
     with app_mod._jobs_lock:
-        app_mod._jobs[jid] = {"created": time.time(), "all_overlapping_sounds": [{"sounds": ["A", "B"], "total_overlap_seconds": 2.0}]}
-    c_own = app_mod.app.test_client(); sid_o, _ = auth.create_session(u_own); c_own.set_cookie(auth.SESSION_COOKIE, sid_o)
-    c_oth = app_mod.app.test_client(); sid_x, _ = auth.create_session(u_oth); c_oth.set_cookie(auth.SESSION_COOKIE, sid_x)
+        app_mod._jobs[jid] = {
+            "created": time.time(),
+            "all_overlapping_sounds": [{"sounds": ["A", "B"], "total_overlap_seconds": 2.0}],
+        }
+    c_own = app_mod.app.test_client()
+    sid_o, _ = auth.create_session(u_own)
+    c_own.set_cookie(auth.SESSION_COOKIE, sid_o)
+    c_oth = app_mod.app.test_client()
+    sid_x, _ = auth.create_session(u_oth)
+    c_oth.set_cookie(auth.SESSION_COOKIE, sid_x)
     r_o = c_own.get(f"/api/jobs/{jid}/pairs")
     assert r_o.status_code == 200 and r_o.get_json()["total"] == 1
     assert "no-store" in r_o.headers.get("Cache-Control", "").lower()
@@ -880,9 +1287,21 @@ def test_6_part_a_compact_analyze_and_gt_gating() -> None:
     an_html = c_own.get("/analyze").get_data(as_text=True)
     assert "an-upload-col" in an_html and "an-result-col" in an_html
     an_js = (ROOT / "static" / "analyze.js").read_text(encoding="utf-8")
-    for token in ('role="tablist"', 'id="pane-overview"', 'id="pane-sounds"', 'id="pane-numbers"', 'id="pane-reference"', 'id="pane-stems"', "sndSearch", "sndSort", "showAllPairsBtn"):
+    for token in (
+        'role="tablist"',
+        'id="pane-overview"',
+        'id="pane-sounds"',
+        'id="pane-numbers"',
+        'id="pane-reference"',
+        'id="pane-stems"',
+        "sndSearch",
+        "sndSort",
+        "showAllPairsBtn",
+    ):
         assert token in an_js, f"Missing {token} in analyze.js"
-    print("  [PASS] 6. Part A pair capping, <150KB payload, GROUND_TRUTH_PUBLIC gating & tabbed Analyze UI.")
+    print(
+        "  [PASS] 6. Part A pair capping, <150KB payload, GROUND_TRUTH_PUBLIC gating & tabbed Analyze UI."
+    )
 
 
 def main() -> None:

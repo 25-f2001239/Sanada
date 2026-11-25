@@ -1702,16 +1702,6 @@ html.theme-anim *::after {
 .stages li[data-state="active"] i { background: var(--o); animation: ping 1.4s infinite; color: var(--o); }
 .stages li[data-state="done"] { color: var(--ink); }
 .stages li[data-state="done"] i { background: var(--l); }
-.count-card {
-  padding: 22px;
-  border-radius: var(--r);
-  background: var(--deep);
-  color: #fff;
-  display: grid;
-  gap: 10px;
-}
-.count-card p { color: #c9c7c0; font-size: 0.9rem; }
-.count-card code { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .count-main {
   display: flex;
   align-items: baseline;
@@ -1759,7 +1749,6 @@ html.theme-anim *::after {
 .scatter-wrap { height: min(60vw, 380px); min-height: 260px; }
 .scatter-wrap canvas { width: 100%; height: 100%; }
 #evTable th, #evTable td { white-space: nowrap; }
-.res-stages { display: flex; justify-content: center; margin-bottom: 14px; }
 .banner-untrained {
   background: rgba(239, 68, 68, 0.14);
   color: #ef4444;
@@ -1785,7 +1774,6 @@ html.theme-anim *::after {
 }
 [data-theme="dark"] .banner-quality-fail { color: #fbbf24; }
 
-.tag-section { display: grid; gap: 10px; }
 .tag-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag-chip {
   display: inline-flex;
@@ -2114,24 +2102,6 @@ html.theme-anim *::after {
 @keyframes resItemIn {
 from { opacity: 0; transform: translateY(10px); }
 }
-.gt-panel {
-  border-radius: var(--r2);
-  border: 1px solid var(--line2);
-  background: var(--soft);
-  padding: 14px 16px;
-  transition: border-color 0.25s;
-}
-.gt-panel[open] { border-color: rgba(18, 181, 166, 0.45); }
-.gt-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  list-style: none;
-}
-.gt-summary small { color: var(--mute); margin-left: 6px; }
 .gt-badge { padding: 4px 10px; border-radius: 99px; font: 700 0.78rem var(--mono); }
 .gt-badge.ok { background: rgba(18, 181, 166, 0.16); color: #12b5a6; }
 .gt-badge.diff { background: rgba(245, 158, 11, 0.16); color: #d97706; }

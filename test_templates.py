@@ -152,10 +152,26 @@ def test_templates_and_routes() -> None:
     anon = flask_app.app.test_client()
     assert anon.get("/api/health").status_code == 200
     assert anon.get("/login").status_code == 200
-    for route in ("/", "/analyze", "/evaluation", "/admin/evaluation", "/admin", "/history", "/how", "/docs"):
+    for route in (
+        "/",
+        "/analyze",
+        "/evaluation",
+        "/admin/evaluation",
+        "/admin",
+        "/history",
+        "/how",
+        "/docs",
+    ):
         r = anon.get(route)
-        assert r.status_code == 302 and "/login" in (r.headers.get("Location") or ""), f"Expected 302->/login for {route}, got {r.status_code}"
-    for api in ("/api/evaluation", "/api/evaluation/export.csv", "/api/admin/overview", "/api/my-jobs"):
+        assert r.status_code == 302 and "/login" in (r.headers.get("Location") or ""), (
+            f"Expected 302->/login for {route}, got {r.status_code}"
+        )
+    for api in (
+        "/api/evaluation",
+        "/api/evaluation/export.csv",
+        "/api/admin/overview",
+        "/api/my-jobs",
+    ):
         assert anon.get(api).status_code == 401
 
     # Regular user: product portal allowed, dev/admin blocked with 403
@@ -163,13 +179,29 @@ def test_templates_and_routes() -> None:
     target_uid, _ = _login_test_user(u_client, "role.user@gmail.com", role="user")
     for route in ("/", "/analyze", "/history", "/how", "/docs", "/api/my-jobs"):
         assert u_client.get(route).status_code == 200
-    for restricted in ("/evaluation", "/admin/evaluation", "/admin", "/api/evaluation", "/api/evaluation/export.csv", "/api/admin/overview"):
-        assert u_client.get(restricted).status_code == 403, f"Regular user should get 403 on {restricted}"
+    for restricted in (
+        "/evaluation",
+        "/admin/evaluation",
+        "/admin",
+        "/api/evaluation",
+        "/api/evaluation/export.csv",
+        "/api/admin/overview",
+    ):
+        assert u_client.get(restricted).status_code == 403, (
+            f"Regular user should get 403 on {restricted}"
+        )
 
     # Developer: evaluation + CSV export allowed, admin blocked with 403
     d_client = flask_app.app.test_client()
     _login_test_user(d_client, "role.dev@gmail.com", role="developer")
-    for route in ("/", "/analyze", "/evaluation", "/admin/evaluation", "/api/evaluation", "/api/evaluation/export.csv"):
+    for route in (
+        "/",
+        "/analyze",
+        "/evaluation",
+        "/admin/evaluation",
+        "/api/evaluation",
+        "/api/evaluation/export.csv",
+    ):
         assert d_client.get(route).status_code == 200
     for restricted in ("/admin", "/api/admin/overview"):
         assert d_client.get(restricted).status_code == 403
@@ -177,19 +209,62 @@ def test_templates_and_routes() -> None:
     # Admin: all consoles, product preview, and user governance APIs (with self-protection)
     a_client = flask_app.app.test_client()
     admin_uid, admin_csrf = _login_test_user(a_client, "role.admin@outlook.com", role="admin")
-    for route in ("/admin", "/admin/evaluation", "/evaluation", "/?preview=user", "/api/admin/overview"):
+    for route in (
+        "/admin",
+        "/admin/evaluation",
+        "/evaluation",
+        "/?preview=user",
+        "/api/admin/overview",
+    ):
         assert a_client.get(route).status_code == 200
     preview_html = a_client.get("/?preview=user").get_data(as_text=True)
     assert "ADMIN PREVIEW" in preview_html and "Return to Admin Console" in preview_html
     # Roles are permanently locked (403 on all role-change attempts); cannot disable own admin account
-    assert a_client.post(f"/api/admin/users/{admin_uid}/role", json={"role": "user"}, headers={"X-CSRF-Token": admin_csrf}).status_code == 403
-    assert a_client.post(f"/api/admin/users/{target_uid}/role", json={"role": "admin"}, headers={"X-CSRF-Token": admin_csrf}).status_code == 403
-    assert a_client.post(f"/api/admin/users/{admin_uid}/status", json={"is_active": False}, headers={"X-CSRF-Token": admin_csrf}).status_code == 400
+    assert (
+        a_client.post(
+            f"/api/admin/users/{admin_uid}/role",
+            json={"role": "user"},
+            headers={"X-CSRF-Token": admin_csrf},
+        ).status_code
+        == 403
+    )
+    assert (
+        a_client.post(
+            f"/api/admin/users/{target_uid}/role",
+            json={"role": "admin"},
+            headers={"X-CSRF-Token": admin_csrf},
+        ).status_code
+        == 403
+    )
+    assert (
+        a_client.post(
+            f"/api/admin/users/{admin_uid}/status",
+            json={"is_active": False},
+            headers={"X-CSRF-Token": admin_csrf},
+        ).status_code
+        == 400
+    )
     # Can disable/enable another user and run cleanup
-    assert a_client.post(f"/api/admin/users/{target_uid}/status", json={"is_active": False}, headers={"X-CSRF-Token": admin_csrf}).status_code == 200
+    assert (
+        a_client.post(
+            f"/api/admin/users/{target_uid}/status",
+            json={"is_active": False},
+            headers={"X-CSRF-Token": admin_csrf},
+        ).status_code
+        == 200
+    )
     assert u_client.get("/api/my-jobs").status_code == 401
-    assert a_client.post(f"/api/admin/users/{target_uid}/status", json={"is_active": True}, headers={"X-CSRF-Token": admin_csrf}).status_code == 200
-    assert a_client.post("/api/admin/cleanup", headers={"X-CSRF-Token": admin_csrf}).status_code == 200
+    assert (
+        a_client.post(
+            f"/api/admin/users/{target_uid}/status",
+            json={"is_active": True},
+            headers={"X-CSRF-Token": admin_csrf},
+        ).status_code
+        == 200
+    )
+    assert (
+        a_client.post("/api/admin/cleanup", headers={"X-CSRF-Token": admin_csrf}).status_code == 200
+    )
     assert a_client.get("/settings/account").status_code == 200
 
     cases = [
@@ -313,14 +388,33 @@ def test_expo_ready_pages_and_privacy() -> None:
     _login_test_user(client, "expo.viewer@gmail.com", role="user")
 
     home_html = client.get("/").get_data(as_text=True)
-    for forbidden in ("podcast_ep12", "cafe_corner", "duet_take4", "87%", ">Example<", "Model ready"):
+    for forbidden in (
+        "podcast_ep12",
+        "cafe_corner",
+        "duet_take4",
+        "87%",
+        ">Example<",
+        "Model ready",
+    ):
         assert forbidden not in home_html, f"Found forbidden string {forbidden!r} on Home"
     assert "Measured, not promised" in home_html
     assert "What it can hear" in home_html
     assert "Fast and checked" in home_html
 
     how_html = client.get("/how").get_data(as_text=True)
-    for anchor in ("#problem", "#data", "#pipeline", "#quality-gates", "#train", "#evaluate", "#findings", "#facts", "#keep-in-mind", "#reproducibility", "#references"):
+    for anchor in (
+        "#problem",
+        "#data",
+        "#pipeline",
+        "#quality-gates",
+        "#train",
+        "#evaluate",
+        "#findings",
+        "#facts",
+        "#keep-in-mind",
+        "#reproducibility",
+        "#references",
+    ):
         assert anchor in how_html, f"Missing TOC anchor {anchor} on /how"
 
     orig_path = app_mod.PUBLIC_SUMMARY_PATH
@@ -401,21 +495,36 @@ def test_auth_security_and_ground_truth() -> None:
         # Invalid email syntax, mismatched confirmation & common weak passwords rejected
         r_bad = anon.post(
             "/auth/register",
-            json={"email": "not-an-email", "password": "StrongPassword123!", "password_confirm": "StrongPassword123!", "csrf_token": csrf},
+            json={
+                "email": "not-an-email",
+                "password": "StrongPassword123!",
+                "password_confirm": "StrongPassword123!",
+                "csrf_token": csrf,
+            },
             headers={"X-CSRF-Token": csrf},
         )
         assert r_bad.status_code == 400
 
         r_mis = anon.post(
             "/auth/register",
-            json={"email": "mismatch@example.com", "password": "StrongPassword123!", "password_confirm": "DifferentPass123!", "csrf_token": csrf},
+            json={
+                "email": "mismatch@example.com",
+                "password": "StrongPassword123!",
+                "password_confirm": "DifferentPass123!",
+                "csrf_token": csrf,
+            },
             headers={"X-CSRF-Token": csrf},
         )
         assert r_mis.status_code == 400
 
         r_weak = anon.post(
             "/auth/register",
-            json={"email": "weak@example.com", "password": "password123", "password_confirm": "password123", "csrf_token": csrf},
+            json={
+                "email": "weak@example.com",
+                "password": "password123",
+                "password_confirm": "password123",
+                "csrf_token": csrf,
+            },
             headers={"X-CSRF-Token": csrf},
         )
         assert r_weak.status_code == 400
@@ -423,13 +532,20 @@ def test_auth_security_and_ground_truth() -> None:
         # Valid email (including temp-mail domains) -> Argon2id hash -> 6-digit OTP verification
         r_ok = anon.post(
             "/auth/register",
-            json={"email": test_email, "password": "StrongPassword123!", "password_confirm": "StrongPassword123!", "csrf_token": csrf},
+            json={
+                "email": test_email,
+                "password": "StrongPassword123!",
+                "password_confirm": "StrongPassword123!",
+                "csrf_token": csrf,
+            },
             headers={"X-CSRF-Token": csrf},
             environ_base={"REMOTE_ADDR": "127.0.0.1"},
         )
         assert r_ok.status_code == 201 and r_ok.get_json().get("otp_required") is True
         with auth_mod._conn() as con:
-            row = con.execute("SELECT password_hash, email_verified FROM users WHERE email = ?", (test_email,)).fetchone()
+            row = con.execute(
+                "SELECT password_hash, email_verified FROM users WHERE email = ?", (test_email,)
+            ).fetchone()
             assert row["password_hash"].startswith("$argon2id$")
             assert row["email_verified"] == 0
 
@@ -466,14 +582,26 @@ def test_auth_security_and_ground_truth() -> None:
         _login_test_user(admin_c, "gt_admin@example.test", role="admin")
         c_real = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
         has_real = c_real.is_file()
-        sample_clip = c_real if has_real else (BASE_DIR / "tests" / "fixtures" / "two_tone_test.wav")
+        sample_clip = (
+            c_real if has_real else (BASE_DIR / "tests" / "fixtures" / "two_tone_test.wav")
+        )
         with open(sample_clip, "rb") as f:
-            ja = user_a.post("/api/analyze", data={"audio": (f, sample_clip.name)}, content_type="multipart/form-data").get_json()
+            ja = user_a.post(
+                "/api/analyze",
+                data={"audio": (f, sample_clip.name)},
+                content_type="multipart/form-data",
+            ).get_json()
         jid = ja["job_id"]
-        assert "ground_truth" not in ja, "Non-admin must NOT receive ground_truth when GROUND_TRUTH_PUBLIC=0"
+        assert "ground_truth" not in ja, (
+            "Non-admin must NOT receive ground_truth when GROUND_TRUTH_PUBLIC=0"
+        )
         if has_real:
             with open(sample_clip, "rb") as f:
-                ja_adm = admin_c.post("/api/analyze", data={"audio": (f, sample_clip.name)}, content_type="multipart/form-data").get_json()
+                ja_adm = admin_c.post(
+                    "/api/analyze",
+                    data={"audio": (f, sample_clip.name)},
+                    content_type="multipart/form-data",
+                ).get_json()
             assert ja_adm.get("ground_truth", {}).get("available") is True
         assert user_b.post("/api/separate", json={"job_id": jid}).status_code == 404
         assert user_b.get(f"/api/separate/{jid}").status_code == 404
@@ -482,9 +610,12 @@ def test_auth_security_and_ground_truth() -> None:
 
         # Non-dataset audio has no ground_truth match even for admin (never fabricated)
         import io, audio as audio_mod
+
         synth_wav = audio_mod.wav_bytes(np.zeros(16000, dtype=np.float32), 16000)
         j_synth = admin_c.post(
-            "/api/analyze", data={"audio": (io.BytesIO(synth_wav), "custom_room.wav")}, content_type="multipart/form-data"
+            "/api/analyze",
+            data={"audio": (io.BytesIO(synth_wav), "custom_room.wav")},
+            content_type="multipart/form-data",
         ).get_json()
         assert "ground_truth" not in j_synth
 
@@ -493,10 +624,16 @@ def test_auth_security_and_ground_truth() -> None:
         c_gt = ds_root / "FSD_Mix_3_Sounds" / "test" / "mix_00035.wav"
         if c_gt.is_file():
             with open(c_gt, "rb") as f:
-                jgt = admin_c.post("/api/analyze", data={"audio": (f, c_gt.name)}, content_type="multipart/form-data").get_json()
+                jgt = admin_c.post(
+                    "/api/analyze",
+                    data={"audio": (f, c_gt.name)},
+                    content_type="multipart/form-data",
+                ).get_json()
             assert jgt.get("ground_truth", {}).get("available") is True
             assert jgt["ground_truth"]["true_k"] == 3
-        print("  [PASS] Auth security, Google-only OAuth, Email OTP, Argon2id, user isolation, and Ground Truth.")
+        print(
+            "  [PASS] Auth security, Google-only OAuth, Email OTP, Argon2id, user isolation, and Ground Truth."
+        )
     finally:
         mail_mod.set_provider(None)
         if prev_skip_mx is None:

@@ -1,4 +1,5 @@
 """Download pretrained HuggingFace models and hosted trained checkpoints for EchoCount."""
+
 from __future__ import annotations
 
 import argparse
@@ -71,7 +72,9 @@ def _print_inventory(only: str | None = None) -> None:
         for name, info in ckpts.items():
             if only and only not in (name, "checkpoints", "all"):
                 continue
-            print(f"  - {name:<26} | {info['size_mb']:>5.2f} MB | sha256={info['sha256'][:12]}... | MIT")
+            print(
+                f"  - {name:<26} | {info['size_mb']:>5.2f} MB | sha256={info['sha256'][:12]}... | MIT"
+            )
 
 
 def check_all(only: str | None = None) -> bool:
@@ -100,8 +103,12 @@ def check_all(only: str | None = None) -> bool:
             ok = ok and match
             print(f"[{'OK' if match else 'HASH MISMATCH'}] {name} ({info['size_mb']} MB)")
     if not ok:
-        print("\nMissing files detected. Run `python scripts/download_models.py` to fetch pretrained models and release checkpoints.")
-        print("If the GitHub Release is not published yet, train locally with `python scripts/train.py all --full`.")
+        print(
+            "\nMissing files detected. Run `python scripts/download_models.py` to fetch pretrained models and release checkpoints."
+        )
+        print(
+            "If the GitHub Release is not published yet, train locally with `python scripts/train.py all --full`."
+        )
     return ok
 
 
@@ -134,12 +141,16 @@ def download_all(only: str | None = None, base_url: str | None = None) -> list[s
             )
         except Exception as exc:
             failures.append(f"{key} ({spec['repo_id']}): {exc}")
-            print(f"[WARN] Could not download {key} ({exc}). App will still start.", file=sys.stderr)
+            print(
+                f"[WARN] Could not download {key} ({exc}). App will still start.", file=sys.stderr
+            )
 
     if MANIFEST_PATH.is_file():
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         url_root = (
-            base_url or os.getenv("ECHOCOUNT_CHECKPOINT_URL") or manifest.get("default_release_base_url", "")
+            base_url
+            or os.getenv("ECHOCOUNT_CHECKPOINT_URL")
+            or manifest.get("default_release_base_url", "")
         ).rstrip("/")
         for name, info in manifest.get("checkpoints", {}).items():
             if only and only not in (name, "checkpoints", "all"):
@@ -178,7 +189,9 @@ def ensure_assets() -> list[str]:
             missing = True
             break
     if not missing and MANIFEST_PATH.is_file():
-        for info in json.loads(MANIFEST_PATH.read_text(encoding="utf-8")).get("checkpoints", {}).values():
+        for info in (
+            json.loads(MANIFEST_PATH.read_text(encoding="utf-8")).get("checkpoints", {}).values()
+        ):
             p = ROOT / info["path"]
             if not p.is_file():
                 missing = True
@@ -192,8 +205,15 @@ def ensure_assets() -> list[str]:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--check", action="store_true", help="Verify local models and checkpoint hashes")
-    p.add_argument("--only", type=str, default=None, help="Download/check one item (ast, clap, sepformer, ecapa, or checkpoint filename)")
-    p.add_argument("--base-url", type=str, default=None, help="Override base URL for hosted checkpoints")
+    p.add_argument(
+        "--only",
+        type=str,
+        default=None,
+        help="Download/check one item (ast, clap, sepformer, ecapa, or checkpoint filename)",
+    )
+    p.add_argument(
+        "--base-url", type=str, default=None, help="Override base URL for hosted checkpoints"
+    )
     args = p.parse_args()
     if args.check:
         sys.exit(0 if check_all(args.only) else 1)

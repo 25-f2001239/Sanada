@@ -11,11 +11,19 @@ ENV_PATH = ROOT / ".env"
 
 FIELDS = [
     ("ADMIN_EMAILS", "Single administrator email (exactly ONE email)", False),
-    ("BASE_URL", "Public base URL (e.g. http://127.0.0.1:5000 or https://your.ngrok-free.app)", False),
+    (
+        "BASE_URL",
+        "Public base URL (e.g. http://127.0.0.1:5000 or https://your.ngrok-free.app)",
+        False,
+    ),
     ("BREVO_API_KEY", "Brevo transactional API key (hidden input)", True),
     ("BREVO_SENDER_EMAIL", "Verified Brevo sender email", False),
     ("GOOGLE_CLIENT_ID", "Google OAuth Client ID (leave blank to skip)", False),
-    ("GOOGLE_CLIENT_SECRET", "Google OAuth Client Secret (hidden input, leave blank to skip)", True),
+    (
+        "GOOGLE_CLIENT_SECRET",
+        "Google OAuth Client Secret (hidden input, leave blank to skip)",
+        True,
+    ),
     ("AUTH_GOOGLE_MODE", "Google auth mode ('authlib' or 'firebase', default authlib)", False),
 ]
 
@@ -43,7 +51,9 @@ def _load_existing(path: Path) -> dict[str, str]:
 
 
 def main() -> None:
-    print("EchoCount Local Auth Setup -> writes git-ignored .env (press Enter to keep existing value)\n")
+    print(
+        "EchoCount Local Auth Setup -> writes git-ignored .env (press Enter to keep existing value)\n"
+    )
     env = _load_existing(ENV_PATH)
     if not env.get("SECRET_KEY") or "replace-with" in env.get("SECRET_KEY", "").lower():
         env["SECRET_KEY"] = secrets.token_hex(32)
@@ -64,7 +74,16 @@ def main() -> None:
     ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print("\nSaved .env (masked summary):")
-    for k in ("SECRET_KEY", "ADMIN_EMAILS", "BASE_URL", "BREVO_API_KEY", "BREVO_SENDER_EMAIL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "AUTH_GOOGLE_MODE"):
+    for k in (
+        "SECRET_KEY",
+        "ADMIN_EMAILS",
+        "BASE_URL",
+        "BREVO_API_KEY",
+        "BREVO_SENDER_EMAIL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "AUTH_GOOGLE_MODE",
+    ):
         print(f"  {k:<22} = {_mask(env.get(k, ''))}")
 
 

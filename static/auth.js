@@ -537,11 +537,6 @@
     }
   });
 
-  wireForm("#resetForm", (data) => {
-    showFeedback(data.message || "Password updated.", "info");
-    setTimeout(() => (location.href = data.redirect || "/login"), 360);
-  });
-
   /* ========================================================================
      LEFT PANEL: COORDINATED SIGNAL DECOMPOSITION CYCLE (#authScopeCanvas)
      Cycle (10.0s):

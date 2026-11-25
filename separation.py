@@ -34,8 +34,7 @@ WINDOW_SECONDS = 8.0
 OVERLAP_SECONDS = 2.0
 
 POWERSHELL_DOWNLOAD_COMMANDS = (
-    "# From the EchoCount project root:\n"
-    ".\\.venv\\Scripts\\python scripts\\download_models.py"
+    "# From the EchoCount project root:\n.\\.venv\\Scripts\\python scripts\\download_models.py"
 )
 
 _ECAPA_CACHE: Any | None = None

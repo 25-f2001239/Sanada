@@ -66,10 +66,16 @@ def _login(client, email: str, password: str) -> str:
         assert code_m, "Missing 6-digit OTP in email"
         r2 = client.post(
             "/auth/otp/verify",
-            json={"email": email, "purpose": body.get("purpose", "admin_login"), "code": code_m.group(1)},
+            json={
+                "email": email,
+                "purpose": body.get("purpose", "admin_login"),
+                "code": code_m.group(1),
+            },
             headers={"X-CSRF-Token": csrf},
         )
-        assert r2.status_code == 200, f"OTP verify failed for {email}: {r2.status_code} {r2.get_data(as_text=True)}"
+        assert r2.status_code == 200, (
+            f"OTP verify failed for {email}: {r2.status_code} {r2.get_data(as_text=True)}"
+        )
     return _extract_csrf(client, "/history")
 
 
@@ -394,7 +400,9 @@ def run_tests() -> None:
             shutil.rmtree(app_mod.JOB_DIR / jid, ignore_errors=True)
         with auth._conn() as con:
             for uid in created_uids:
-                con.execute("DELETE FROM admin_audit_log WHERE admin_id = ? OR target_id = ?", (uid, uid))
+                con.execute(
+                    "DELETE FROM admin_audit_log WHERE admin_id = ? OR target_id = ?", (uid, uid)
+                )
                 con.execute("DELETE FROM users WHERE id = ?", (uid,))
             for em in (email_a, email_b, email_adm):
                 con.execute("DELETE FROM email_otps WHERE email = ?", (em,))

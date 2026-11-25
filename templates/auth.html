@@ -323,23 +323,6 @@
           <button type="button" class="btn block" id="fgBackBtn">Back to Sign In</button>
         </form>
       </div>
-
-      {# ---- RESET PASSWORD PANEL (legacy token fallback) ---- #}
-      <div class="auth-panel" data-auth-panel="reset" {% if mode != 'reset' %}hidden{% endif %}>
-        <form id="resetForm" method="POST" action="/auth/reset" class="auth-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="token" value="{{ token or '' }}">
-          <div class="field">
-            <label for="resetPassword">New password</label>
-            <div class="pw-wrap input-wave-wrap">
-              <input id="resetPassword" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" enterkeyhint="done" required placeholder="At least 10 characters">
-              {{ pw_toggle('resetPassword') }}
-              <i class="input-wave-line" aria-hidden="true"></i>
-            </div>
-          </div>
-          {{ sweep_btn('Update Password') }}
-        </form>
-      </div>
     </div>
 
     <footer class="auth-pane-foot">
