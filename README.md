@@ -76,6 +76,9 @@ python scripts/setup_auth.py
 ## 3. Running Tests
 
 ```powershell
+# OWASP security regression tests (weight-free, CI-safe)
+python tests/test_security_audit.py
+
 # Authentication overhaul, OTP, single locked admin & account lifecycle tests
 python tests/test_auth_overhaul.py
 
@@ -124,7 +127,7 @@ cloc . --include-lang="Python,JavaScript,CSS,HTML" `
 | First startup takes a few minutes | Downloading ~1.17 GB of pretrained Hugging Face models & release checkpoints | Wait for progress to finish; subsequent startups skip verified files |
 | `"Some assets could not be downloaded"` on startup | Offline or network blocked | Re-run `python scripts/download_models.py` once online |
 | `pip install` fails on `torch` or `av` | Unsupported Python version or old `pip` | Use Python `3.11 – 3.14` (`.python-version` = `3.14.8`) and run `python -m pip install --upgrade pip` |
-| Google sign-in button not shown on `/login` | Google env vars not set | Intentional — run `python scripts/setup_auth.py` or set `GOOGLE_CLIENT_ID`/`SECRET` in `.env` |
+| Google sign-in button is disabled on `/login` | Google env vars not set | Intentional — run `python scripts/setup_auth.py` or set `GOOGLE_CLIENT_ID`/`SECRET` in `.env` |
 | `"Email verification is not available"` on sign-up | No Brevo/SMTP credentials in production | Configure `BREVO_API_KEY` & `BREVO_SENDER_EMAIL` via `python scripts/setup_auth.py` (or `ECHOCOUNT_DEV=1` locally) |
 | `403 Forbidden` on `/admin` or role change | Roles are locked to a single `.env` admin | Set `ADMIN_EMAILS=<single-email>` in `.env` and restart `python app.py` |
 | Uploaded audio disappears after 30 minutes | Automatic privacy TTL cleanup | Expected behavior (`JOB_TTL_SECONDS=1800`); download ZIPs before expiry |
