@@ -7,7 +7,7 @@
     <span class="pill" style="margin-inline: auto;">403 · Restricted</span>
     <h1 style="font-size: clamp(1.7rem, 3vw, 2.4rem);">Access restricted</h1>
     <p class="lead" style="margin-inline: auto;">
-      Your account ({{ current_user.email if current_user else 'guest' }}) does not have permission to view this console.
+      Your account ({{ current_user.display_label if current_user else 'guest' }}) does not have permission to view this console.
     </p>
     <div class="actions" style="justify-content: center; margin-top: 8px;">
       <a class="btn primary" href="{{ url_for('index') }}">Return to User Portal</a>

@@ -29,6 +29,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    session as flask_session,
     url_for,
 )
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -40,6 +41,7 @@ import auth
 import capabilities
 import counting
 import data as data_mod
+import mail as mail_mod
 import quality as quality_mod
 import separation
 import tagging
@@ -237,6 +239,8 @@ def inject_site_globals() -> dict:
         ),
         "csrf_token": auth.get_or_create_form_csrf(),
         "oauth_providers": auth.provider_availability(),
+        "google_auth_mode": auth.google_auth_mode(),
+        "firebase_web_config": auth.firebase_web_config(),
     }
 
 
@@ -336,35 +340,76 @@ def docs_page():
 
 
 @app.after_request
-def apply_private_cache_headers(resp):
-    """Prevent browsers and proxies from caching private history or job API responses."""
+def apply_security_and_cache_headers(resp):
+    """Apply baseline security headers to all responses and no-store to private routes."""
     p = request.path or ""
     if p.startswith(
         (
             "/api/history",
             "/api/my-jobs",
-            "/api/admin/history",
+            "/api/admin/",
+            "/api/account",
+            "/api/auth/",
+            "/api/me",
             "/api/analyze",
+            "/api/jobs/",
             "/api/separate",
             "/api/stem/",
             "/api/download/",
+            "/settings/account",
         )
     ):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
         resp.headers["Pragma"] = "no-cache"
+
+    g_connect = ""
+    g_frame = ""
+    if auth.provider_availability().get("google"):
+        if auth.google_auth_mode() == "firebase":
+            g_connect = " https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com"
+            g_frame = " https://accounts.google.com https://*.firebaseapp.com"
+        else:
+            g_connect = " https://accounts.google.com https://oauth2.googleapis.com"
+
+    resp.headers["Content-Security-Policy"] = (
+        f"default-src 'self'; "
+        f"script-src 'self' 'unsafe-inline'; "
+        f"style-src 'self' 'unsafe-inline'; "
+        f"img-src 'self' data: blob:; "
+        f"media-src 'self' blob:; "
+        f"connect-src 'self'{g_connect}; "
+        f"frame-src 'self'{g_frame}; "
+        f"frame-ancestors 'none'; "
+        f"base-uri 'self'; "
+        f"form-action 'self' https://accounts.google.com"
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    if auth.is_https_base() or request.is_secure:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
 
 
-def _purge_job_files(job_ids: list[str]) -> None:
-    """Remove in-memory job state and on-disk uploads/jobs/<job_id> directories."""
+def _purge_job_files(job_ids: list[str]) -> tuple[int, bool]:
+    """Remove in-memory job state and on-disk uploads/jobs/<job_id> dirs; verify gone."""
     if not job_ids:
-        return
+        return 0, True
     with _jobs_lock:
         for jid in job_ids:
             _jobs.pop(jid, None)
+    removed = 0
+    all_gone = True
     for jid in job_ids:
         if jid and all(c in "0123456789abcdef" for c in jid):
-            shutil.rmtree(JOB_DIR / jid, ignore_errors=True)
+            d = JOB_DIR / jid
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+            if d.exists():
+                all_gone = False
+    return removed, all_gone
 
 
 def _csv_cell(val) -> str:
@@ -571,18 +616,41 @@ def reset_password_page():
 
 
 @app.get("/api/auth/me")
+@app.get("/api/me")
 def auth_me():
     user = auth.get_current_user()
     if not user:
         return jsonify({"authenticated": False}), 200
+    is_admin = user.get("role") == "admin"
     return jsonify(
         {
             "authenticated": True,
-            "email": user["email"],
+            "display_label": "Admin" if is_admin else user["email"],
+            "email": user["masked_email"] if is_admin else user["email"],
+            "masked_email": user["masked_email"],
             "email_verified": user["email_verified"],
+            "has_password": user.get("has_password", True),
             "role": user.get("role", "user"),
         }
     )
+
+
+def _issue_login_session(user_id: int, role: str, next_raw: str | None = None):
+    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
+    sid, _ = auth.create_session(user_id, rotate_from_sid=prev_sid)
+    is_admin = role == "admin"
+    flask_session.pop("_otp_pending", None)
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "role": role,
+                "display_label": "Admin" if is_admin else "",
+                "redirect": _safe_next_url(next_raw, role),
+            }
+        )
+    )
+    return auth.set_session_cookie(resp, sid, is_admin=is_admin)
 
 
 @app.post("/auth/login")
@@ -594,38 +662,83 @@ def auth_login_route():
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
-    email = str(data.get("email", ""))
+    email = auth.normalize_email(str(data.get("email", "")))
     password = str(data.get("password", ""))
     ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"login:ip:{ip}") or not auth.check_auth_rate_limit(
-        f"login:email:{auth.normalize_email(email)}", limit=5, window_s=300.0
+    ip_h = auth.hash_ip(ip)
+    if (
+        auth.is_locked_out(f"fail:email:{email}")
+        or auth.is_locked_out(f"fail:ip:{ip_h}", max_failures=15)
+        or not auth.check_auth_rate_limit(f"login:ip:{ip_h}", limit=12, window_s=300.0)
+        or not auth.check_auth_rate_limit(f"login:email:{email}", limit=6, window_s=300.0)
     ):
         return jsonify(
             {"error": "Too many sign-in attempts. Please wait a few minutes and try again."}
         ), 429
+
     user, err = auth.authenticate_password_user(email, password)
     if err or not user:
-        return jsonify({"error": err or "Invalid email or password."}), 401
-    sid, _ = auth.create_session(user["id"])
-    resp = make_response(
-        jsonify(
+        auth.record_login_failure(f"fail:email:{email}")
+        auth.record_login_failure(f"fail:ip:{ip_h}")
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    auth.clear_login_failures(f"fail:email:{email}")
+    next_raw = data.get("next")
+
+    # Optional admin step-up OTP (off by default: ADMIN_REQUIRE_OTP=0)
+    if user["role"] == "admin":
+        if not auth.admin_requires_otp():
+            return _issue_login_session(user["id"], "admin", next_raw)
+        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "admin_login", ip=ip)
+        if not ok_otp:
+            return jsonify({"error": otp_err or "Email verification is not available right now."}), 503 if retry_s == 0 else 429
+        flask_session["_otp_pending"] = {
+            "uid": user["id"],
+            "email": email,
+            "purpose": "admin_login",
+            "role": "admin",
+            "next": str(next_raw or ""),
+            "ts": time.time(),
+        }
+        return jsonify(
             {
                 "ok": True,
-                "email": user["email"],
-                "role": user.get("role", "user"),
-                "redirect": _safe_next_url(data.get("next"), user.get("role")),
+                "otp_required": True,
+                "purpose": "admin_login",
+                "cooldown": retry_s,
+                "message": "Enter the 6-digit verification code sent to your email to continue.",
             }
         )
-    )
-    return auth.set_session_cookie(resp, sid)
 
+    # Unverified new sign-ups: send fresh code and open code-only verify view (no session until verified)
+    if not user["email_verified"]:
+        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
+        if not ok_otp:
+            return jsonify({"error": otp_err or "Email verification is not available right now."}), 503 if retry_s == 0 else 429
+        flask_session["_otp_pending"] = {
+            "uid": user["id"],
+            "email": email,
+            "purpose": "signup",
+            "role": "user",
+            "next": str(next_raw or "/analyze"),
+            "ts": time.time(),
+        }
+        return jsonify(
+            {
+                "ok": True,
+                "otp_required": True,
+                "purpose": "signup",
+                "masked_email": auth.mask_email(email),
+                "cooldown": retry_s,
+                "message": "Enter the 6-digit code sent to your email to verify your account.",
+            }
+        )
 
-def _is_local_or_dev() -> bool:
-    return (
-        (request.remote_addr in ("127.0.0.1", "::1", "localhost"))
-        or data_mod.is_dev_mode()
-        or os.getenv("ECHOCOUNT_TEST_VERIFY_LINK") == "1"
-    )
+    # Deactivated accounts reactivate directly upon valid email + password sign-in (no OTP)
+    if not user["is_active"]:
+        auth.reactivate_user_account(user["id"])
+
+    return _issue_login_session(user["id"], user["role"], next_raw)
 
 
 def _render_auth_error(msg: str, code: int = 400):
@@ -646,37 +759,158 @@ def auth_register_route():
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
-    email = str(data.get("email", ""))
+    email = auth.normalize_email(str(data.get("email", "")))
     password = str(data.get("password", ""))
+    password_confirm = str(data.get("password_confirm", ""))
     ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"reg:ip:{ip}", limit=10, window_s=600.0):
+    if not auth.check_auth_rate_limit(f"reg:ip:{auth.hash_ip(ip)}", limit=10, window_s=600.0):
         return jsonify({"error": "Too many registration attempts. Please try again later."}), 429
-    uid, token, err = auth.register_password_user(email, password)
-    if err or not uid or not token:
-        return jsonify({"error": err or "Registration could not be completed."}), 400
-    verify_url = url_for("auth_verify_route", token=token, _external=True)
-    sent = auth.send_auth_email(
-        auth.normalize_email(email),
-        "Verify your EchoCount account",
-        f"Click this link to verify your EchoCount account (valid for 30 minutes):\n\n{verify_url}\n",
-    )
-    local_dev = _is_local_or_dev()
-    if not sent and not local_dev:
+    if not password_confirm or password != password_confirm:
+        return jsonify({"error": "Passwords do not match."}), 400
+
+    # Reject syntax/MX/weak-password errors cleanly, then use non-enumerating generic response
+    uid, _legacy_tok, err = auth.register_password_user(email, password, check_mx=True)
+    if err:
+        return jsonify({"error": err}), 400
+
+    generic_msg = "If this email is eligible, a 6-digit verification code has been sent."
+    masked = auth.mask_email(email)
+    if uid is not None:
+        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
+        if not ok_otp:
+            code_status = 429 if retry_s > 0 else 503
+            return jsonify({"error": otp_err or "Email verification is not available right now."}), code_status
+        flask_session["_otp_pending"] = {
+            "uid": uid,
+            "email": email,
+            "purpose": "signup",
+            "role": "user",
+            "next": "/analyze",
+            "ts": time.time(),
+        }
         return jsonify(
-            {"error": "Email verification service (SMTP_HOST) is not configured on this server."}
-        ), 503
-    payload: dict = {
-        "ok": True,
-        "verification_required": True,
-        "message": (
-            "Verification email sent. Check your inbox to activate your account."
-            if sent
-            else "Account created. Click Verify email now to activate your account."
-        ),
-    }
-    if not sent and local_dev:
-        payload["verify_url"] = verify_url
-    return jsonify(payload), 201
+            {
+                "ok": True,
+                "otp_required": True,
+                "purpose": "signup",
+                "masked_email": masked,
+                "cooldown": retry_s,
+                "message": generic_msg,
+            }
+        ), 201
+
+    # Existing verified account or admin email: no OTP created, generic reply + optional info notice
+    existing = auth.get_user_by_email(email)
+    if existing and existing["role"] != "admin" and existing["email_verified"]:
+        mail_mod.send_transactional_email(
+            email,
+            "Sign-up attempt on your EchoCount account",
+            "Someone tried to sign up for EchoCount with your address. Your existing account was not changed — please sign in instead.",
+            db_path=auth.DB_PATH,
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "otp_required": True,
+            "purpose": "signup",
+            "masked_email": masked,
+            "cooldown": auth.OTP_RESEND_COOLDOWN,
+            "message": generic_msg,
+        }
+    ), 201
+
+
+@app.post("/auth/signup/cancel")
+def auth_signup_cancel_route():
+    """Delete pending unverified account on 'Change email' and return the typed email."""
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    pending = flask_session.pop("_otp_pending", None) or {}
+    email = str(pending.get("email") or "")
+    uid = pending.get("uid")
+    deleted = bool(uid and email and auth.delete_unverified_signup(int(uid), email))
+    return jsonify({"ok": True, "deleted": deleted, "email": email})
+
+
+@app.post("/auth/otp/verify")
+def auth_otp_verify_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    data = request.get_json(silent=True) or request.form
+    purpose = str(data.get("purpose", "signup")).strip().lower()
+    code = str(data.get("code", "")).strip()
+    pending = flask_session.get("_otp_pending") or {}
+    email = auth.normalize_email(str(data.get("email", "") or pending.get("email", "")))
+    ip = request.remote_addr or "local"
+    if not auth.check_auth_rate_limit(f"otpver:ip:{auth.hash_ip(ip)}", limit=25, window_s=300.0):
+        return jsonify({"error": "Too many verification attempts. Please wait."}), 429
+
+    if purpose == "admin_login":
+        if not auth.admin_requires_otp() or not pending or pending.get("purpose") != "admin_login" or (time.time() - float(pending.get("ts", 0))) > auth.OTP_TTL_SECONDS:
+            return jsonify({"error": "Verification session expired. Please sign in again."}), 400
+        email = pending["email"]
+    elif purpose not in ("signup", "forgot"):
+        return jsonify({"error": "Unsupported verification flow."}), 400
+
+    if purpose == "forgot":
+        new_pw = str(data.get("password", ""))
+        pw_conf = data.get("password_confirm")
+        if pw_conf is not None and str(pw_conf) != new_pw:
+            return jsonify({"error": "Passwords do not match."}), 400
+    ok, err = auth.verify_email_otp(email, purpose, code)
+    if not ok:
+        return jsonify({"error": err or "Invalid or expired verification code."}), 400
+
+    if purpose == "forgot":
+        ok_pw, pw_err = auth.update_password_by_email(email, new_pw)
+        if not ok_pw:
+            return jsonify({"error": pw_err or "Could not update password."}), 400
+        flask_session.pop("_otp_pending", None)
+        return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
+
+    if purpose == "signup":
+        user = auth.mark_email_verified(email)
+        if not user or user["role"] == "admin":
+            return jsonify({"error": "Invalid or expired verification code."}), 400
+        return _issue_login_session(int(user["id"]), user["role"], pending.get("next") or "/analyze")
+
+    if purpose == "admin_login":
+        uid = int(pending["uid"])
+        return _issue_login_session(uid, "admin", pending.get("next") or "/admin")
+
+    return jsonify({"error": "Unsupported verification flow."}), 400
+
+
+@app.post("/auth/otp/resend")
+def auth_otp_resend_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    data = request.get_json(silent=True) or request.form
+    purpose = str(data.get("purpose", "signup")).strip().lower()
+    pending = flask_session.get("_otp_pending") or {}
+    email = auth.normalize_email(str(data.get("email", "") or pending.get("email", "")))
+    ip = request.remote_addr or "local"
+
+    if purpose not in ("signup", "forgot", "admin_login"):
+        return jsonify({"error": "Unsupported verification flow."}), 400
+
+    generic_msg = "If eligible, a new 6-digit verification code has been sent."
+    u = auth.get_user_by_email(email)
+    should_send = False
+    if purpose == "signup":
+        should_send = bool(u and not u["email_verified"] and u["role"] != "admin")
+    elif purpose == "forgot":
+        should_send = bool(u and u["role"] != "admin")
+    elif purpose == "admin_login" and auth.admin_requires_otp():
+        should_send = bool(pending and pending.get("purpose") == "admin_login" and pending.get("email") == email)
+
+    if should_send:
+        ok, err, retry_s = auth.issue_email_otp(email, purpose, ip=ip)
+        if not ok:
+            return jsonify({"error": err or "Could not resend code.", "cooldown": retry_s}), 429 if retry_s > 0 else 503
+        return jsonify({"ok": True, "cooldown": retry_s, "message": generic_msg})
+
+    return jsonify({"ok": True, "cooldown": auth.OTP_RESEND_COOLDOWN, "message": generic_msg})
 
 
 @app.get("/auth/verify")
@@ -685,11 +919,15 @@ def auth_verify_route():
     uid = auth.consume_auth_token(token, "verify_email")
     if not uid:
         return _render_auth_error(
-            "Verification link is invalid or expired. Please register or request a new link.", 400
+            "Verification link is invalid or expired. Please verify using your 6-digit email code.", 400
         )
     with auth._conn() as con:
+        row = con.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
+        if not row or row["role"] == "admin":
+            return _render_auth_error("Verification link is invalid or expired.", 400)
         con.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
-    sid, _ = auth.create_session(uid)
+    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
+    sid, _ = auth.create_session(uid, rotate_from_sid=prev_sid)
     resp = make_response(redirect(url_for("index")))
     return auth.set_session_cookie(resp, sid)
 
@@ -701,27 +939,28 @@ def auth_forgot_route():
     data = request.get_json(silent=True) or request.form
     email = auth.normalize_email(str(data.get("email", "")))
     ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"forgot:ip:{ip}", limit=6, window_s=600.0):
+    if not auth.check_auth_rate_limit(f"forgot:ip:{auth.hash_ip(ip)}", limit=6, window_s=600.0):
         return jsonify({"error": "Too many reset requests. Please wait a few minutes."}), 429
-    payload: dict = {
-        "ok": True,
-        "message": "If an eligible verified account exists for that email, a reset link has been prepared.",
-    }
-    with auth._conn() as con:
-        row = con.execute(
-            "SELECT id, email_verified FROM users WHERE email = ?", (email,)
-        ).fetchone()
-    if row and row["email_verified"]:
-        token = auth.create_auth_token(int(row["id"]), "reset_password")
-        reset_url = url_for("reset_password_page", token=token, _external=True)
-        sent = auth.send_auth_email(
-            email,
-            "Reset your EchoCount password",
-            f"Reset your EchoCount password (valid for 30 minutes):\n\n{reset_url}\n",
-        )
-        if not sent and _is_local_or_dev():
-            payload["reset_url"] = reset_url
-    return jsonify(payload)
+    generic_msg = "If an eligible account exists for that email, a 6-digit reset code has been sent."
+    u = auth.get_user_by_email(email)
+    # Never allow password reset via website for the locked admin account (generic non-enumerating reply)
+    if u and u["role"] != "admin" and not auth.is_admin_email(email):
+        ok, err, retry_s = auth.issue_email_otp(email, "forgot", ip=ip)
+        if not ok and retry_s == 0:
+            return jsonify({"error": err or "Email verification is not available right now."}), 503
+        if not ok and retry_s > 0:
+            return jsonify({"error": err, "cooldown": retry_s}), 429
+    flask_session["_otp_pending"] = {"email": email, "purpose": "forgot", "ts": time.time()}
+    return jsonify(
+        {
+            "ok": True,
+            "otp_required": True,
+            "purpose": "forgot",
+            "masked_email": auth.mask_email(email),
+            "cooldown": auth.OTP_RESEND_COOLDOWN,
+            "message": generic_msg,
+        }
+    )
 
 
 @app.post("/auth/reset")
@@ -737,13 +976,13 @@ def auth_reset_route():
     uid = auth.consume_auth_token(token, "reset_password")
     if not uid:
         return jsonify({"error": "Reset link is invalid or expired."}), 400
-    pw_hash = auth.hash_password(password)
     with auth._conn() as con:
-        con.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, uid))
+        row = con.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
+        if not row or row["role"] == "admin":
+            return jsonify({"error": "Reset link is invalid or expired."}), 400
+        con.execute("UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?", (auth.hash_password(password), uid))
         con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (uid,))
-    return jsonify(
-        {"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"}
-    )
+    return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
 
 
 @app.post("/auth/logout")
@@ -752,74 +991,215 @@ def auth_logout_route():
         return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if user:
-        auth.revoke_session(user["sid"])
+        auth.revoke_session(user["session_id"])
+    flask_session.pop("_otp_pending", None)
     resp = make_response(jsonify({"ok": True, "redirect": "/login"}))
     return auth.clear_session_cookie(resp)
 
 
 @app.get("/auth/oauth/<provider>")
 def oauth_start(provider: str):
-    if provider not in auth.SUPPORTED_PROVIDERS:
+    if provider != "google":
         return jsonify({"error": "Unsupported authentication provider."}), 404
-    client = auth._oauth.create_client(provider)
+    if auth.google_auth_mode() == "firebase":
+        return redirect(url_for("login_page"))
+    client = auth.get_oauth_client("google")
     if client is None:
-        return _render_auth_error(
-            f"{provider.title()} sign-in is not configured on this server yet.", 503
-        )
-    redirect_uri = url_for("oauth_callback", provider=provider, _external=True)
+        return _render_auth_error("Google sign-in is not set up on this server yet.", 503)
+    next_raw = (request.args.get("next") or "").strip()
+    if next_raw.startswith("/") and not next_raw.startswith("//"):
+        flask_session["_oauth_next"] = next_raw
+    redirect_uri = url_for("oauth_callback", provider="google", _external=True)
     return client.authorize_redirect(redirect_uri)
 
 
 @app.get("/auth/oauth/<provider>/callback")
 def oauth_callback(provider: str):
-    if provider not in auth.SUPPORTED_PROVIDERS:
+    if provider != "google":
         return jsonify({"error": "Unsupported authentication provider."}), 404
-    client = auth._oauth.create_client(provider)
+    client = auth.get_oauth_client("google")
     if client is None:
         return redirect(url_for("login_page"))
     try:
         token = client.authorize_access_token()
-        if provider == "github":
-            profile = client.get("user", token=token).json() or {}
-            emails_resp = client.get("user/emails", token=token).json() or []
-            primary = next(
-                (
-                    e
-                    for e in emails_resp
-                    if isinstance(e, dict) and e.get("primary") and e.get("verified")
-                ),
-                next((e for e in emails_resp if isinstance(e, dict) and e.get("verified")), None),
-            )
-            sub = str(profile.get("id") or "").strip()
-            raw_email = str((primary or {}).get("email") or profile.get("email") or "").strip()
-            is_verified = bool(primary and primary.get("verified"))
-        else:
-            userinfo = token.get("userinfo") or client.userinfo()
-            sub = str(userinfo.get("sub") or userinfo.get("oid") or "").strip()
-            raw_email = str(
-                userinfo.get("email") or userinfo.get("preferred_username") or ""
-            ).strip()
-            verified = userinfo.get("email_verified")
-            is_verified = (
-                bool(verified)
-                if verified is not None
-                else (provider == "microsoft" and bool(raw_email))
-            )
+        userinfo = token.get("userinfo") or client.userinfo()
+        sub = str(userinfo.get("sub") or "").strip()
+        raw_email = str(userinfo.get("email") or "").strip()
+        is_verified = bool(userinfo.get("email_verified") is True)
     except Exception:
-        auth.logger.exception("OAuth callback failed for %s", provider)
-        return _render_auth_error(
-            f"{provider.title()} sign-in could not be verified. Please try again.", 400
-        )
-    if not sub or not raw_email:
-        return _render_auth_error(
-            "Provider did not return a verified identity and email address.", 400
-        )
-    user, err = auth.register_oauth_user(provider, sub, raw_email, is_verified)
+        auth.logger.warning("Google OAuth callback failed.")
+        return _render_auth_error("Google sign-in could not be verified. Please try again.", 400)
+    if not sub or not raw_email or not is_verified:
+        return _render_auth_error("Google did not return a verified identity and email address.", 400)
+    user, err = auth.register_oauth_user("google", sub, raw_email, is_verified)
     if err or not user:
-        return _render_auth_error(err or "Could not sign in with provider.", 403)
-    sid, _ = auth.create_session(user["id"])
-    resp = make_response(redirect(auth.default_landing_for_role(user.get("role"))))
+        return _render_auth_error(err or "Could not sign in with Google.", 403)
+    auth.mark_reauthenticated(int(user["id"]))
+    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
+    sid, _ = auth.create_session(user["id"], rotate_from_sid=prev_sid)
+    next_target = flask_session.pop("_oauth_next", None)
+    resp = make_response(redirect(_safe_next_url(next_target, user.get("role"))))
     return auth.set_session_cookie(resp, sid)
+
+
+@app.post("/auth/firebase/google")
+def firebase_google_signin_route():
+    """Optional Firebase Google ID-token verification endpoint (only when AUTH_GOOGLE_MODE=firebase)."""
+    if auth.google_auth_mode() != "firebase":
+        return jsonify({"error": "Firebase Google sign-in is not enabled."}), 404
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    ip = request.remote_addr or "local"
+    if not auth.check_auth_rate_limit(f"fb:ip:{auth.hash_ip(ip)}", limit=15, window_s=300.0):
+        return jsonify({"error": "Too many sign-in attempts. Please wait."}), 429
+    data = request.get_json(silent=True) or {}
+    claims, err = auth.verify_firebase_google_token(str(data.get("id_token", "")))
+    if err or not claims:
+        return jsonify({"error": err or "Google sign-in could not be verified."}), 401
+    user, uerr = auth.register_oauth_user("google", claims["sub"], claims["email"], True)
+    if uerr or not user:
+        return jsonify({"error": uerr or "Could not sign in with Google."}), 403
+    auth.mark_reauthenticated(int(user["id"]))
+    return _issue_login_session(int(user["id"]), user["role"], data.get("next"))
+
+
+# ---------------------------------------------------------------------------
+# Settings -> Account (Download My Data, Deactivate, Permanent Delete)
+# ---------------------------------------------------------------------------
+
+@app.get("/settings/account")
+@auth.login_required
+def account_settings_page():
+    return render_template("account.html", status=model_status())
+
+
+@app.get("/api/account/export")
+@auth.login_required
+def account_export_route():
+    """Export ONLY the authenticated user's own history as JSON or CSV."""
+    user = auth.get_current_user()
+    items = auth.list_user_jobs(user["id"], limit=1000)
+    fmt = (request.args.get("format") or "json").strip().lower()
+    if fmt == "csv":
+        return _history_csv_response(items, include_user=False, filename="my-echocount-data.csv")
+    payload = {
+        "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "account": {
+            "display_label": user["display_label"],
+            "role": user["role"],
+            "email_verified": user["email_verified"],
+            "created_at": user["created_at"],
+        },
+        "analyses": items,
+    }
+    resp = make_response(json.dumps(payload, indent=2))
+    resp.headers["Content-Type"] = "application/json; charset=utf-8"
+    resp.headers["Content-Disposition"] = 'attachment; filename="my-echocount-data.json"'
+    return resp
+
+
+@app.post("/api/account/reauth")
+@auth.login_required
+def account_reauth_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    user = auth.get_current_user()
+    ip_h = auth.hash_ip(request.remote_addr or "local")
+    if not auth.check_auth_rate_limit(f"acct:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"acct:ip:{ip_h}", limit=15, window_s=3600.0):
+        return jsonify({"error": "Too many account security attempts. Please try again later."}), 429
+    data = request.get_json(silent=True) or {}
+    pw = str(data.get("password", ""))
+    u_check, err = auth.authenticate_password_user(user["email"], pw)
+    if err or not u_check or int(u_check["id"]) != int(user["id"]):
+        return jsonify({"error": "Password confirmation failed."}), 401
+    auth.mark_reauthenticated(user["id"])
+    return jsonify({"ok": True})
+
+
+@app.post("/api/account/deactivate")
+@auth.login_required
+def account_deactivate_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    user = auth.get_current_user()
+    if user["role"] == "admin":
+        return jsonify({"error": "Administrator accounts cannot be deactivated from the website."}), 403
+    ip_h = auth.hash_ip(request.remote_addr or "local")
+    if not auth.check_auth_rate_limit(f"deact:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"deact:ip:{ip_h}", limit=5, window_s=3600.0):
+        return jsonify({"error": "Too many attempts. Please try again later."}), 429
+    data = request.get_json(silent=True) or {}
+    pw = str(data.get("password", ""))
+
+    if user.get("has_password"):
+        u_ok, err = auth.authenticate_password_user(user["email"], pw)
+        if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
+            return jsonify({"error": "Invalid password confirmation."}), 401
+    elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
+        return jsonify({"error": "Please re-authenticate with Google within the last 5 minutes before deactivating."}), 401
+
+    ok, target_email, err = auth.deactivate_user_account(user["id"])
+    if not ok:
+        return jsonify({"error": err or "Could not deactivate account."}), 400
+    if target_email:
+        mail_mod.send_transactional_email(
+            target_email,
+            "Your EchoCount account was deactivated",
+            "Your EchoCount account has been deactivated and all active sessions have been signed out.\n"
+            "Sign in again with your email and password anytime to reactivate it.",
+            db_path=auth.DB_PATH,
+        )
+    resp = make_response(jsonify({"ok": True, "status": "disabled", "redirect": "/login?deactivated=1"}))
+    return auth.clear_session_cookie(resp)
+
+
+@app.delete("/api/account")
+@auth.login_required
+def account_delete_self_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    user = auth.get_current_user()
+    if user["role"] == "admin":
+        return jsonify({"error": "Administrator accounts cannot be deleted from the website."}), 403
+    ip_h = auth.hash_ip(request.remote_addr or "local")
+    if not auth.check_auth_rate_limit(f"delacc:u:{user['id']}", limit=5, window_s=3600.0) or not auth.check_auth_rate_limit(f"delacc:ip:{ip_h}", limit=5, window_s=3600.0):
+        return jsonify({"error": "Too many deletion attempts. Please try again later."}), 429
+
+    data = request.get_json(silent=True) or {}
+    if str(data.get("confirmation", "")).strip() != "DELETE":
+        return jsonify({"error": 'Type "DELETE" exactly to confirm permanent account deletion.'}), 400
+
+    pw = str(data.get("password", ""))
+    if user.get("has_password"):
+        u_ok, err = auth.authenticate_password_user(user["email"], pw)
+        if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
+            return jsonify({"error": "Current password confirmation is required before permanent deletion."}), 401
+    elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
+        return jsonify({"error": "Fresh Google sign-in within the last 5 minutes is required before permanent deletion."}), 401
+
+    ok, deleted_job_ids, deleted_email, err = auth.delete_user_account(user["id"], self_delete=True)
+    if not ok:
+        return jsonify({"error": err or "Could not delete account."}), 400
+    removed_dirs, all_gone = _purge_job_files(deleted_job_ids)
+    if deleted_email:
+        mail_mod.send_transactional_email(
+            deleted_email,
+            "Your EchoCount account has been permanently deleted",
+            "Your EchoCount account, analysis history, sessions, and uploaded audio files have been permanently removed.\n"
+            "You may register again with this email address in the future if you wish.",
+            db_path=auth.DB_PATH,
+        )
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "deleted_jobs": len(deleted_job_ids),
+                "removed_job_dirs": removed_dirs,
+                "files_verified_removed": all_gone,
+                "redirect": "/login?deleted=1",
+            }
+        )
+    )
+    return auth.clear_session_cookie(resp)
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -827,6 +1207,21 @@ def too_large(_error):
     return jsonify(
         {"error": f"The upload exceeds the {MAX_UPLOAD_BYTES / 1048576:g} MB file limit."}
     ), 413
+
+
+@app.errorhandler(404)
+def not_found(_error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Resource not found."}), 404
+    return _render_auth_error("Page not found.", 404)
+
+
+@app.errorhandler(500)
+def server_error(_error):
+    app.logger.exception("Unhandled server error on %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "An internal error occurred. Please try again later."}), 500
+    return _render_auth_error("An unexpected error occurred. Please try again later.", 500)
 
 
 @app.get("/api/evaluation")
@@ -981,6 +1376,7 @@ def admin_overview_api():
                 "separation_workers": int(os.getenv("SEPARATION_WORKERS", "2")),
                 "oauth_providers": auth.provider_availability(),
             },
+            "audit_log": auth.list_admin_audit(limit=50),
         }
     )
 
@@ -990,12 +1386,9 @@ def admin_overview_api():
 def admin_update_role_api(uid: int):
     if not auth.verify_csrf_request():
         return jsonify({"error": "Invalid or expired security token."}), 403
-    actor = auth.get_current_user()
-    data = request.get_json(silent=True) or request.form
-    ok, err = auth.update_user_role(uid, str(data.get("role", "")), actor["id"])
-    if not ok:
-        return jsonify({"error": err}), 400
-    return jsonify({"ok": True})
+    return jsonify(
+        {"error": "Roles are locked and cannot be changed through the website. Edit ADMIN_EMAILS in .env and restart."}
+    ), 403
 
 
 @app.post("/api/admin/users/<int:uid>/status")
@@ -1027,11 +1420,18 @@ def admin_delete_user_api(uid: int):
     if not auth.verify_csrf_request():
         return jsonify({"error": "Invalid or expired security token."}), 403
     actor = auth.get_current_user()
-    ok, deleted_job_ids, err = auth.delete_user_account(uid, actor["id"])
+    ok, deleted_job_ids, _deleted_email, err = auth.delete_user_account(uid, actor["id"])
     if not ok:
         return jsonify({"error": err}), 400
-    _purge_job_files(deleted_job_ids)
-    return jsonify({"ok": True, "deleted_jobs": len(deleted_job_ids)})
+    removed_dirs, all_gone = _purge_job_files(deleted_job_ids)
+    return jsonify(
+        {
+            "ok": True,
+            "deleted_jobs": len(deleted_job_ids),
+            "removed_job_dirs": removed_dirs,
+            "files_verified_removed": all_gone,
+        }
+    )
 
 
 @app.post("/api/admin/cleanup")
@@ -1116,6 +1516,53 @@ def _separation_eligibility(
     }
 
 
+def _can_see_ground_truth(user: dict | None) -> bool:
+    """Server-side gate for reference ground truth: admin always; non-admin only when GROUND_TRUTH_PUBLIC=1."""
+    if not user:
+        return False
+    return user.get("role") == "admin" or os.getenv("GROUND_TRUTH_PUBLIC", "0").strip() == "1"
+
+
+def _rank_and_cap_pairs(
+    named_sounds: list[dict], overlapping_sounds: list[dict], limit: int = 12
+) -> tuple[list[dict], list[dict], int]:
+    """Rank co-occurring pairs by overlap_duration * confidence and cap to top `limit`."""
+    if not overlapping_sounds:
+        return [], [], 0
+    conf_map = {
+        str(ns.get("name") or ns.get("friendly_name") or ns.get("class") or ""): float(
+            ns.get("confidence", ns.get("probability", 0.5))
+        )
+        for ns in named_sounds
+    }
+    scored = []
+    for o in overlapping_sounds:
+        sounds = o.get("sounds") or []
+        c1 = conf_map.get(str(sounds[0]), 0.5) if len(sounds) > 0 else 0.5
+        c2 = conf_map.get(str(sounds[1]), 0.5) if len(sounds) > 1 else 0.5
+        dur = float(o.get("total_overlap_seconds") or 0.0)
+        pair_conf = round((c1 + c2) * 0.5, 4)
+        score = round(dur * pair_conf, 4)
+        scored.append((score, dur, {**o, "confidence": pair_conf, "score": score}))
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    all_ranked = [item for _, _, item in scored]
+    return all_ranked[:limit], all_ranked, len(all_ranked)
+
+
+@app.get("/api/jobs/<job_id>/pairs")
+@auth.login_required
+def job_pairs_route(job_id: str):
+    """Return full ranked co-occurring pairs for an authorized job on demand."""
+    user = auth.get_current_user()
+    if not auth.can_access_job(job_id, user):
+        return jsonify({"error": "Job not found or expired."}), 404
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found or expired."}), 404
+    all_pairs = job.get("all_overlapping_sounds") or []
+    return jsonify({"pairs": all_pairs, "total": len(all_pairs)})
+
+
 @app.post("/api/analyze")
 @auth.login_required
 def analyze():
@@ -1152,7 +1599,11 @@ def analyze():
         timings["count_ms"] = round((time.perf_counter() - t1) * 1000, 1)
 
         t2 = time.perf_counter()
-        gt = data_mod.lookup_ground_truth(original_path, allow_in_eval=True)
+        gt = (
+            data_mod.lookup_ground_truth(original_path, allow_in_eval=True)
+            if _can_see_ground_truth(user)
+            else None
+        )
         timings["gt_ms"] = round((time.perf_counter() - t2) * 1000, 1)
 
         t3 = time.perf_counter()
@@ -1182,8 +1633,13 @@ def analyze():
             {"error": "Could not run the trained model. Check the checkpoint and server logs."}
         ), 503
 
-    named_sounds = tags_open.get("named_sounds", [])
-    overlapping_sounds = tags_open.get("overlapping_sounds", [])
+    named_sounds = sorted(
+        tags_open.get("named_sounds", []),
+        key=lambda x: -float(x.get("confidence", x.get("probability", 0.0))),
+    )
+    top_pairs, all_ranked_pairs, total_pairs = _rank_and_cap_pairs(
+        named_sounds, tags_open.get("overlapping_sounds", []), limit=12
+    )
     k = int(result["rounded_count"])
     last_reliable_k, _, _ = get_dense_thresholds()
     is_pure_speech = bool(
@@ -1209,6 +1665,7 @@ def analyze():
             "count": result,
             "speech_detected": is_pure_speech,
             "named_sounds": named_sounds,
+            "all_overlapping_sounds": all_ranked_pairs,
             "speaker_clustering": speaker_clustering,
             "stems": None,
             "zip": None,
@@ -1265,7 +1722,9 @@ def analyze():
             "max_sources": result["max_sources"],
         },
         "named_sounds": named_sounds,
-        "overlapping_sounds": overlapping_sounds,
+        "visible_default": 8,
+        "overlapping_sounds": top_pairs,
+        "overlapping_pairs_total": total_pairs,
         "speaker_clustering": speaker_clustering,
         "separation": sep_state,
         "tags": {
@@ -1274,8 +1733,8 @@ def analyze():
             "open_vocabulary": True,
             "groups": tags_open.get("groups", []),
             "active_groups": tags_open.get("active_groups", []),
-            "named_sounds": named_sounds,
-            "overlapping_sounds": overlapping_sounds,
+            "overlapping_sounds": top_pairs,
+            "overlapping_pairs_total": total_pairs,
             "max_simultaneous_sounds": tags_open.get("max_simultaneous_sounds", len(named_sounds)),
             "speech_detected": speech_detected,
             "tags": tags_open.get("tags", []),

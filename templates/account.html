@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Account Settings{% endblock %}
+{% block page %}account{% endblock %}
+{% block content %}
+{% set is_admin = current_user and current_user.role == 'admin' %}
+<div class="wrap stack" data-has-password="{{ '1' if current_user and current_user.has_password else '0' }}">
+  <div class="page-head">
+    <div>
+      <span class="portal-kicker">Settings · Account</span>
+      <h1>Account &amp; Privacy Controls</h1>
+      <p class="lead">Review your account details, export your private analysis history, or deactivate or permanently delete your account.</p>
+    </div>
+    <div class="actions">
+      <a class="btn sm" href="{{ url_for('history_page') }}">My History</a>
+      <a class="btn sm" href="{{ url_for('index') }}">Back to Analyzer</a>
+    </div>
+  </div>
+
+  <div id="acctFeedback" class="notice hidden" role="status" aria-live="polite"></div>
+
+  <div class="acct-grid">
+    <section class="panel stack" aria-labelledby="acctProfileH">
+      <h2 id="acctProfileH" style="font-size:1.15rem">Account Overview</h2>
+      <table class="kv">
+        <tbody>
+          <tr>
+            <th scope="row">Account</th>
+            <td>{% if is_admin %}<strong>Admin</strong> (<code>{{ current_user.masked_email }}</code>){% else %}<code>{{ current_user.email }}</code>{% endif %}</td>
+          </tr>
+          <tr>
+            <th scope="row">Role</th>
+            <td><span class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Email verification</th>
+            <td><span class="status-dot {{ 'ok' if current_user.email_verified else 'warn' }}">{{ 'Verified' if current_user.email_verified else 'Pending' }}</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Sign-in method</th>
+            <td>{{ 'Email & password' if current_user.has_password else 'Google sign-in' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if is_admin %}
+      <p class="fine">Administrator email addresses are masked everywhere in the interface for security and cannot be revealed here.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel stack" aria-labelledby="acctExportH">
+      <h2 id="acctExportH" style="font-size:1.15rem">Download My Data</h2>
+      <p class="fine">Export a complete copy of your own EchoCount analysis history and account metadata before making any account changes.</p>
+      <div class="actions">
+        <a class="btn primary sm" href="/api/account/export?format=json">Download JSON</a>
+        <a class="btn sm" href="/api/account/export?format=csv">Download CSV</a>
+      </div>
+    </section>
+  </div>
+
+  {% if is_admin %}
+  <section class="panel stack" aria-labelledby="acctAdminLockH">
+    <h2 id="acctAdminLockH" style="font-size:1.15rem">Administrator Account Protection</h2>
+    <p class="fine">The single administrator account is locked via <code>ADMIN_EMAILS</code> in the server <code>.env</code> configuration. It cannot be deactivated, deleted, or modified through the website.</p>
+  </section>
+  {% else %}
+  <div class="acct-grid">
+    <section class="panel stack" aria-labelledby="acctDeactH">
+      <h2 id="acctDeactH" style="font-size:1.15rem">Deactivate Account (Temporary)</h2>
+      <p class="fine">Temporarily pause your account. All active sessions are signed out immediately and your history is hidden from default views. You can reactivate anytime by signing back in with your email and password.</p>
+      <div>
+        <button type="button" class="btn sm" id="openDeactivateBtn">Deactivate Account</button>
+      </div>
+    </section>
+
+    <section class="panel stack danger-zone" aria-labelledby="acctDeleteH">
+      <h2 id="acctDeleteH" style="font-size:1.15rem">Delete Account Permanently</h2>
+      <p class="fine"><strong>This cannot be undone.</strong> Permanently removes your user profile, password hash, Google link, OTPs, active sessions, all analysis history, and any uploaded audio or separated stem files still on disk.</p>
+      <p class="fine">Want to keep your records? <a href="/api/account/export?format=json">Download your data first</a>.{% if not current_user.has_password %} Google accounts require a fresh Google sign-in within the last 5 minutes before permanent deletion; you can also revoke EchoCount's access in your Google Account security settings.{% endif %}</p>
+      <div>
+        <button type="button" class="btn sm danger" id="openDeleteBtn">Delete Account Permanently</button>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="deactivateDialog" class="acct-dialog" aria-labelledby="deactDlgTitle">
+    <form id="deactivateForm" class="stack" method="dialog">
+      <h3 id="deactDlgTitle">Deactivate your account?</h3>
+      <p class="fine">Your sessions will end immediately and your history will be hidden until you sign back in with your email and password.</p>
+      <div id="deactErr" class="notice warn hidden" role="alert"></div>
+      {% if current_user.has_password %}
+      <div class="field">
+        <label for="deactPassword">Confirm your current password</label>
+        <input id="deactPassword" name="password" type="password" autocomplete="current-password" required placeholder="Current password">
+      </div>
+      {% else %}
+      <p class="fine">Google sign-in accounts require a fresh Google sign-in within the last 5 minutes. <a href="/auth/oauth/google?next=/settings/account">Re-authenticate with Google</a> if needed.</p>
+      {% endif %}
+      <div class="acct-dialog-actions">
+        <button type="button" class="btn sm" data-close-dialog="deactivateDialog">Cancel</button>
+        <button type="submit" class="btn sm danger" id="confirmDeactivateBtn">Deactivate Account</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="deleteDialog" class="acct-dialog" aria-labelledby="delDlgTitle">
+    <form id="deleteForm" class="stack" method="dialog">
+      <h3 id="delDlgTitle">Permanently delete your account?</h3>
+      <p class="fine">This permanently erases your account, sessions, analysis history, and audio files on disk. You may re-register later with a fresh account.</p>
+      <div id="delErr" class="notice warn hidden" role="alert"></div>
+      {% if current_user.has_password %}
+      <div class="field">
+        <label for="delPassword">Confirm your current password</label>
+        <input id="delPassword" name="password" type="password" autocomplete="current-password" required placeholder="Current password">
+      </div>
+      {% else %}
+      <p class="fine">Google accounts require a fresh Google sign-in within the last 5 minutes before deleting. <a href="/auth/oauth/google?next=/settings/account">Re-authenticate with Google</a> if needed.</p>
+      {% endif %}
+      <div class="field">
+        <label for="delConfirm">Type <code>DELETE</code> to confirm</label>
+        <input id="delConfirm" name="confirmation" type="text" autocomplete="off" required placeholder="DELETE">
+      </div>
+      <div class="acct-dialog-actions">
+        <button type="button" class="btn sm" data-close-dialog="deleteDialog">Cancel</button>
+        <button type="submit" class="btn sm danger" id="confirmDeleteBtn">Delete Permanently</button>
+      </div>
+    </form>
+  </dialog>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='account.js') }}"></script>{% endblock %}

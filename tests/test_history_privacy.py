@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -16,6 +17,19 @@ sys.path.insert(0, str(ROOT))
 
 import app as app_mod
 import auth
+import mail as mail_mod
+
+
+class _CaptureMail(mail_mod.MailProvider):
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str, str]] = []
+
+    def send(self, to_email: str, subject: str, body: str) -> tuple[bool, str | None]:
+        self.sent.append((to_email, subject, body))
+        return True, None
+
+
+_TEST_MAIL = _CaptureMail()
 
 
 def _extract_csrf(client, path="/login") -> str:
@@ -26,7 +40,7 @@ def _extract_csrf(client, path="/login") -> str:
 
 
 def _seed_verified_user(email: str, password: str, role: str = "user") -> int:
-    uid, _tok, err = auth.register_password_user(email, password)
+    uid, _tok, err = auth.register_password_user(email, password, check_mx=False)
     assert uid and not err, f"Failed creating {email}: {err}"
     with auth._conn() as con:
         con.execute(
@@ -45,6 +59,17 @@ def _login(client, email: str, password: str) -> str:
     assert r.status_code == 200, (
         f"Login failed for {email}: {r.status_code} {r.get_data(as_text=True)}"
     )
+    body = r.get_json() or {}
+    if body.get("otp_required"):
+        assert _TEST_MAIL.sent, f"Expected OTP email for {email}"
+        code_m = re.search(r"\b(\d{6})\b", _TEST_MAIL.sent[-1][2])
+        assert code_m, "Missing 6-digit OTP in email"
+        r2 = client.post(
+            "/auth/otp/verify",
+            json={"email": email, "purpose": body.get("purpose", "admin_login"), "code": code_m.group(1)},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert r2.status_code == 200, f"OTP verify failed for {email}: {r2.status_code} {r2.get_data(as_text=True)}"
     return _extract_csrf(client, "/history")
 
 
@@ -198,6 +223,11 @@ r2.listeners["#logoutBtn:click"]().then(() => {
 
 def run_tests() -> None:
     auth.init_db()
+    mail_mod.set_provider(_TEST_MAIL)
+    prev_skip = os.environ.get("ECHOCOUNT_SKIP_MX_CHECK")
+    prev_delay = os.environ.get("ECHOCOUNT_NO_AUTH_DELAY")
+    os.environ["ECHOCOUNT_SKIP_MX_CHECK"] = "1"
+    os.environ["ECHOCOUNT_NO_AUTH_DELAY"] = "1"
     tag = uuid.uuid4().hex[:8]
     email_a = f"priv_user_a_{tag}@gmail.com"
     email_b = f"priv_user_b_{tag}@gmail.com"
@@ -349,13 +379,25 @@ def run_tests() -> None:
             "ALL PART A HISTORY PRIVACY TESTS PASSED (14/14 checks, including same-browser switch & JS storage purge)."
         )
     finally:
+        mail_mod.set_provider(None)
+        if prev_skip is None:
+            os.environ.pop("ECHOCOUNT_SKIP_MX_CHECK", None)
+        else:
+            os.environ["ECHOCOUNT_SKIP_MX_CHECK"] = prev_skip
+        if prev_delay is None:
+            os.environ.pop("ECHOCOUNT_NO_AUTH_DELAY", None)
+        else:
+            os.environ["ECHOCOUNT_NO_AUTH_DELAY"] = prev_delay
         for jid in created_jobs:
             with app_mod._jobs_lock:
                 app_mod._jobs.pop(jid, None)
             shutil.rmtree(app_mod.JOB_DIR / jid, ignore_errors=True)
         with auth._conn() as con:
             for uid in created_uids:
+                con.execute("DELETE FROM admin_audit_log WHERE admin_id = ? OR target_id = ?", (uid, uid))
                 con.execute("DELETE FROM users WHERE id = ?", (uid,))
+            for em in (email_a, email_b, email_adm):
+                con.execute("DELETE FROM email_otps WHERE email = ?", (em,))
 
 
 if __name__ == "__main__":

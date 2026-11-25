@@ -140,7 +140,11 @@
   };
 
   const switchPanel = (name) => {
-    if (tabsWrap) tabsWrap.dataset.activeTab = name === "register" ? "register" : "login";
+    const showTabs = name === "login" || name === "register";
+    if (tabsWrap) {
+      tabsWrap.hidden = !showTabs;
+      if (showTabs) tabsWrap.dataset.activeTab = name;
+    }
     panels.forEach((p) => {
       const active = p.dataset.authPanel === name;
       p.hidden = !active;
@@ -156,23 +160,200 @@
       heading.textContent =
         name === "register"
           ? "Create your account"
-          : name === "forgot"
+          : name === "forgot" || name === "forgot_reset"
             ? "Reset your password"
-            : "Sign in to EchoCount";
+            : name === "otp"
+              ? "Verify your email"
+              : "Sign in to EchoCount";
     }
     if (subtitle) {
       subtitle.textContent =
         name === "register"
           ? "Register with a verified email address to analyze recordings and track your history."
           : name === "forgot"
-            ? "Enter your account email to receive a single-use password reset link."
-            : "Enter your email and password to access the acoustic analyzer.";
+            ? "Enter your account email to receive a 6-digit password reset code."
+            : name === "forgot_reset"
+              ? "Enter the 6-digit code and choose a new password."
+              : name === "otp"
+                ? "Enter the 6-digit verification code sent to your email address."
+                : "Enter your email and password to access the acoustic analyzer.";
     }
   };
 
   tabs.forEach((btn) => btn.addEventListener("click", () => switchPanel(btn.dataset.authTab)));
   $("#openForgotBtn")?.addEventListener("click", () => switchPanel("forgot"));
   $("#backToLoginBtn")?.addEventListener("click", () => switchPanel("login"));
+  $("#otpBackBtn")?.addEventListener("click", () => switchPanel("login"));
+  $("#fgBackBtn")?.addEventListener("click", () => switchPanel("login"));
+  if ($(".auth-panel:not([hidden])")?.dataset.authPanel === "forgot" && tabsWrap) tabsWrap.hidden = true;
+
+  // Google OAuth button loading feedback (keyboard & pointer)
+  $$("[data-google-link]").forEach((el) => {
+    el.addEventListener("click", () => {
+      el.classList.add("is-loading");
+      el.setAttribute("aria-busy", "true");
+    });
+  });
+
+  // Friendly status banners after account deactivation or deletion
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("deactivated") === "1") {
+    showFeedback("Your account has been deactivated and all sessions were signed out. Sign in anytime to reactivate it.", "info");
+  } else if (qs.get("deleted") === "1") {
+    showFeedback("Your account and all associated data have been permanently deleted.", "info");
+  }
+
+  /* ---- Reusable 6-Digit OTP Box Wiring & Countdown Timers ---- */
+  const wireOtpBoxes = (boxes, onSixDigits) => {
+    const readCode = () => boxes.map((b) => (b.value || "").replace(/\D/g, "")).join("");
+    boxes.forEach((box, idx) => {
+      box.addEventListener("input", () => {
+        const digits = (box.value || "").replace(/\D/g, "");
+        if (digits.length > 1) {
+          digits.slice(0, 6).split("").forEach((d, j) => { if (boxes[idx + j]) boxes[idx + j].value = d; });
+          boxes[Math.min(5, idx + digits.length)]?.focus();
+        } else {
+          box.value = digits;
+          if (digits && idx < boxes.length - 1) boxes[idx + 1].focus();
+        }
+        if (onSixDigits && readCode().length === 6) onSixDigits();
+      });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && !box.value && idx > 0) {
+          boxes[idx - 1].value = "";
+          boxes[idx - 1].focus();
+        } else if (e.key === "ArrowLeft" && idx > 0) boxes[idx - 1].focus();
+        else if (e.key === "ArrowRight" && idx < boxes.length - 1) boxes[idx + 1].focus();
+      });
+      box.addEventListener("paste", (e) => {
+        const txt = (e.clipboardData?.getData("text") || "").replace(/\D/g, "");
+        if (!txt) return;
+        e.preventDefault();
+        txt.slice(0, 6).split("").forEach((d, j) => { if (boxes[j]) boxes[j].value = d; });
+        boxes[Math.min(5, txt.length - 1)]?.focus();
+        if (onSixDigits && readCode().length === 6) onSixDigits();
+      });
+    });
+    return {
+      code: readCode,
+      clear: () => { boxes.forEach((b) => (b.value = "")); boxes[0]?.focus(); },
+    };
+  };
+
+  let expTimer = 0, cdTimer = 0;
+  const startTimers = (timerEl, resendEl, cooldownSec = 60, ttlSec = 600) => {
+    clearInterval(expTimer);
+    clearInterval(cdTimer);
+    let expLeft = Math.max(0, Number(ttlSec) || 600);
+    let cdLeft = Math.max(0, Number(cooldownSec) || 60);
+    const drawExp = () => {
+      if (!timerEl) return;
+      const m = Math.floor(expLeft / 60), s = String(expLeft % 60).padStart(2, "0");
+      timerEl.textContent = expLeft > 0 ? `Expires in ${m}:${s}` : "Code expired — resend a new code";
+    };
+    const drawCd = () => {
+      if (!resendEl) return;
+      resendEl.disabled = cdLeft > 0;
+      resendEl.textContent = cdLeft > 0 ? `Resend code (${cdLeft}s)` : "Resend code";
+    };
+    drawExp(); drawCd();
+    expTimer = setInterval(() => { expLeft = Math.max(0, expLeft - 1); drawExp(); if (expLeft <= 0) clearInterval(expTimer); }, 1000);
+    cdTimer = setInterval(() => { cdLeft = Math.max(0, cdLeft - 1); drawCd(); if (cdLeft <= 0) clearInterval(cdTimer); }, 1000);
+  };
+
+  const otpForm = $("#otpForm");
+  const otpPurposeIn = $("#otpPurpose");
+  const otpEmailIn = $("#otpEmail");
+  const otpMaskedEl = $("#otpMaskedEmail");
+  const otpChangeBtn = $("#otpChangeEmailBtn");
+  const otpCtrl = wireOtpBoxes($$("#otpGrid .otp-box"), () => otpForm?.requestSubmit());
+
+  const fgForm = $("#forgotResetForm");
+  const fgEmailIn = $("#fgEmail");
+  const fgMaskedEl = $("#fgMaskedEmail");
+  const fgCtrl = wireOtpBoxes($$("#fgOtpGrid .fg-otp-box"), null);
+
+  const maskClientEmail = (em) => {
+    if (!em || !em.includes("@")) return "your email";
+    const [loc, dom] = em.split("@", 2);
+    const parts = dom.split(".");
+    return `${loc[0]}***@${parts[0][0]}***.${parts.slice(1).join(".")}`;
+  };
+
+  const openOtpPanel = (purpose, email, message, cooldown = 60, masked = "") => {
+    if (otpPurposeIn) otpPurposeIn.value = purpose || "signup";
+    if (otpEmailIn) otpEmailIn.value = email || "";
+    if (otpMaskedEl) otpMaskedEl.textContent = masked || maskClientEmail(email);
+    if (otpChangeBtn) otpChangeBtn.hidden = purpose === "admin_login";
+    switchPanel("otp");
+    if (message) showFeedback(message, "info");
+    otpCtrl.clear();
+    startTimers($("#otpTimerText"), $("#otpResendBtn"), cooldown, 600);
+  };
+
+  const openForgotResetPanel = (email, message, cooldown = 60, masked = "") => {
+    if (fgEmailIn) fgEmailIn.value = email || "";
+    if (fgMaskedEl) fgMaskedEl.textContent = masked || maskClientEmail(email);
+    const pw1 = $("#fgNewPassword"), pw2 = $("#fgNewPasswordConfirm");
+    if (pw1) pw1.value = "";
+    if (pw2) pw2.value = "";
+    switchPanel("forgot_reset");
+    if (message) showFeedback(message, "info");
+    fgCtrl.clear();
+    startTimers($("#fgTimerText"), $("#fgResendBtn"), cooldown, 600);
+  };
+
+  const wireResend = (btnId, getForm, getPurpose, getEmail, timerEl, ctrl) => {
+    $(btnId)?.addEventListener("click", async () => {
+      const form = getForm();
+      const btn = $(btnId);
+      if (!form || !btn) return;
+      const csrf = $('input[name="csrf_token"]', form)?.value || "";
+      btn.disabled = true;
+      try {
+        const res = await fetch("/auth/otp/resend", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+          body: JSON.stringify({ purpose: getPurpose(), email: getEmail() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showFeedback(data.error || "Could not resend code.", "warn");
+          if (data.cooldown) startTimers(timerEl, btn, data.cooldown, 600);
+          else btn.disabled = false;
+          return;
+        }
+        showFeedback(data.message || "A new 6-digit code has been sent.", "info");
+        ctrl.clear();
+        startTimers(timerEl, btn, data.cooldown || 60, 600);
+      } catch {
+        showFeedback("Network error. Please try again.", "warn");
+        btn.disabled = false;
+      }
+    });
+  };
+  wireResend("#otpResendBtn", () => otpForm, () => otpPurposeIn?.value || "signup", () => otpEmailIn?.value || "", $("#otpTimerText"), otpCtrl);
+  wireResend("#fgResendBtn", () => fgForm, () => "forgot", () => fgEmailIn?.value || "", $("#fgTimerText"), fgCtrl);
+
+  otpChangeBtn?.addEventListener("click", async () => {
+    const csrf = $('input[name="csrf_token"]', otpForm)?.value || "";
+    const typed = otpEmailIn?.value || $("#regEmail")?.value || "";
+    try {
+      await fetch("/auth/signup/cancel", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify({}),
+      });
+    } catch {}
+    switchPanel("register");
+    const regEm = $("#regEmail");
+    if (regEm && typed) regEm.value = typed;
+    if ($("#regPassword")) $("#regPassword").value = "";
+    if ($("#regPasswordConfirm")) $("#regPasswordConfirm").value = "";
+    regEm?.focus();
+  });
 
   /* ---- Password visibility toggle with smooth icon rotation ---- */
   $$("[data-pw-toggle]").forEach((btn) => {
@@ -189,17 +370,14 @@
       setTimeout(() => btn.classList.remove("is-rotating"), 260);
       input.focus({ preventScroll: true });
       if (typeof start === "number" && typeof end === "number") {
-        try {
-          input.setSelectionRange(start, end);
-        } catch {}
+        try { input.setSelectionRange(start, end); } catch {}
       }
     });
   });
 
-  /* ---- Password strength meter ---- */
-  const regPw = $("#regPassword");
-  const pwBar = $("#pwStrengthBar");
-  const pwText = $("#pwStrengthText");
+  /* ---- Password strength meter & live confirm-password matching ---- */
+  const regPw = $("#regPassword"), regPw2 = $("#regPasswordConfirm");
+  const pwBar = $("#pwStrengthBar"), pwText = $("#pwStrengthText");
   if (regPw && pwBar && pwText) {
     regPw.addEventListener("input", () => {
       const v = regPw.value;
@@ -208,33 +386,38 @@
       if (v.length >= 14) score++;
       if (/[a-z]/.test(v) && /[A-Z]/.test(v)) score++;
       if (/\d/.test(v) && /[^a-zA-Z0-9]/.test(v)) score++;
-      const pct = Math.max(8, score * 25);
-      pwBar.style.width = v ? `${pct}%` : "0%";
+      pwBar.style.width = v ? `${Math.max(8, score * 25)}%` : "0%";
       pwBar.dataset.level = String(score);
-      const labels = [
-        "Too short — use at least 10 characters.",
-        "Fair — add uppercase, numbers, or symbols.",
-        "Good — solid length.",
-        "Strong password.",
-        "Very strong password.",
-      ];
-      pwText.textContent = v ? labels[score] : "Use 10+ characters with uppercase, lowercase, numbers, or symbols.";
+      const labels = ["Too short — use at least 10 characters.", "Fair — add uppercase, numbers, or symbols.", "Good — solid length.", "Strong password.", "Very strong password."];
+      pwText.textContent = v ? labels[score] : "Use 10+ characters; common weak passwords are rejected.";
     });
   }
+  const wirePwMatch = (a, b, msgEl) => {
+    if (!a || !b || !msgEl) return;
+    const sync = () => {
+      if (!b.value) { msgEl.textContent = ""; return; }
+      msgEl.textContent = a.value === b.value ? "Passwords match." : "Passwords do not match.";
+    };
+    a.addEventListener("input", sync);
+    b.addEventListener("input", sync);
+  };
+  wirePwMatch(regPw, regPw2, $("#pwMatchText"));
+  wirePwMatch($("#fgNewPassword"), $("#fgNewPasswordConfirm"), $("#fgMatchText"));
 
   /* ---- AJAX form handlers with inline waveform loader & <=400ms success transition ---- */
-  const wireForm = (formId, onSuccess) => {
+  const wireForm = (formId, onSuccess, preCheck) => {
     const form = $(formId);
     if (!form) return;
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (preCheck) {
+        const err = preCheck(form);
+        if (err) { showFeedback(err, "warn"); return; }
+      }
       const btn = $(".auth-submit", form);
       const lbl = $(".auth-action-label", btn || form);
       const orig = lbl ? lbl.textContent : "";
-      if (btn) {
-        btn.disabled = true;
-        btn.classList.add("is-loading");
-      }
+      if (btn) { btn.disabled = true; btn.classList.add("is-loading"); }
       if (lbl) lbl.textContent = "Working…";
       try {
         const body = Object.fromEntries(new FormData(form).entries());
@@ -246,44 +429,112 @@
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        if (!res.ok) {
-          showFeedback(data.error || "Request failed.", "warn");
-          return;
-        }
+        if (!res.ok) { showFeedback(data.error || "Request failed.", "warn"); return; }
         onSuccess(data);
       } catch {
         showFeedback("Network error. Please try again.", "warn");
       } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.classList.remove("is-loading");
-        }
+        if (btn) { btn.disabled = false; btn.classList.remove("is-loading"); }
         if (lbl) lbl.textContent = orig;
       }
     });
   };
 
   wireForm("#loginForm", (data) => {
+    if (data.otp_required) {
+      openOtpPanel(data.purpose || "signup", $("#loginEmail")?.value || "", data.message, data.cooldown || 60, data.masked_email || "");
+      return;
+    }
     toast("Signed in.");
     formBox?.classList.add("is-success");
     waveCtrl?.convergeSuccess?.();
-    setTimeout(() => {
-      location.href = data.redirect || "/";
-    }, reduced ? 40 : 420);
+    setTimeout(() => { location.href = data.redirect || "/"; }, reduced ? 40 : 420);
   });
 
-  wireForm("#registerForm", (data) => {
-    const link = data.verify_url
-      ? `<a class="btn sm" href="${data.verify_url}">Verify email now</a>`
-      : "";
-    showFeedback(data.message || "Check your inbox to verify your email.", "info", link);
-  });
+  wireForm(
+    "#registerForm",
+    (data) => {
+      if (data.otp_required) {
+        openOtpPanel(data.purpose || "signup", $("#regEmail")?.value || "", data.message, data.cooldown || 60, data.masked_email || "");
+        return;
+      }
+      showFeedback(data.message || "Check your inbox for your 6-digit verification code.", "info");
+    },
+    () => (regPw && regPw2 && regPw.value !== regPw2.value ? "Passwords do not match." : null),
+  );
 
   wireForm("#forgotForm", (data) => {
-    const link = data.reset_url
-      ? `<a class="btn sm" href="${data.reset_url}">Open reset link</a>`
-      : "";
-    showFeedback(data.message || "Reset instructions prepared.", "info", link);
+    if (data.otp_required) {
+      openForgotResetPanel($("#forgotEmail")?.value || "", data.message, data.cooldown || 60, data.masked_email || "");
+      return;
+    }
+    showFeedback(data.message || "If an eligible account exists, a reset code was sent.", "info");
+  });
+
+  otpForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = otpCtrl.code();
+    if (code.length !== 6) {
+      showFeedback("Please enter all 6 digits of your verification code.", "warn");
+      return;
+    }
+    const btn = $(".auth-submit", otpForm);
+    const lbl = $(".auth-action-label", btn || otpForm);
+    const orig = lbl ? lbl.textContent : "";
+    if (btn) { btn.disabled = true; btn.classList.add("is-loading"); }
+    if (lbl) lbl.textContent = "Verifying…";
+    try {
+      const csrf = $('input[name="csrf_token"]', otpForm)?.value || "";
+      const res = await fetch(otpForm.action, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify({ purpose: otpPurposeIn?.value || "signup", email: otpEmailIn?.value || "", code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showFeedback(data.error || "Invalid or expired verification code.", "warn"); return; }
+      toast("Verified and signed in.");
+      formBox?.classList.add("is-success");
+      waveCtrl?.convergeSuccess?.();
+      setTimeout(() => { location.href = data.redirect || "/analyze"; }, reduced ? 40 : 420);
+    } catch {
+      showFeedback("Network error. Please try again.", "warn");
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove("is-loading"); }
+      if (lbl) lbl.textContent = orig;
+    }
+  });
+
+  fgForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = fgCtrl.code();
+    const pw1 = $("#fgNewPassword")?.value || "";
+    const pw2 = $("#fgNewPasswordConfirm")?.value || "";
+    if (code.length !== 6) { showFeedback("Please enter all 6 digits of your reset code.", "warn"); return; }
+    if (pw1 !== pw2) { showFeedback("Passwords do not match.", "warn"); return; }
+    const btn = $(".auth-submit", fgForm);
+    const lbl = $(".auth-action-label", btn || fgForm);
+    const orig = lbl ? lbl.textContent : "";
+    if (btn) { btn.disabled = true; btn.classList.add("is-loading"); }
+    if (lbl) lbl.textContent = "Updating…";
+    try {
+      const csrf = $('input[name="csrf_token"]', fgForm)?.value || "";
+      const res = await fetch(fgForm.action, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify({ purpose: "forgot", email: fgEmailIn?.value || "", code, password: pw1, password_confirm: pw2 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showFeedback(data.error || "Could not update password.", "warn"); return; }
+      switchPanel("login");
+      showFeedback(data.message || "Password updated. You can now sign in.", "info");
+    } catch {
+      showFeedback("Network error. Please try again.", "warn");
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove("is-loading"); }
+      if (lbl) lbl.textContent = orig;
+    }
   });
 
   wireForm("#resetForm", (data) => {

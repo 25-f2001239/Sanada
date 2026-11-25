@@ -42,7 +42,7 @@
     <div class="portal-recent-head">
       <div>
         <h2 id="recentH" style="font-size: 1.15rem;">Your recent recordings</h2>
-        <p class="fine">Private to {{ current_user.email if current_user else 'your account' }}.</p>
+        <p class="fine">Private to {{ current_user.display_label if current_user else 'your account' }}.</p>
       </div>
       <a class="btn sm" href="{{ url_for('history_page') }}">View all</a>
     </div>

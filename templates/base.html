@@ -58,25 +58,21 @@
     {% if is_dev %}<span class="pill" id="statusPill" role="status" data-state="{{ 'ready' if status.trained else 'untrained' }}"><i></i><span class="t">Dev mode</span></span>{% endif %}
     {% if current_user %}
     <div class="acct-wrap" id="acctWrap">
-      <button class="acct-btn" id="acctBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu" aria-label="Account menu for {{ current_user.email }}">
-        {% if current_user.role == 'admin' %}<span class="acct-badge" title="Administrator"><i></i>Admin</span>{% elif current_user.role == 'developer' %}<span class="acct-badge dev" title="Developer"><i></i>Dev</span>{% endif %}
-        <span class="acct-label">{{ current_user.email }}</span>
+      <button class="acct-btn" id="acctBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenu" aria-label="Account menu for {{ current_user.display_label }}">
+        {% if current_user.role == 'admin' %}<span class="acct-badge" title="Administrator"><i></i>Admin</span>{% else %}<span class="acct-label">{{ current_user.display_label }}</span>{% endif %}
         <svg class="ic acct-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="acct-menu" id="acctMenu" role="menu" aria-labelledby="acctBtn" hidden>
         <div class="acct-meta">
-          <div class="acct-full-email">{{ current_user.email }}</div>
-          <div class="acct-role">{{ 'Administrator' if current_user.role == 'admin' else ('Developer' if current_user.role == 'developer' else 'EchoCount Member') }}</div>
+          <div class="acct-full-email">{{ current_user.masked_email if current_user.role == 'admin' else current_user.email }}</div>
+          <div class="acct-role">{{ 'Administrator' if current_user.role == 'admin' else 'EchoCount Member' }}</div>
         </div>
-        {% if current_user.role == 'admin' %}
         <hr class="acct-sep">
+        <a class="acct-item" role="menuitem" href="{{ url_for('account_settings_page') }}"><span>Settings · Account</span></a>
+        {% if current_user.role == 'admin' %}
         <a class="acct-item" role="menuitem" href="{{ url_for('admin_page') }}"><span>Admin Console</span></a>
         <a class="acct-item" role="menuitem" href="{{ url_for('evaluation_page') }}"><span>Developer Evaluation</span></a>
         <a class="acct-item" role="menuitem" href="{{ url_for('index', preview='user') }}"><span>Preview User Portal</span></a>
-        {% elif current_user.role == 'developer' %}
-        <hr class="acct-sep">
-        <a class="acct-item" role="menuitem" href="{{ url_for('evaluation_page') }}"><span>Evaluation Console</span></a>
-        <a class="acct-item" role="menuitem" href="{{ url_for('index') }}"><span>User Portal</span></a>
         {% endif %}
         <hr class="acct-sep">
         <button class="acct-item danger" id="logoutBtn" type="button" role="menuitem">
@@ -117,10 +113,12 @@
   {% if current_user %}
   <div class="sheet-acct">
     <div class="sheet-acct-info">
-      {% if current_user.role == 'admin' %}<span class="acct-badge"><i></i>Admin</span>{% elif current_user.role == 'developer' %}<span class="acct-badge dev"><i></i>Dev</span>{% endif %}
-      <span>{{ current_user.email }}</span>
+      {% if current_user.role == 'admin' %}<span class="acct-badge"><i></i>Admin</span>{% else %}<span>{{ current_user.display_label }}</span>{% endif %}
     </div>
-    <button class="btn sm" id="sheetLogoutBtn" type="button">Sign out</button>
+    <div style="display:flex;gap:8px">
+      <a class="btn sm" href="{{ url_for('account_settings_page') }}">Account</a>
+      <button class="btn sm" id="sheetLogoutBtn" type="button">Sign out</button>
+    </div>
   </div>
   {% else %}
   <a style="--i:6" href="{{ url_for('login_page') }}">Sign In</a><a style="--i:7" href="{{ url_for('register_page') }}">Sign Up</a>

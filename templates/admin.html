@@ -7,7 +7,7 @@
     <div>
       <span class="portal-kicker">Administrator Console</span>
       <h1>System &amp; User Governance</h1>
-      <p class="lead">Manage EchoCount accounts, database-backed roles, active sessions, worker health, and temporary job storage.</p>
+      <p class="lead">Monitor EchoCount accounts, active sessions, worker health, audit logs, and temporary job storage. Roles are locked via <code>ADMIN_EMAILS</code> in <code>.env</code>.</p>
     </div>
     <div class="actions">
       <a class="btn sm primary" href="{{ url_for('evaluation_page') }}">Developer Evaluation</a>
@@ -27,7 +27,7 @@
     <div class="portal-recent-head">
       <div>
         <h2 id="usrH" style="font-size: 1.25rem;">User Management</h2>
-        <p class="fine">Role changes and account suspensions apply immediately on the server. You cannot demote or deactivate your own administrator account.</p>
+        <p class="fine">Account suspensions and permanent deletions apply immediately on the server. Roles are locked in <code>.env</code> and the administrator account cannot be disabled or deleted here.</p>
       </div>
       <input class="search" id="adminUserSearch" type="search" placeholder="Filter by email or role…" aria-label="Filter users" style="max-width: 260px;">
     </div>
@@ -64,11 +64,45 @@
     </section>
 
     <section class="panel stack" aria-labelledby="oauthH">
-      <h2 id="oauthH" style="font-size: 1.15rem;">OAuth Identity Providers</h2>
-      <p class="fine">Providers are enabled automatically when their client ID and secret are configured in <code>.env</code>.</p>
+      <h2 id="oauthH" style="font-size: 1.15rem;">Google Sign-In Status</h2>
+      <p class="fine">Google sign-in is enabled automatically when configured in <code>.env</code>. Admin accounts always sign in with email and password (never Google).</p>
       <div class="oauth-status-grid" id="adminOAuthGrid"></div>
     </section>
   </div>
+
+  <section class="panel stack" aria-labelledby="auditH">
+    <div>
+      <h2 id="auditH" style="font-size: 1.15rem;">Admin Audit Log</h2>
+      <p class="fine">Records account disable, enable, and permanent delete actions using user IDs only (no email addresses stored).</p>
+    </div>
+    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="auditH">
+      <table class="kv admin-table" id="adminAuditTable">
+        <caption class="sr-only">Recent administrator account actions</caption>
+        <thead>
+          <tr>
+            <th scope="col">Time (UTC)</th>
+            <th scope="col">Admin ID</th>
+            <th scope="col">Action</th>
+            <th scope="col">Target User ID</th>
+          </tr>
+        </thead>
+        <tbody id="adminAuditBody">
+          <tr><td colspan="4">Loading audit log…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <dialog id="adminDeleteDialog" class="acct-dialog" aria-labelledby="adminDelTitle">
+    <div class="stack">
+      <h3 id="adminDelTitle">Permanently delete user account?</h3>
+      <p class="fine" id="adminDelDesc">This permanently removes the user, sessions, analysis history, and uploaded audio files on disk.</p>
+      <div class="acct-dialog-actions">
+        <button type="button" class="btn sm" id="adminDelCancelBtn">Cancel</button>
+        <button type="button" class="btn sm danger" id="adminDelConfirmBtn">Delete Permanently</button>
+      </div>
+    </div>
+  </dialog>
 </div>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='admin.js') }}"></script>{% endblock %}

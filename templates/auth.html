@@ -16,6 +16,31 @@
   <span class="auth-action-loader" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
 </button>
 {%- endmacro %}
+{% macro google_btn(label) -%}
+{% set g_ready = oauth_providers and oauth_providers.google %}
+<div class="auth-divider" aria-hidden="true"><span>or</span></div>
+<div class="google-auth-wrap">
+  {% if g_ready and google_auth_mode == 'firebase' %}
+  <button type="button" class="btn block google-auth-btn" data-google-firebase aria-label="{{ label }}">
+    <svg class="google-g-ic" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.54-5.17 3.54-8.87Z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.09A11.99 11.99 0 0 0 12 24Z"/><path fill="#FBBC05" d="M5.28 14.29A7.18 7.18 0 0 1 4.9 12c0-.79.14-1.56.38-2.29V6.62H1.29a11.99 11.99 0 0 0 0 10.76l3.99-3.09Z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0A11.99 11.99 0 0 0 1.29 6.62l3.99 3.09C6.23 6.86 8.88 4.75 12 4.75Z"/></svg>
+    <span class="google-auth-label">{{ label }}</span>
+    <span class="auth-action-loader" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+  </button>
+  {% elif g_ready %}
+  <a class="btn block google-auth-btn" href="/auth/oauth/google" data-google-link aria-label="{{ label }}">
+    <svg class="google-g-ic" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.54-5.17 3.54-8.87Z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.09A11.99 11.99 0 0 0 12 24Z"/><path fill="#FBBC05" d="M5.28 14.29A7.18 7.18 0 0 1 4.9 12c0-.79.14-1.56.38-2.29V6.62H1.29a11.99 11.99 0 0 0 0 10.76l3.99-3.09Z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0A11.99 11.99 0 0 0 1.29 6.62l3.99 3.09C6.23 6.86 8.88 4.75 12 4.75Z"/></svg>
+    <span class="google-auth-label">{{ label }}</span>
+    <span class="auth-action-loader" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+  </a>
+  {% else %}
+  <button type="button" class="btn block google-auth-btn" disabled aria-disabled="true" aria-label="{{ label }} (not configured)">
+    <svg class="google-g-ic" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.54-5.17 3.54-8.87Z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.09A11.99 11.99 0 0 0 12 24Z"/><path fill="#FBBC05" d="M5.28 14.29A7.18 7.18 0 0 1 4.9 12c0-.79.14-1.56.38-2.29V6.62H1.29a11.99 11.99 0 0 0 0 10.76l3.99-3.09Z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0A11.99 11.99 0 0 0 1.29 6.62l3.99 3.09C6.23 6.86 8.88 4.75 12 4.75Z"/></svg>
+    <span class="google-auth-label">{{ label }}</span>
+  </button>
+  <p class="fine google-helper">Google sign-in is not set up on this server yet</p>
+  {% endif %}
+</div>
+{%- endmacro %}
 {% block content %}
 {% set sr_khz = (status.sample_rate // 1000) if status.sample_rate else 16 %}
 {% set clip_s = (status.clip_seconds | int) if status.clip_seconds else 8 %}
@@ -130,7 +155,7 @@
           {% if mode == 'register' %}Create your account{% elif mode == 'forgot' %}Reset your password{% elif mode == 'reset' %}Choose a new password{% else %}Sign in to EchoCount{% endif %}
         </h2>
         <p class="fine" id="authSubtitle">
-          {% if mode == 'register' %}Register with a verified email address to analyze recordings and track your history.{% elif mode == 'forgot' %}Enter your account email to receive a single-use password reset link.{% elif mode == 'reset' %}Enter a strong password (at least 10 characters).{% else %}Enter your email and password to access the acoustic analyzer.{% endif %}
+          {% if mode == 'register' %}Register with a verified email address to analyze recordings and track your history.{% elif mode == 'forgot' %}Enter your account email to receive a 6-digit password reset code.{% elif mode == 'reset' %}Enter a strong password (at least 10 characters).{% else %}Enter your email and password to access the acoustic analyzer.{% endif %}
         </p>
       </header>
 
@@ -171,6 +196,7 @@
             </div>
           </div>
           {{ sweep_btn('Sign In') }}
+          {{ google_btn('Continue with Google') }}
         </form>
       </div>
 
@@ -181,42 +207,124 @@
           <div class="field">
             <label for="regEmail">Email address</label>
             <div class="input-wave-wrap">
-              <input id="regEmail" name="email" type="email" autocomplete="username" spellcheck="false" enterkeyhint="next" aria-describedby="regEmailHelp" required placeholder="you@outlook.com">
+              <input id="regEmail" name="email" type="email" autocomplete="username" spellcheck="false" enterkeyhint="next" aria-describedby="regEmailHelp" required placeholder="you@example.com">
               <i class="input-wave-line" aria-hidden="true"></i>
             </div>
-            <span id="regEmailHelp" class="fine">Supported mailbox domains: Google, Microsoft, or Yahoo.</span>
+            <span id="regEmailHelp" class="fine">Any valid email address works — we will send a 6-digit verification code.</span>
           </div>
           <div class="field">
             <label for="regPassword">Password</label>
             <div class="pw-wrap input-wave-wrap">
-              <input id="regPassword" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" enterkeyhint="done" aria-describedby="pwStrengthText" required placeholder="At least 10 characters">
+              <input id="regPassword" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" enterkeyhint="next" aria-describedby="pwStrengthText" required placeholder="At least 10 characters">
               {{ pw_toggle('regPassword') }}
               <i class="input-wave-line" aria-hidden="true"></i>
             </div>
             <div class="pw-meter" aria-hidden="true"><i id="pwStrengthBar"></i></div>
-            <span id="pwStrengthText" class="fine">Use 10+ characters with uppercase, lowercase, numbers, or symbols.</span>
+            <span id="pwStrengthText" class="fine">Use 10+ characters; common weak passwords are rejected.</span>
+          </div>
+          <div class="field">
+            <label for="regPasswordConfirm">Confirm password</label>
+            <div class="pw-wrap input-wave-wrap">
+              <input id="regPasswordConfirm" name="password_confirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" enterkeyhint="done" aria-describedby="pwMatchText" required placeholder="Re-enter your password">
+              {{ pw_toggle('regPasswordConfirm') }}
+              <i class="input-wave-line" aria-hidden="true"></i>
+            </div>
+            <span id="pwMatchText" class="fine" aria-live="polite"></span>
           </div>
           {{ sweep_btn('Create Account') }}
+          {{ google_btn('Sign up with Google') }}
+          <p class="fine" style="font-size:.76rem;line-height:1.45;opacity:.82">Privacy: EchoCount stores only your email, Argon2id password hash, role, creation date, and verification status to isolate your private analysis history. You can export or permanently delete your account anytime in Settings → Account.</p>
         </form>
       </div>
 
-      {# ---- FORGOT PASSWORD PANEL ---- #}
+      {# ---- FORGOT PASSWORD STEP 1 PANEL (reachable ONLY from Sign In) ---- #}
       <div class="auth-panel" data-auth-panel="forgot" {% if mode != 'forgot' %}hidden{% endif %}>
+        <span class="auth-step-pill">Step 1 of 2</span>
         <form id="forgotForm" method="POST" action="/auth/forgot" class="auth-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="field">
             <label for="forgotEmail">Account email</label>
             <div class="input-wave-wrap">
-              <input id="forgotEmail" name="email" type="email" autocomplete="username" spellcheck="false" enterkeyhint="done" required placeholder="you@gmail.com">
+              <input id="forgotEmail" name="email" type="email" autocomplete="username" spellcheck="false" enterkeyhint="done" required placeholder="you@example.com">
               <i class="input-wave-line" aria-hidden="true"></i>
             </div>
           </div>
-          {{ sweep_btn('Send Reset Link') }}
+          {{ sweep_btn('Send 6-Digit Code') }}
           <button type="button" class="btn block" id="backToLoginBtn">Back to Sign In</button>
         </form>
       </div>
 
-      {# ---- RESET PASSWORD PANEL ---- #}
+      {# ---- SIGN-UP / VERIFY EMAIL OTP PANEL (STRICTLY CODE-ONLY — NO PASSWORD FIELD) ---- #}
+      <div class="auth-panel" data-auth-panel="otp" hidden>
+        <span class="auth-step-pill" id="otpStepPill">Step 2 of 2</span>
+        <div class="auth-inline-row" style="margin-bottom:10px">
+          <span class="fine">Sent to <code id="otpMaskedEmail">your email</code></span>
+          <button type="button" class="link-btn" id="otpChangeEmailBtn">Change email</button>
+        </div>
+        <form id="otpForm" method="POST" action="/auth/otp/verify" class="auth-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="purpose" id="otpPurpose" value="signup">
+          <input type="hidden" name="email" id="otpEmail" value="">
+          <div class="field">
+            <label for="otpDigit0">6-digit verification code</label>
+            <div class="otp-grid" id="otpGrid" role="group" aria-label="6-digit verification code">
+              {% for i in range(6) %}
+              <input id="otpDigit{{ i }}" class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="{{ 'one-time-code' if i == 0 else 'off' }}" aria-label="Digit {{ i + 1 }} of 6" required>
+              {% endfor %}
+            </div>
+            <div class="field-row" style="margin-top:6px">
+              <span class="fine" id="otpTimerText">Expires in 10:00</span>
+              <button type="button" class="link-btn" id="otpResendBtn" disabled>Resend code (60s)</button>
+            </div>
+          </div>
+          {{ sweep_btn('Verify Email') }}
+          <button type="button" class="btn block" id="otpBackBtn">Back</button>
+        </form>
+      </div>
+
+      {# ---- FORGOT PASSWORD STEP 2 PANEL (ONLY FLOW WITH PASSWORD FIELDS AFTER CODE) ---- #}
+      <div class="auth-panel" data-auth-panel="forgot_reset" hidden>
+        <span class="auth-step-pill">Step 2 of 2</span>
+        <div class="auth-inline-row" style="margin-bottom:10px">
+          <span class="fine">Code sent to <code id="fgMaskedEmail">your email</code></span>
+          <button type="button" class="link-btn" id="fgResendBtn" disabled>Resend code (60s)</button>
+        </div>
+        <form id="forgotResetForm" method="POST" action="/auth/otp/verify" class="auth-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="purpose" value="forgot">
+          <input type="hidden" name="email" id="fgEmail" value="">
+          <div class="field">
+            <label for="fgDigit0">6-digit reset code</label>
+            <div class="otp-grid" id="fgOtpGrid" role="group" aria-label="6-digit reset code">
+              {% for i in range(6) %}
+              <input id="fgDigit{{ i }}" class="otp-box fg-otp-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="{{ 'one-time-code' if i == 0 else 'off' }}" aria-label="Reset digit {{ i + 1 }} of 6" required>
+              {% endfor %}
+            </div>
+            <span class="fine" id="fgTimerText">Expires in 10:00</span>
+          </div>
+          <div class="field">
+            <label for="fgNewPassword">New password</label>
+            <div class="pw-wrap input-wave-wrap">
+              <input id="fgNewPassword" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required placeholder="At least 10 characters">
+              {{ pw_toggle('fgNewPassword') }}
+              <i class="input-wave-line" aria-hidden="true"></i>
+            </div>
+          </div>
+          <div class="field">
+            <label for="fgNewPasswordConfirm">Confirm new password</label>
+            <div class="pw-wrap input-wave-wrap">
+              <input id="fgNewPasswordConfirm" name="password_confirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" required placeholder="Re-enter new password">
+              {{ pw_toggle('fgNewPasswordConfirm') }}
+              <i class="input-wave-line" aria-hidden="true"></i>
+            </div>
+            <span id="fgMatchText" class="fine" aria-live="polite"></span>
+          </div>
+          {{ sweep_btn('Update Password') }}
+          <button type="button" class="btn block" id="fgBackBtn">Back to Sign In</button>
+        </form>
+      </div>
+
+      {# ---- RESET PASSWORD PANEL (legacy token fallback) ---- #}
       <div class="auth-panel" data-auth-panel="reset" {% if mode != 'reset' %}hidden{% endif %}>
         <form id="resetForm" method="POST" action="/auth/reset" class="auth-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -232,18 +340,6 @@
           {{ sweep_btn('Update Password') }}
         </form>
       </div>
-
-      {% if mode in ('login', 'register') %}
-      {% set has_core_oauth = oauth_providers.google or oauth_providers.microsoft or oauth_providers.yahoo %}
-      {% if has_core_oauth %}
-      <div class="auth-divider"><span>or continue with</span></div>
-      <div class="auth-oauth-active" aria-label="Configured OAuth providers">
-        {% if oauth_providers.google %}<a class="btn auth-provider-btn" href="/auth/oauth/google"><span>Google</span></a>{% endif %}
-        {% if oauth_providers.microsoft %}<a class="btn auth-provider-btn" href="/auth/oauth/microsoft"><span>Microsoft</span></a>{% endif %}
-        {% if oauth_providers.yahoo %}<a class="btn auth-provider-btn" href="/auth/oauth/yahoo"><span>Yahoo</span></a>{% endif %}
-      </div>
-      {% endif %}
-      {% endif %}
     </div>
 
     <footer class="auth-pane-foot">
