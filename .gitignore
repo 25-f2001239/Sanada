@@ -2,6 +2,7 @@
 .venv/
 venv/
 env/
+ENV/
 
 # Python caches, test & lint caches
 __pycache__/
@@ -14,22 +15,28 @@ __pycache__/
 htmlcov/
 .pip-cache/
 .pip-tmp/
+*.egg-info/
 
 # Node & IDEs
 node_modules/
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # OS & logs
 .DS_Store
 Thumbs.db
+Desktop.ini
 *.log
+logs/
 
-# Secrets & environment (keep .env.example)
+# Secrets, environment & local config (keep .env.example)
 .env
 .env.*
 !.env.example
 !.env.template
+config.local.json
 *.pem
 *.key
 *.p12
@@ -37,6 +44,22 @@ Thumbs.db
 *.jks
 credentials.json
 secrets.json
+service-account*.json
+
+# Databases, SQL dumps & backups
+*.db
+*.sqlite
+*.sqlite3
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+*.sql
+*.dump
+*.bak
+*.orig
+instance/
+data/.secret_key
+data/ground_truth_index.json
 
 # Runtime uploads, temp, work, outputs, screenshots & archives
 uploads/
@@ -56,40 +79,40 @@ playwright-report/
 test-results/
 backup-*/
 cleanup-trash/
+expo-demo-frozen/
 *.zip
 *.7z
+*.rar
+*.tar
 *.tar.gz
-*.bak
-*.orig
-*.dump
-*.db
-*.sqlite
-*.sqlite3
-*.db-*
-*.sqlite-*
-*.sqlite3-*
-instance/
-data/.secret_key
-data/ground_truth_index.json
+*.tgz
+
+# Audio files & binary weights (keep single synthetic test tone fixture)
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.aac
+!tests/fixtures/two_tone_test.wav
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
 
 # Pretrained models & trained binary checkpoints (downloaded automatically on first run)
 models/*
 !models/.gitkeep
-checkpoints/*.pt
-checkpoints/*.pth
-checkpoints/*.ckpt
-checkpoints/*.bin
-checkpoints/*.safetensors
-checkpoints/*.onnx
+checkpoints/*
 !checkpoints/.gitkeep
 
 # Datasets & local recordings (keep schema/docs without audio)
 data/*
 !data/.gitkeep
 !data/real_eval/
-data/real_eval/*.wav
-data/real_eval/*.flac
-data/real_eval/*.mp3
+data/real_eval/*
 !data/real_eval/RECORDING_GUIDE.md
 !data/real_eval/manifest.json
 
@@ -98,3 +121,4 @@ evaluation/results.json
 !evaluation/public_summary.json
 !evaluation/product_benchmarks.json
 !evaluation/separation_results.json
+!evaluation/efficiency_profile.json
