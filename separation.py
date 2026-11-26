@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from itertools import combinations
 from pathlib import Path
@@ -380,8 +381,15 @@ def separate_speech_pretrained(
         )
         y_in = np.asarray(waveform, dtype=np.float32).reshape(-1)
         y_model = resample(y_in, sample_rate, target_sr) if sample_rate != target_sr else y_in
+        inp = torch.from_numpy(y_model).unsqueeze(0).to(DEVICE)
+        amp_dtype = torch.bfloat16 if DEVICE.type == "cpu" else torch.float16
         with torch.inference_mode():
-            est = model.separate_batch(torch.from_numpy(y_model).unsqueeze(0))
+            try:
+                with torch.amp.autocast(device_type=DEVICE.type, dtype=amp_dtype):
+                    est = model.separate_batch(inp)
+            except Exception:
+                est = model.separate_batch(inp)
+        est = est.float()
         stems = []
         for idx in range(min(k_int, int(est.shape[-1]))):
             s_out = resample(
@@ -778,8 +786,9 @@ def separate_long_audio_windowed(
     sr: int = SAMPLE_RATE,
     window_s: float = WINDOW_SECONDS,
     overlap_s: float = OVERLAP_SECONDS,
+    pad_tail: bool = True,
 ) -> list[np.ndarray]:
-    """Process arbitrary-length audio in overlapping 8s windows with 2s raised-cosine cross-fade."""
+    """Process arbitrary-length audio in overlapping windows with raised-cosine cross-fade."""
     y = np.asarray(waveform, dtype=np.float32).reshape(-1)
     total_len, win_len, ov_len = len(y), int(window_s * sr), int(overlap_s * sr)
     if total_len <= win_len:
@@ -795,9 +804,12 @@ def separate_long_audio_windowed(
         seg = y[st:ed]
         if len(seg) < int(0.25 * sr):
             break
-        win_stems = step_fn(
-            seg if len(seg) == win_len else np.pad(seg, (0, win_len - len(seg))), st / sr
+        chunk = (
+            seg
+            if (len(seg) == win_len or not pad_tail)
+            else np.pad(seg, (0, win_len - len(seg)))
         )
+        win_stems = step_fn(chunk, st / sr)
         if not win_stems:
             break
         if stems_acc is None:
@@ -853,7 +865,42 @@ def separate_by_queries(
                 ),
             }
 
+        fast_env = os.environ.get("ECHOCOUNT_FAST_4SPK", "auto").strip().lower()
+        want_fast_4spk = (
+            DEVICE.type == "cpu"
+            if fast_env in ("", "auto")
+            else fast_env in ("1", "true", "yes")
+        )
+        fast_4spk = (
+            k_int == 4
+            and want_fast_4spk
+            and speech_st.get("has_2spk_model")
+            and speech_st.get("has_3spk_model")
+        )
+
+        def _lsq_proj(ref: np.ndarray, est: np.ndarray) -> np.ndarray:
+            denom = float(np.dot(est, est)) + 1e-12
+            gain = float(np.dot(ref, est)) / denom
+            if gain <= 0.0:
+                gain = float(np.dot(ref, -est)) / denom
+                est = -est
+            return (est * float(np.clip(gain, 0.05, 1.8))).astype(np.float32)
+
         def _sep_spk(seg: np.ndarray, _off: float) -> list[np.ndarray]:
+            if fast_4spk:
+                # Fast 8 kHz 2-step cascade: wsj02mix (1-vs-3) + wsj03mix (remaining 3 speakers)
+                out2 = separate_speech_pretrained(seg, 2, sample_rate=sr)
+                if not out2.get("available") or len(out2.get("stems", [])) < 2:
+                    return []
+                c0, c1 = _lsq_proj(seg, out2["stems"][0]), _lsq_proj(seg, out2["stems"][1])
+                spk_score = lambda s: float(np.percentile(np.abs(s), 95)) / (float(np.sqrt(np.mean(s**2))) + 1e-8)
+                s1 = c0 if spk_score(c0) >= spk_score(c1) else c1
+                rem3 = (seg - s1).astype(np.float32)
+                out3 = separate_speech_pretrained(rem3, 3, sample_rate=sr)
+                if not out3.get("available") or len(out3.get("stems", [])) < 3:
+                    return []
+                return [s1] + [_lsq_proj(rem3, rs) for rs in out3["stems"][:3]]
+
             out = separate_speech_pretrained(seg, k_int, sample_rate=sr)
             if not out.get("available") or not out.get("stems"):
                 return []
@@ -870,8 +917,12 @@ def separate_by_queries(
                 for rs in out["stems"]
             ]
 
-        win_s, ov_s = (3.0, 0.75) if k_int == 4 else (WINDOW_SECONDS, OVERLAP_SECONDS)
-        stems = separate_long_audio_windowed(y, _sep_spk, sr=sr, window_s=win_s, overlap_s=ov_s)
+        win_s, ov_s = (
+            (2.2, 0.2) if (k_int == 4 and not fast_4spk) else (WINDOW_SECONDS, OVERLAP_SECONDS)
+        )
+        stems = separate_long_audio_windowed(
+            y, _sep_spk, sr=sr, window_s=win_s, overlap_s=ov_s, pad_tail=False
+        )
         if not stems:
             return {
                 "available": False,
@@ -891,7 +942,11 @@ def separate_by_queries(
             }
             for i in range(len(stems))
         ]
-        model_name = "sepformer-libri4mix" if k_int == 4 else f"sepformer-wsj0{k_int}mix"
+        model_name = (
+            "sepformer-wsj02mix+wsj03mix-fast8k"
+            if fast_4spk
+            else ("sepformer-libri4mix" if k_int == 4 else f"sepformer-wsj0{k_int}mix")
+        )
         return {
             "available": True,
             "stems": stems,

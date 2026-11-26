@@ -585,15 +585,16 @@ def tag_open_vocabulary(
     """Combine AST-527, CLAP zero-shot, and the 32-class FSD tagger with time localization."""
     tax = load_taxonomy()
     target_12 = tax.get("target_12_sounds", {})
-    dom_res = tag_audio_hierarchical(waveform, precomputed_logmel=precomputed_logmel)
+    shared_logmel = (
+        precomputed_logmel if precomputed_logmel is not None else waveform_to_logmel(waveform)
+    )
+    dom_res = tag_audio_hierarchical(waveform, precomputed_logmel=shared_logmel)
     dom_groups = {g["group"]: g for g in dom_res.get("groups", [])}
 
     dom_fine_all = {}
     try:
         model, ckpt = load_tagger()
-        feat = (
-            precomputed_logmel if precomputed_logmel is not None else waveform_to_logmel(waveform)
-        ).to(DEVICE)
+        feat = shared_logmel.to(DEVICE)
         if feat.dim() == 3:
             feat = feat.unsqueeze(0)
         with torch.inference_mode():

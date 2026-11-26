@@ -61,6 +61,7 @@ def evaluate_stem_self_consistency(
     tag_fn: Callable[[np.ndarray], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Re-tag each separated stem and check if its top predicted sound/group matches the query."""
+    custom_tag_fn = tag_fn is not None
     if tag_fn is None:
         import tagging
 
@@ -73,7 +74,12 @@ def evaluate_stem_self_consistency(
         q_class, q_group = str(q.get("class") or q_name), str(q.get("group") or "")
         is_human = q_name.startswith("Human") or q_group == "Human voice"
         try:
-            res = tag_fn(stem)
+            if not custom_tag_fn and is_human:
+                # Fast neural FSD/group tagger (~50 ms) avoids running 346 MB AST-527 3x-4x on CPU
+                # for pure-speech stems that are also verified by ECAPA-TDNN speaker embeddings.
+                res = tagging.tag_audio_hierarchical(stem)
+            else:
+                res = tag_fn(stem)
         except Exception:
             res = {"named_sounds": [], "tags": [], "groups": []}
         named = res.get("named_sounds") or res.get("tags") or []
