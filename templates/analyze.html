@@ -34,6 +34,19 @@
         <strong id="dzTitle">Drop an audio file here</strong>
         <span id="dzHelp">or click to browse. WAV, MP3 or FLAC up to 40 MB.</span>
       </label>
+      <div class="rec-bar" id="recBar">
+        <button class="btn sm rec-btn" id="recBtn" type="button" aria-pressed="false">
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span id="recLbl">Record 8s clip</span>
+        </button>
+        <div class="rec-status" id="recStatus" aria-live="polite">
+          <span class="rec-time" id="recTime">0:00 / 0:08</span>
+          <div class="rec-track" aria-hidden="true"><i id="recFill"></i></div>
+        </div>
+        {% if current_user %}
+        <a class="btn sm rec-lib-link" href="{{ url_for('history_page') }}#recordings" title="View your saved recordings">My recordings</a>
+        {% endif %}
+      </div>
       <div class="filecard hidden" id="fileCard">
         <div><strong id="fName"></strong><small id="fMeta"></small></div>
         <button class="icon-btn" id="clearBtn" aria-label="Remove file" type="button"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -49,7 +62,7 @@
       <div class="stack an-synth-box" style="gap:8px"><span class="fine">No audio handy? Make a synthetic mixture to test the pipeline.</span>
         <div class="seg" role="group" aria-label="Synthetic mixture">{% for n in range(1,5) %}<button type="button" data-synth="{{ n }}">{{ n }} {{ 'source' if n == 1 else 'sources' }}</button>{% endfor %}</div></div>
       <button class="btn primary block" id="goBtn" type="button" disabled>Analyze mixture</button>
-      <p class="fine an-ttl-note">Uploaded audio is processed on the server in an isolated job folder and deleted automatically after {{ job_ttl_minutes }} minutes and on server startup.</p>
+      <p class="fine an-ttl-note">Your saved recordings stay private to your account under <a href="{{ url_for('history_page') }}#recordings">History → My Recordings</a> until you delete them; temporary separation stems clear after {{ job_ttl_minutes }} minutes.</p>
     </section>
 
     <section class="panel an-result-panel" aria-live="polite" aria-label="Result">

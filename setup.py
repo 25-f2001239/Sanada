@@ -127,10 +127,10 @@ def ensure_env_file() -> None:
 
 def ensure_directories() -> None:
     _banner("Ensuring runtime directories exist")
-    for rel in ("models", "checkpoints", "data", "jobs"):
+    for rel in ("models", "checkpoints", "data", "jobs", "user_recordings"):
         d = ROOT / rel
         d.mkdir(parents=True, exist_ok=True)
-    print("    [OK] Verified models/, checkpoints/, data/, jobs/.")
+    print("    [OK] Verified models/, checkpoints/, data/, jobs/, user_recordings/.")
 
 
 def download_and_verify_models(py: Path, check_only: bool) -> None:

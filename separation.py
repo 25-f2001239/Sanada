@@ -787,23 +787,38 @@ def separate_long_audio_windowed(
     window_s: float = WINDOW_SECONDS,
     overlap_s: float = OVERLAP_SECONDS,
     pad_tail: bool = True,
+    progress_cb=None,
 ) -> list[np.ndarray]:
     """Process arbitrary-length audio in overlapping windows with raised-cosine cross-fade."""
     y = np.asarray(waveform, dtype=np.float32).reshape(-1)
     total_len, win_len, ov_len = len(y), int(window_s * sr), int(overlap_s * sr)
     if total_len <= win_len:
-        return step_fn(y, 0.0)
+        if progress_cb:
+            progress_cb(0.1, "Separating audio window 1 of 1")
+        out = step_fn(y, 0.0)
+        if progress_cb:
+            progress_cb(1.0, "Window separation complete")
+        return out
 
     hop_len = max(1, win_len - ov_len)
+    starts = []
+    for st in range(0, total_len, hop_len):
+        ed = min(total_len, st + win_len)
+        if ed - st < int(0.25 * sr):
+            break
+        starts.append((st, ed))
+        if ed >= total_len:
+            break
+    n_wins = max(1, len(starts))
+
     fade_in = 0.5 * (1.0 - np.cos(np.pi * np.arange(ov_len, dtype=np.float32) / max(1, ov_len)))
     fade_out = 1.0 - fade_in
     stems_acc, weight_acc = None, np.zeros(total_len, dtype=np.float32)
 
-    for w_idx, st in enumerate(range(0, total_len, hop_len)):
-        ed = min(total_len, st + win_len)
+    for w_idx, (st, ed) in enumerate(starts):
+        if progress_cb:
+            progress_cb(w_idx / n_wins, f"Separating window {w_idx + 1} of {n_wins}")
         seg = y[st:ed]
-        if len(seg) < int(0.25 * sr):
-            break
         chunk = (
             seg
             if (len(seg) == win_len or not pad_tail)
@@ -822,8 +837,8 @@ def separate_long_audio_windowed(
         for s_idx, ws in enumerate(win_stems):
             stems_acc[s_idx][st:ed] += ws[: len(seg)] * w_env
         weight_acc[st:ed] += w_env
-        if ed >= total_len:
-            break
+        if progress_cb:
+            progress_cb((w_idx + 1) / n_wins, f"Completed window {w_idx + 1} of {n_wins}")
 
     return (
         []
@@ -838,6 +853,7 @@ def separate_by_queries(
     named_sounds: list[dict[str, Any]] | None = None,
     speech_mode: bool = False,
     sr: int = SAMPLE_RATE,
+    progress_cb=None,
 ) -> dict[str, Any]:
     """Run query-conditioned separation or 2-speaker SepFormer, plus exact residual stem."""
     y, k_int, named = (
@@ -889,6 +905,8 @@ def separate_by_queries(
         def _sep_spk(seg: np.ndarray, _off: float) -> list[np.ndarray]:
             if fast_4spk:
                 # Fast 8 kHz 2-step cascade: wsj02mix (1-vs-3) + wsj03mix (remaining 3 speakers)
+                if progress_cb:
+                    progress_cb(0.18, "Pass 1/2: Isolating lead speaker (8 kHz SepFormer)")
                 out2 = separate_speech_pretrained(seg, 2, sample_rate=sr)
                 if not out2.get("available") or len(out2.get("stems", [])) < 2:
                     return []
@@ -896,6 +914,8 @@ def separate_by_queries(
                 spk_score = lambda s: float(np.percentile(np.abs(s), 95)) / (float(np.sqrt(np.mean(s**2))) + 1e-8)
                 s1 = c0 if spk_score(c0) >= spk_score(c1) else c1
                 rem3 = (seg - s1).astype(np.float32)
+                if progress_cb:
+                    progress_cb(0.56, "Pass 2/2: Separating remaining 3 speakers (8 kHz SepFormer)")
                 out3 = separate_speech_pretrained(rem3, 3, sample_rate=sr)
                 if not out3.get("available") or len(out3.get("stems", [])) < 3:
                     return []
@@ -921,7 +941,13 @@ def separate_by_queries(
             (2.2, 0.2) if (k_int == 4 and not fast_4spk) else (WINDOW_SECONDS, OVERLAP_SECONDS)
         )
         stems = separate_long_audio_windowed(
-            y, _sep_spk, sr=sr, window_s=win_s, overlap_s=ov_s, pad_tail=False
+            y,
+            _sep_spk,
+            sr=sr,
+            window_s=win_s,
+            overlap_s=ov_s,
+            pad_tail=False,
+            progress_cb=progress_cb,
         )
         if not stems:
             return {
@@ -1017,6 +1043,7 @@ def separate_by_queries(
         y,
         lambda seg, off: _separate_window_by_queries(seg, queries, sr=sr, win_offset_s=off),
         sr=sr,
+        progress_cb=progress_cb,
     )
     if not stems:
         return {

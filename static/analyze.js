@@ -27,6 +27,11 @@
     res: $("#sRes"),
     retry: $("#retryBtn"),
     stages: $("#stages"),
+    recBar: $("#recBar"),
+    recBtn: $("#recBtn"),
+    recLbl: $("#recLbl"),
+    recTime: $("#recTime"),
+    recFill: $("#recFill"),
   };
   let file = null,
     url = null,
@@ -38,7 +43,12 @@
     raf = 0,
     busy = false,
     xhr = null,
-    runId = 0;
+    runId = 0,
+    recActive = false,
+    activeRecordingId = null;
+
+  const csrfToken = () =>
+    document.querySelector('meta[name="csrf-token"]')?.content || "";
 
   const show = (k) =>
     ["empty", "load", "err", "res"].forEach((n) =>
@@ -85,6 +95,7 @@
     decode(f);
   }
   function reset(keepInput) {
+    if (recActive) stopRecording(false, true);
     runId++;
     if (xhr) {
       xhr.abort();
@@ -98,6 +109,7 @@
     if (url) URL.revokeObjectURL(url);
     cancelAnimationFrame(raf);
     file = url = peaks = crop = hl = null;
+    activeRecordingId = null;
     dur = 0;
     el.fc.classList.add("hidden");
     el.player.classList.add("hidden");
@@ -276,6 +288,303 @@
   el.dz.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
   el.clear.addEventListener("click", () => reset(false));
 
+  /* ---------- shared 16-bit mono WAV encoder ---------- */
+  function encodeWavFile(samples, sr, filename, normaliseMode) {
+    const len = samples.length;
+    // Remove DC offset for cleaner mic recordings
+    let mean = 0;
+    for (let i = 0; i < len; i++) mean += samples[i];
+    mean = len ? mean / len : 0;
+
+    let mx = 0;
+    for (let i = 0; i < len; i++) {
+      const a = Math.abs(samples[i] - mean);
+      if (a > mx) mx = a;
+    }
+    let scale = 1.0;
+    if (normaliseMode === "full" || normaliseMode === true) {
+      scale = mx > 1e-6 ? 0.92 / mx : 1.0;
+    } else if (normaliseMode === "mic") {
+      // Boost quiet/distant room recordings cleanly up to 8x while avoiding boosting pure silence
+      scale = mx > 0.004 ? Math.min(8.0, 0.92 / mx) : 1.0;
+    }
+    const buf = new ArrayBuffer(44 + len * 2),
+      v = new DataView(buf),
+      str = (o, t) =>
+        [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    str(0, "RIFF");
+    v.setUint32(4, 36 + len * 2, true);
+    str(8, "WAVEfmt ");
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    str(36, "data");
+    v.setUint32(40, len * 2, true);
+    for (let i = 0; i < len; i++) {
+      const s = Math.max(-1, Math.min(1, (samples[i] - mean) * scale));
+      v.setInt16(44 + i * 2, s < 0 ? s * 32768 : s * 32767, true);
+    }
+    return new File([buf], filename, { type: "audio/wav" });
+  }
+
+  /* ---------- 8-second microphone recorder (auto-cuts at 8s, outputs WAV) ---------- */
+  let recStream = null,
+    recCtx = null,
+    recSrc = null,
+    recProc = null,
+    recGain = null,
+    recChunks = [],
+    recSamples = 0,
+    recSr = 16000,
+    recStartMs = 0,
+    recTickId = 0,
+    recTimeoutId = 0;
+
+  function setRecUi(active, elapsedSec) {
+    if (!el.recBtn) return;
+    const clamped = Math.min(WIN, Math.max(0, elapsedSec || 0));
+    el.recBar && el.recBar.classList.toggle("is-recording", active);
+    el.recBtn.setAttribute("aria-pressed", active ? "true" : "false");
+    el.recLbl.textContent = active ? "Stop recording" : "Record 8s clip";
+    el.recTime.textContent = `${fmtTime(clamped)} / ${fmtTime(WIN)}`;
+    if (el.recFill) el.recFill.style.width = `${(clamped / WIN) * 100}%`;
+  }
+
+  function cleanupRecorder() {
+    clearInterval(recTickId);
+    clearTimeout(recTimeoutId);
+    recTickId = recTimeoutId = 0;
+    try {
+      if (recProc) {
+        recProc.onaudioprocess = null;
+        recProc.disconnect();
+      }
+      if (recSrc) recSrc.disconnect();
+      if (recGain) recGain.disconnect();
+      if (recCtx && recCtx.state !== "closed") recCtx.close();
+    } catch {
+      /* ignore cleanup errors */
+    }
+    if (recStream) {
+      recStream.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+    recStream = recCtx = recSrc = recProc = recGain = null;
+    recActive = false;
+  }
+
+  function stopRecording(autoCut, discard) {
+    if (!recActive) return;
+    const chunks = recChunks,
+      sr = recSr,
+      maxSamples = Math.round(WIN * sr);
+    recChunks = [];
+    recSamples = 0;
+    cleanupRecorder();
+    setRecUi(false, 0);
+    if (discard) return;
+
+    let total = 0;
+    for (let i = 0; i < chunks.length; i++) total += chunks[i].length;
+    total = Math.min(total, maxSamples);
+    if (total < Math.round(0.2 * sr)) {
+      toast("Recording was too short. Try recording at least 1 second.", "err");
+      return;
+    }
+    const merged = new Float32Array(total);
+    let offset = 0;
+    for (let i = 0; i < chunks.length && offset < total; i++) {
+      const take = Math.min(chunks[i].length, total - offset);
+      merged.set(chunks[i].subarray(0, take), offset);
+      offset += take;
+    }
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const stamp = `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+    const wavFile = encodeWavFile(merged, sr, `recording-${stamp}.wav`, "mic");
+    setFile(wavFile);
+    toast(
+      autoCut
+        ? "8-second recording complete (WAV) — ready to analyze."
+        : "Recording saved as WAV — ready to analyze.",
+    );
+    saveRecordingToAccount(wavFile, "mic");
+  }
+
+  async function saveRecordingToAccount(wavFile, source) {
+    const token = csrfToken();
+    if (!token) return;
+    try {
+      const fd = new FormData();
+      fd.append("audio", wavFile);
+      fd.append("source", source || "mic");
+      const r = await fetch("/api/recordings", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": token },
+        body: fd,
+      });
+      if (!r.ok) return;
+      const d = await r.json().catch(() => ({}));
+      if (d && d.item && d.item.id && file === wavFile) {
+        activeRecordingId = d.item.id;
+        toast("Saved to your account recordings.");
+      }
+    } catch {
+      /* non-fatal if offline or guest */
+    }
+  }
+
+  async function loadSavedRecordingFromQuery() {
+    const recId = new URLSearchParams(location.search).get("recording");
+    if (!recId || !/^[0-9a-f]{32}$/.test(recId)) return;
+    try {
+      toast("Loading your saved recording…");
+      let filename = `recording-${recId.slice(0, 8)}.wav`;
+      let mime = "audio/wav";
+      const metaRes = await fetch("/api/recordings", { credentials: "same-origin" });
+      if (metaRes.ok) {
+        const metaData = await metaRes.json().catch(() => ({}));
+        const match = (metaData.items || []).find((x) => x.id === recId);
+        if (match) {
+          filename = match.filename || filename;
+          mime = match.mime_type || mime;
+        }
+      }
+      const audioRes = await fetch(`/api/recordings/${encodeURIComponent(recId)}/audio`, {
+        credentials: "same-origin",
+      });
+      if (audioRes.status === 401) {
+        location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+        return;
+      }
+      if (!audioRes.ok) {
+        toast("Could not load that saved recording.", "err");
+        return;
+      }
+      const blob = await audioRes.blob();
+      const loadedFile = new File([blob], filename, { type: blob.type || mime });
+      setFile(loadedFile);
+      activeRecordingId = recId;
+      toast(`Loaded saved recording: ${filename}`);
+    } catch {
+      toast("Could not load saved recording.", "err");
+    }
+  }
+  loadSavedRecordingFromQuery();
+
+  async function startRecording() {
+    if (recActive) {
+      stopRecording(false, false);
+      return;
+    }
+    if (busy) {
+      toast("Wait for the current analysis to finish before recording.", "err");
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast(
+        "Microphone recording is not available here. Use HTTPS or localhost in a modern browser.",
+        "err",
+      );
+      return;
+    }
+    try {
+      el.recBtn.disabled = true;
+      // Disable browser voice-call DSP (noiseSuppression/echoCancellation/autoGainControl)
+      // so the microphone captures raw, sensitive, full-room surrounding audio clearly.
+      try {
+        recStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+          },
+        });
+      } catch {
+        recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      recCtx = new AC();
+      if (recCtx.state === "suspended") await recCtx.resume();
+      recSr = recCtx.sampleRate || 16000;
+      const maxSamples = Math.round(WIN * recSr);
+      recChunks = [];
+      recSamples = 0;
+
+      recSrc = recCtx.createMediaStreamSource(recStream);
+      recProc = recCtx.createScriptProcessor(4096, 1, 1);
+      recGain = recCtx.createGain();
+      recGain.gain.value = 0;
+
+      recActive = true;
+      recStartMs = performance.now();
+      setRecUi(true, 0);
+
+      recProc.onaudioprocess = (ev) => {
+        if (!recActive) return;
+        const input = ev.inputBuffer.getChannelData(0);
+        const remaining = maxSamples - recSamples;
+        if (remaining <= 0) {
+          stopRecording(true, false);
+          return;
+        }
+        const sliceLen = Math.min(input.length, remaining);
+        const copy = new Float32Array(sliceLen);
+        copy.set(input.subarray(0, sliceLen));
+        recChunks.push(copy);
+        recSamples += sliceLen;
+        if (recSamples >= maxSamples) {
+          stopRecording(true, false);
+        }
+      };
+
+      recSrc.connect(recProc);
+      recProc.connect(recGain);
+      recGain.connect(recCtx.destination);
+
+      recTickId = setInterval(() => {
+        if (!recActive) return;
+        const elapsed = (performance.now() - recStartMs) / 1000;
+        setRecUi(true, elapsed);
+        if (elapsed >= WIN) stopRecording(true, false);
+      }, 60);
+
+      recTimeoutId = setTimeout(() => {
+        if (recActive) stopRecording(true, false);
+      }, WIN * 1000 + 80);
+    } catch (err) {
+      cleanupRecorder();
+      setRecUi(false, 0);
+      const denied = err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+      toast(
+        denied
+          ? "Microphone permission denied. Allow mic access in your browser and try again."
+          : "Could not access the microphone. Check that a mic is connected.",
+        "err",
+      );
+    } finally {
+      if (el.recBtn) el.recBtn.disabled = false;
+    }
+  }
+
+  if (el.recBtn) {
+    el.recBtn.addEventListener("click", startRecording);
+    window.addEventListener("beforeunload", () => {
+      if (recActive) stopRecording(false, true);
+    });
+  }
+
   /* ---------- synthetic test mixtures ---------- */
   function synth(n) {
     const sr = 16000,
@@ -297,37 +606,14 @@
         d[i] += v * env * 0.22;
       }
     }
-    let mx = 0;
     for (let i = 0; i < len; i++) {
       d[i] += (Math.random() - 0.5) * 0.01;
-      mx = Math.max(mx, Math.abs(d[i]));
     }
-    const buf = new ArrayBuffer(44 + len * 2),
-      v = new DataView(buf),
-      str = (o, t) =>
-        [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-    str(0, "RIFF");
-    v.setUint32(4, 36 + len * 2, true);
-    str(8, "WAVEfmt ");
-    v.setUint32(16, 16, true);
-    v.setUint16(20, 1, true);
-    v.setUint16(22, 1, true);
-    v.setUint32(24, sr, true);
-    v.setUint32(28, sr * 2, true);
-    v.setUint16(32, 2, true);
-    v.setUint16(34, 16, true);
-    str(36, "data");
-    v.setUint32(40, len * 2, true);
-    for (let i = 0; i < len; i++)
-      v.setInt16(
-        44 + i * 2,
-        Math.max(-1, Math.min(1, (d[i] / (mx || 1)) * 0.9)) * 32767,
-        true,
-      );
-    return new File(
-      [buf],
+    return encodeWavFile(
+      d,
+      sr,
       `synthetic-${n}-${n === 1 ? "source" : "sources"}.wav`,
-      { type: "audio/wav" },
+      true,
     );
   }
   document.querySelectorAll("[data-synth]").forEach((b) =>
@@ -381,6 +667,7 @@
     );
     const fd = new FormData();
     fd.append("audio", file);
+    if (activeRecordingId) fd.append("recording_id", activeRecordingId);
     const x = new XMLHttpRequest();
     xhr = x;
     x.open("POST", "/api/analyze");
@@ -829,62 +1116,164 @@
       tag: tagDoneState,
       separate: "active",
     });
-    body.innerHTML = `<div role="status" aria-live="polite"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Separating named sounds &amp; verifying stem quality gates…</p></div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
+
+    body.innerHTML = `<div class="sep-loader" role="status" aria-live="polite">
+        <div class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="sep-prog-box">
+          <div class="sep-prog-head">
+            <span class="sep-prog-step" id="sepStepTxt">Starting audio separation…</span>
+            <span class="sep-prog-meta"><strong id="sepPct">3%</strong><small id="sepElapsed">0.0s</small></span>
+          </div>
+          <div class="sep-prog-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="3" id="sepBarWrap">
+            <div class="sep-prog-fill" id="sepFill" style="width:3%"><i></i></div>
+          </div>
+          <div class="sep-milestones" id="sepPhases">
+            <span data-p="decode" class="is-active">Decode</span>
+            <span data-p="separate">Isolate</span>
+            <span data-p="gates">Quality gates</span>
+            <span data-p="zip">ZIP</span>
+          </div>
+        </div>
+      </div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
+
+    const tStart = performance.now();
+    let serverPct = 3;
+    let shownPct = 3;
+    let curPhase = "decode";
+    let finished = false;
+    let pollTimer = 0;
+
+    const phaseOrder = ["decode", "separate", "gates", "zip", "done"];
+    const updateProgressUi = (pct, stepTxt, phase) => {
+      if (my !== runId) return;
+      const fill = $("#sepFill"),
+        pctEl = $("#sepPct"),
+        stepEl = $("#sepStepTxt"),
+        elapEl = $("#sepElapsed"),
+        wrap = $("#sepBarWrap"),
+        phases = $("#sepPhases");
+      const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+      if (fill) fill.style.width = `${clamped}%`;
+      if (pctEl) pctEl.textContent = `${clamped}%`;
+      if (wrap) wrap.setAttribute("aria-valuenow", String(clamped));
+      if (stepEl && stepTxt) stepEl.textContent = stepTxt;
+      if (elapEl) elapEl.textContent = `${((performance.now() - tStart) / 1000).toFixed(1)}s`;
+      if (phases && phase) {
+        const curIdx = phaseOrder.indexOf(phase);
+        phases.querySelectorAll("[data-p]").forEach((node) => {
+          const idx = phaseOrder.indexOf(node.dataset.p);
+          node.classList.toggle("is-done", curIdx > idx);
+          node.classList.toggle("is-active", curIdx === idx);
+        });
+      }
+    };
+
+    // Smoothly advance visual progress toward the next milestone while heavy neural passes run
+    const smoothTimer = setInterval(() => {
+      if (finished || my !== runId) {
+        clearInterval(smoothTimer);
+        return;
+      }
+      const cap = serverPct < 72 ? Math.min(71, serverPct + 16) : Math.min(96, serverPct + 4);
+      if (shownPct < serverPct) {
+        shownPct = Math.min(serverPct, shownPct + Math.max(1.5, (serverPct - shownPct) * 0.35));
+      } else if (shownPct < cap) {
+        shownPct += 0.35;
+      }
+      updateProgressUi(shownPct, null, curPhase);
+    }, 140);
+
+    const stopTimers = () => {
+      finished = true;
+      clearInterval(smoothTimer);
+      clearTimeout(pollTimer);
+    };
+
+    const renderSeparated = (d) => {
+      stopTimers();
+      if (my !== runId) return;
+      const qc = d.quality_check || {};
+      const sc = d.self_consistency || {};
+      const ec = qc.energy_conservation || {};
+      const gateSummary = `<p class="fine" style="margin-bottom:10px">Quality metrics: Self-consistency <strong>${sc.passed_count ?? 0}/${sc.total_stems ?? 0}</strong> verified · Max pairwise corr <code>${typeof qc.max_pairwise_corr === "number" ? qc.max_pairwise_corr.toFixed(3) : "0.000"}</code> · Energy conservation SNR <code>${typeof ec.reconstruction_snr_db === "number" ? ec.reconstruction_snr_db.toFixed(1) + " dB" : "exact"}</code></p>`;
+      const zipActions = `<div class="stem-actions"><button class="btn primary" id="zipBtn" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download all as ZIP</span></button><span class="fine" id="zipMsg" role="status" aria-live="polite"></span></div>`;
+      setStages({
+        decode: "done",
+        count: "done",
+        tag: tagDoneState,
+        separate: "done",
+        zip: "done",
+      });
+      body.innerHTML =
+        stageHtml({
+          decode: "done",
+          count: "done",
+          tag: tagDoneState,
+          separate: "done",
+          zip: "done",
+        }) +
+        gateSummary +
+        `<div id="stemList" class="stem-list"></div>
+        ${zipActions}`;
+      buildStems(d.stems);
+      $("#zipBtn").addEventListener("click", () =>
+        downloadZip(d.download_url, false),
+      );
+    };
+
+    const failSep = (msg) => {
+      stopTimers();
+      if (my !== runId) return;
+      body.innerHTML = `<div class="state-inline err" role="alert"><strong>Separation not available for this recording</strong><p>${esc(msg)}</p></div>`;
+    };
+
+    const poll = (pollUrl) => {
+      if (finished || my !== runId) return;
+      fetch(pollUrl, { credentials: "same-origin" })
+        .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+          if (finished || my !== runId) return;
+          if (!ok || d.status === "failed") {
+            failSep(d.error || "Separation failed.");
+            return;
+          }
+          if (d.status === "completed" || Array.isArray(d.stems)) {
+            serverPct = 100;
+            shownPct = 100;
+            updateProgressUi(100, "Separation complete", "done");
+            setTimeout(() => renderSeparated(d), 220);
+            return;
+          }
+          if (typeof d.progress === "number") serverPct = Math.max(serverPct, d.progress);
+          if (d.phase) curPhase = d.phase;
+          updateProgressUi(Math.max(shownPct, serverPct), d.step, curPhase);
+          pollTimer = setTimeout(() => poll(pollUrl), 350);
+        })
+        .catch((err) => failSep(err.message || "Lost connection while separating."));
+    };
+
     fetch("/api/separate", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job_id: jobId }),
+      body: JSON.stringify({ job_id: jobId, async: true }),
     })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
+      .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, d })))
+      .then(({ ok, status, d }) => {
         if (my !== runId) return;
-        if (!ok) throw new Error(d.error || "Separation failed.");
-        const qFail = Boolean(d.quality_failed);
-        const qc = d.quality_check || {};
-        const sv = d.speaker_verification || {};
-        const sc = d.self_consistency || {};
-        const ec = qc.energy_conservation || {};
-        const headline = sv.could_not_separate_speakers
-          ? "Could not separate speakers — Separation failed quality check: stems are near-copies"
-          : "Separation failed quality check: stems are near-copies";
-        const embSimTxt =
-          typeof sv.max_embedding_cosine_similarity === "number"
-            ? `, max speaker embedding cos = ${sv.max_embedding_cosine_similarity.toFixed(3)}`
-            : "";
-        const qBanner = qFail
-          ? `<div class="banner-quality-fail" role="alert">
-          <div>${esc(headline)}</div>
-          <small style="font-weight:400">${esc(d.quality_reason || "")} (max pairwise r = ${typeof qc.max_pairwise_corr === "number" ? qc.max_pairwise_corr.toFixed(3) : "—"}, max stem–mix r = ${typeof qc.max_stem_mix_corr === "number" ? qc.max_stem_mix_corr.toFixed(3) : "—"}${embSimTxt})</small>
-        </div>`
-          : "";
-        const gateSummary = `<p class="fine" style="margin-bottom:10px">Quality gates: Self-consistency <strong>${sc.passed_count ?? 0}/${sc.total_stems ?? 0}</strong> verified · Max pairwise corr <code>${typeof qc.max_pairwise_corr === "number" ? qc.max_pairwise_corr.toFixed(3) : "0.000"}</code> (&lt; 0.90) · Energy conservation SNR <code>${typeof ec.reconstruction_snr_db === "number" ? ec.reconstruction_snr_db.toFixed(1) + " dB" : "exact"}</code></p>`;
-        const zipStageState = qFail ? "idle" : "done";
-        const zipActions = qFail
-          ? `<div class="stem-actions"><button class="btn" id="zipBtn" type="button" disabled aria-disabled="true"><svg class="ic"><use href="#i-download"/></svg><span>ZIP unavailable (failed quality check)</span></button><span class="fine" id="zipMsg" role="status" aria-live="polite">Stems failed the quality check and are not offered as a successful separation.</span></div>`
-          : `<div class="stem-actions"><button class="btn primary" id="zipBtn" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download all as ZIP</span></button><span class="fine" id="zipMsg" role="status" aria-live="polite"></span></div>`;
-        body.innerHTML =
-          qBanner +
-          stageHtml({
-            decode: "done",
-            count: "done",
-            tag: tagDoneState,
-            separate: "done",
-            zip: zipStageState,
-          }) +
-          gateSummary +
-          `<div id="stemList" class="stem-list"></div>
-          ${zipActions}`;
-        buildStems(d.stems);
-        if (!qFail) {
-          $("#zipBtn").addEventListener("click", () =>
-            downloadZip(d.download_url, false),
-          );
+        if (!ok) {
+          failSep(d.error || "Separation failed.");
+          return;
         }
+        if (status === 202 && d.poll_url) {
+          if (typeof d.progress === "number") serverPct = Math.max(serverPct, d.progress);
+          updateProgressUi(serverPct, d.step || "Starting audio separation…", "decode");
+          pollTimer = setTimeout(() => poll(d.poll_url), 300);
+          return;
+        }
+        renderSeparated(d);
       })
-      .catch((err) => {
-        if (my !== runId) return;
-        body.innerHTML = `<div class="state-inline err" role="alert"><strong>Separation not available for this recording</strong><p>${esc(err.message)}</p></div>`;
-      });
+      .catch((err) => failSep(err.message || "Separation failed."));
   }
 
   function buildStems(stems) {

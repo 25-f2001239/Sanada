@@ -182,6 +182,20 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_analyses_created ON analyses(created_at);
             CREATE INDEX IF NOT EXISTS idx_analyses_user ON analyses(user_id);
+            CREATE TABLE IF NOT EXISTS user_recordings (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                filename TEXT NOT NULL,
+                stored_relpath TEXT NOT NULL,
+                route_url TEXT NOT NULL,
+                mime_type TEXT NOT NULL DEFAULT 'audio/wav',
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                duration_s REAL,
+                source TEXT NOT NULL DEFAULT 'upload',
+                predicted_k INTEGER,
+                created_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_recordings_user ON user_recordings(user_id, created_at DESC);
             """
         )
         a_cols = {r["name"] for r in con.execute("PRAGMA table_info(analyses)").fetchall()}
@@ -902,6 +916,136 @@ def user_owns_job(job_id: str, user_id: int) -> bool:
             "SELECT user_id FROM user_jobs WHERE job_id = ?", (job_id,)
         ).fetchone()
     return bool(row and int(row["user_id"]) == int(user_id))
+
+
+def save_user_recording(
+    rec_id: str,
+    user_id: int,
+    filename: str,
+    stored_relpath: str,
+    route_url: str,
+    mime_type: str = "audio/wav",
+    size_bytes: int = 0,
+    duration_s: float | None = None,
+    source: str = "upload",
+    predicted_k: int | None = None,
+) -> dict[str, Any]:
+    """Persist a user-owned audio recording metadata row linked to its disk path and route."""
+    now = time.time()
+    with _conn() as con:
+        con.execute(
+            """INSERT OR REPLACE INTO user_recordings
+               (id, user_id, filename, stored_relpath, route_url, mime_type, size_bytes, duration_s, source, predicted_k, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec_id,
+                int(user_id),
+                filename[:240],
+                stored_relpath,
+                route_url,
+                mime_type or "audio/wav",
+                int(size_bytes),
+                float(duration_s) if duration_s is not None else None,
+                source[:32],
+                int(predicted_k) if predicted_k is not None else None,
+                now,
+            ),
+        )
+    return {
+        "id": rec_id,
+        "filename": filename[:240],
+        "route_url": route_url,
+        "download_url": f"{route_url}?download=1",
+        "mime_type": mime_type or "audio/wav",
+        "size_bytes": int(size_bytes),
+        "duration_s": round(float(duration_s), 2) if duration_s is not None else None,
+        "source": source[:32],
+        "predicted_k": int(predicted_k) if predicted_k is not None else None,
+        "created_at": now,
+    }
+
+
+def list_user_recordings(user_id: int, limit: int = 200) -> list[dict[str, Any]]:
+    """Return persistent recordings belonging strictly to user_id."""
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT id, filename, stored_relpath, route_url, mime_type, size_bytes,
+                      duration_s, source, predicted_k, created_at
+               FROM user_recordings
+               WHERE user_id = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (int(user_id), limit),
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["download_url"] = f"{d['route_url']}?download=1"
+        out.append(d)
+    return out
+
+
+def get_user_recording(user_id: int, rec_id: str) -> dict[str, Any] | None:
+    """Fetch a single recording strictly if it belongs to user_id."""
+    with _conn() as con:
+        row = con.execute(
+            """SELECT id, user_id, filename, stored_relpath, route_url, mime_type, size_bytes,
+                      duration_s, source, predicted_k, created_at
+               FROM user_recordings
+               WHERE id = ? AND user_id = ?""",
+            (rec_id, int(user_id)),
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["download_url"] = f"{d['route_url']}?download=1"
+    return d
+
+
+def update_user_recording_meta(
+    user_id: int, rec_id: str, predicted_k: int | None = None, duration_s: float | None = None
+) -> bool:
+    """Update predicted_k / duration_s on an existing user-owned recording."""
+    with _conn() as con:
+        n = con.execute(
+            """UPDATE user_recordings
+               SET predicted_k = COALESCE(?, predicted_k),
+                   duration_s = COALESCE(?, duration_s)
+               WHERE id = ? AND user_id = ?""",
+            (
+                int(predicted_k) if predicted_k is not None else None,
+                round(float(duration_s), 2) if duration_s is not None else None,
+                rec_id,
+                int(user_id),
+            ),
+        ).rowcount
+    return n > 0
+
+
+def delete_user_recording(user_id: int, rec_id: str) -> str | None:
+    """Delete a recording owned by user_id and return its stored_relpath for disk cleanup."""
+    with _conn() as con:
+        row = con.execute(
+            "SELECT stored_relpath FROM user_recordings WHERE id = ? AND user_id = ?",
+            (rec_id, int(user_id)),
+        ).fetchone()
+        if not row:
+            return None
+        con.execute(
+            "DELETE FROM user_recordings WHERE id = ? AND user_id = ?",
+            (rec_id, int(user_id)),
+        )
+        return str(row["stored_relpath"])
+
+
+def clear_user_recordings(user_id: int) -> list[str]:
+    """Delete all recordings owned by user_id and return their stored_relpaths for disk cleanup."""
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT stored_relpath FROM user_recordings WHERE user_id = ?",
+            (int(user_id),),
+        ).fetchall()
+        con.execute("DELETE FROM user_recordings WHERE user_id = ?", (int(user_id),))
+    return [str(r["stored_relpath"]) for r in rows]
 
 
 def register_oauth_user(

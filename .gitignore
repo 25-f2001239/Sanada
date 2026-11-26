@@ -41,6 +41,7 @@ secrets.json
 # Runtime uploads, temp, work, archives & local DBs
 uploads/
 user_uploads/
+user_recordings/
 jobs/
 tmp/
 temp/

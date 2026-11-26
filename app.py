@@ -48,10 +48,14 @@ load_dotenv(BASE_DIR / ".env")
 
 UPLOAD_DIR = BASE_DIR / "uploads"
 JOB_DIR = UPLOAD_DIR / "jobs"
+RECORDINGS_DIR = Path(
+    os.getenv("ECHOCOUNT_RECORDINGS_DIR", str(BASE_DIR / "user_recordings"))
+).resolve()
 EVAL_PATH = Path(os.getenv("EVAL_RESULTS", str(EVAL_DIR / "results.json")))
 PUBLIC_SUMMARY_PATH = Path(os.getenv("PUBLIC_SUMMARY_PATH", str(EVAL_DIR / "public_summary.json")))
 HOW_CONTENT_PATH = BASE_DIR / "content" / "how_it_works.json"
 JOB_DIR.mkdir(parents=True, exist_ok=True)
+RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(40 * 1024 * 1024)))
@@ -807,6 +811,204 @@ def clear_user_history_route():
     return jsonify({"ok": True, "cleared": cleared})
 
 
+# ---------------------------------------------------------------------------
+# Persistent Per-User Recordings Storage & API (strictly scoped to owner)
+# ---------------------------------------------------------------------------
+
+_RECORDING_MIME = {
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+}
+
+
+def _safe_recording_path(stored_relpath: str) -> Path | None:
+    """Resolve a stored relative path and verify it stays strictly inside RECORDINGS_DIR."""
+    if not stored_relpath:
+        return None
+    try:
+        candidate = (RECORDINGS_DIR / stored_relpath).resolve()
+        if not candidate.is_relative_to(RECORDINGS_DIR):
+            return None
+        return candidate
+    except Exception:
+        return None
+
+
+def _remove_recording_file(stored_relpath: str) -> None:
+    p = _safe_recording_path(stored_relpath)
+    if p and p.is_file():
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+
+def _persist_user_recording(
+    user_id: int,
+    src_path: Path,
+    filename: str,
+    duration_s: float | None = None,
+    source: str = "upload",
+    predicted_k: int | None = None,
+) -> dict | None:
+    """Copy a validated audio file into persistent user_recordings/user_<id>/ and record in DB."""
+    try:
+        clean_name = secure_filename(filename or "recording.wav") or "recording.wav"
+        ext = Path(clean_name).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            ext = ".wav"
+            clean_name = f"{Path(clean_name).stem or 'recording'}.wav"
+        rec_id = uuid.uuid4().hex
+        user_dir = RECORDINGS_DIR / f"user_{int(user_id)}"
+        user_dir.mkdir(parents=True, exist_ok=True)
+        dest = user_dir / f"{rec_id}{ext}"
+        shutil.copy2(src_path, dest)
+        rel = f"user_{int(user_id)}/{rec_id}{ext}"
+        route_url = f"/api/recordings/{rec_id}/audio"
+        return auth.save_user_recording(
+            rec_id=rec_id,
+            user_id=user_id,
+            filename=clean_name,
+            stored_relpath=rel,
+            route_url=route_url,
+            mime_type=_RECORDING_MIME.get(ext, "audio/wav"),
+            size_bytes=dest.stat().st_size,
+            duration_s=duration_s,
+            source=source,
+            predicted_k=predicted_k,
+        )
+    except Exception:
+        app.logger.exception("Failed to persist user recording")
+        return None
+
+
+def _public_recording_item(row: dict) -> dict:
+    """Strip internal filesystem relative path before returning JSON to the client."""
+    return {
+        "id": row["id"],
+        "filename": row["filename"],
+        "route_url": row["route_url"],
+        "download_url": row.get("download_url") or f"{row['route_url']}?download=1",
+        "mime_type": row.get("mime_type", "audio/wav"),
+        "size_bytes": row.get("size_bytes", 0),
+        "duration_s": row.get("duration_s"),
+        "source": row.get("source", "upload"),
+        "predicted_k": row.get("predicted_k"),
+        "created_at": row.get("created_at"),
+    }
+
+
+@app.get("/api/recordings")
+@auth.login_required
+def list_user_recordings_route():
+    user = auth.get_current_user()
+    limit = max(1, min(500, int(request.args.get("limit", 200))))
+    rows = auth.list_user_recordings(user["id"], limit=limit)
+    items = []
+    for r in rows:
+        p = _safe_recording_path(r.get("stored_relpath", ""))
+        if p and p.is_file():
+            items.append(_public_recording_item(r))
+    return jsonify({"items": items, "email": user["email"]})
+
+
+@app.post("/api/recordings")
+@auth.login_required
+def upload_user_recording_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    if not check_rate_limit():
+        return jsonify({"error": "Rate limit exceeded. Please wait a moment and try again."}), 429
+    user = auth.get_current_user()
+    f = request.files.get("audio")
+    if f is None or not f.filename:
+        return jsonify({"error": "No audio file provided."}), 400
+    clean_name = secure_filename(f.filename) or "recording.wav"
+    ext = Path(clean_name).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": "Unsupported audio format. Use WAV, FLAC, MP3, OGG, or M4A."}), 422
+    source = (request.form.get("source") or "mic").strip().lower()
+    if source not in ("mic", "upload"):
+        source = "mic"
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ec_rec_", dir=str(JOB_DIR)))
+    try:
+        tmp_path = tmp_dir / f"upload{ext}"
+        f.save(tmp_path)
+        size = tmp_path.stat().st_size
+        if size == 0:
+            return jsonify({"error": "Audio file is empty."}), 422
+        if size > MAX_UPLOAD_BYTES:
+            return jsonify({"error": "Audio file exceeds maximum allowed size."}), 413
+        samples, rate = audio.decode_mono(tmp_path, MAX_DURATION_SECONDS)
+        duration_s = round(len(samples) / float(rate), 2) if rate else 0.0
+        item = _persist_user_recording(
+            user_id=user["id"],
+            src_path=tmp_path,
+            filename=clean_name,
+            duration_s=duration_s,
+            source=source,
+        )
+        if not item:
+            return jsonify({"error": "Could not save recording on server."}), 500
+        return jsonify({"ok": True, "item": item}), 201
+    except audio.AudioValidationError as exc:
+        return jsonify({"error": str(exc)}), 422
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.get("/api/recordings/<rec_id>/audio")
+@auth.login_required
+def serve_user_recording_audio_route(rec_id: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", rec_id or ""):
+        return jsonify({"error": "Recording not found."}), 404
+    user = auth.get_current_user()
+    rec = auth.get_user_recording(user["id"], rec_id)
+    if not rec:
+        return jsonify({"error": "Recording not found."}), 404
+    path = _safe_recording_path(rec["stored_relpath"])
+    if not path or not path.is_file():
+        return jsonify({"error": "Recording file no longer exists on server."}), 404
+    return send_file(
+        path,
+        mimetype=rec.get("mime_type") or "audio/wav",
+        as_attachment=(request.args.get("download") == "1"),
+        download_name=rec["filename"],
+        conditional=True,
+    )
+
+
+@app.delete("/api/recordings/<rec_id>")
+@auth.login_required
+def delete_user_recording_route(rec_id: str):
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    if not re.fullmatch(r"[0-9a-f]{32}", rec_id or ""):
+        return jsonify({"error": "Recording not found."}), 404
+    user = auth.get_current_user()
+    rel = auth.delete_user_recording(user["id"], rec_id)
+    if rel is None:
+        return jsonify({"error": "Recording not found."}), 404
+    _remove_recording_file(rel)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/recordings")
+@auth.login_required
+def clear_user_recordings_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    user = auth.get_current_user()
+    rels = auth.clear_user_recordings(user["id"])
+    for rel in rels:
+        _remove_recording_file(rel)
+    return jsonify({"ok": True, "cleared": len(rels)})
+
+
 def _separation_eligibility(
     k: int,
     last_reliable_k: int,
@@ -1059,6 +1261,26 @@ def analyze():
         gt["dataset"] if gt else None,
         round(sum(v for v in timings.values() if isinstance(v, (int, float))), 1),
     )
+    req_rec_id = (request.form.get("recording_id") or "").strip()
+    saved_rec = None
+    if req_rec_id and re.fullmatch(r"[0-9a-f]{32}", req_rec_id):
+        existing = auth.get_user_recording(user["id"], req_rec_id)
+        if existing:
+            auth.update_user_recording_meta(user["id"], req_rec_id, predicted_k=k, duration_s=duration)
+            existing["predicted_k"] = k
+            existing["duration_s"] = round(duration, 2)
+            saved_rec = _public_recording_item(existing)
+    if saved_rec is None and not name.startswith("synthetic-"):
+        saved_rec = _persist_user_recording(
+            user_id=user["id"],
+            src_path=original_path,
+            filename=name,
+            duration_s=round(duration, 2),
+            source="mic" if name.startswith("recording-") else "upload",
+            predicted_k=k,
+        )
+    if saved_rec is not None:
+        payload["recording"] = saved_rec
     return jsonify(payload)
 
 
@@ -1094,17 +1316,31 @@ def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
                 "error": f"Pretrained {k}-speaker separation model is not installed."
             }, 409
 
+    def _set_progress(pct: int, step: str, phase: str = "separate") -> None:
+        with _jobs_lock:
+            job["sep_progress"] = max(int(job.get("sep_progress", 0)), min(100, int(pct)))
+            job["sep_step"] = step
+            job["sep_phase"] = phase
+
     timings = {}
     try:
         t0 = time.perf_counter()
+        _set_progress(6, "Decoding & preparing full-length audio…", "decode")
         samples, _ = audio.decode_mono(job["original"], MAX_DURATION_SECONDS)
         full_16k = audio.resample(samples, job["input_rate"], SAMPLE_RATE).astype(np.float32)
+        _set_progress(12, f"Isolating {k} overlapping sources…", "separate")
+
+        def _sep_cb(frac: float, msg: str) -> None:
+            pct = 12 + int(max(0.0, min(1.0, float(frac))) * 60)
+            _set_progress(pct, msg, "separate")
+
         q_out = separation.separate_by_queries(
             full_16k,
             k=k,
             named_sounds=job.get("named_sounds", []),
             speech_mode=speech_mode,
             sr=SAMPLE_RATE,
+            progress_cb=_sep_cb,
         )
         if not q_out.get("available") or not q_out.get("stems"):
             return {
@@ -1122,12 +1358,16 @@ def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
         return {"error": "Separation failed. Check the checkpoint and server logs."}, 503
 
     t_gate = time.perf_counter()
+    _set_progress(76, "Checking waveform similarity & energy balance…", "gates")
     sq = quality_mod.compute_stem_quality(stems, full_16k, residual=residual_16k)
+    _set_progress(82, "Verifying stem self-consistency…", "gates")
     sc_gate = quality_mod.evaluate_stem_self_consistency(stems, queries)
+    _set_progress(88, "Verifying distinct speaker voices…", "gates")
     spk_ver = separation.verify_separated_speaker_stems(
         stems, sample_rate=SAMPLE_RATE, speech_mode=speech_mode
     )
     timings["quality_gate_ms"] = round((time.perf_counter() - t_gate) * 1000, 1)
+    _set_progress(93, "Writing WAV stems & building ZIP bundle…", "zip")
 
     quality_failed = bool(sq["failed"] or (speech_mode and spk_ver["could_not_separate_speakers"]))
     quality_reason = sq["failure_reason"]
@@ -1261,6 +1501,9 @@ def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
                 "zip": buffer.getvalue(),
                 "used_pretrained_speech": used_speech,
                 "sep_status": "completed",
+                "sep_progress": 100,
+                "sep_step": "Separation complete",
+                "sep_phase": "done",
                 "sep_result": result_payload,
             }
         )
@@ -1285,6 +1528,9 @@ def separate_route():
     if payload.get("async"):
         with _jobs_lock:
             job["sep_status"] = "running"
+            job["sep_progress"] = 3
+            job["sep_step"] = "Starting audio separation…"
+            job["sep_phase"] = "decode"
 
         def _bg():
             res, code = _execute_separation_job(job_id, job)
@@ -1294,7 +1540,13 @@ def separate_route():
 
         _executor.submit(_bg)
         return jsonify(
-            {"job_id": job_id, "status": "running", "poll_url": f"/api/separate/{job_id}"}
+            {
+                "job_id": job_id,
+                "status": "running",
+                "progress": 3,
+                "step": "Starting audio separation…",
+                "poll_url": f"/api/separate/{job_id}",
+            }
         ), 202
     res, code = _execute_separation_job(job_id, job)
     return jsonify(res), code
@@ -1311,10 +1563,18 @@ def separate_status_route(job_id: str):
         return jsonify({"error": "Job expired or does not exist."}), 404
     st = job.get("sep_status", "idle")
     if st == "completed" and job.get("sep_result"):
-        return jsonify(job["sep_result"]), 200
+        return jsonify({"status": "completed", "progress": 100, **job["sep_result"]}), 200
     if st == "failed":
         return jsonify({"job_id": job_id, "status": "failed", **(job.get("sep_result") or {})}), 409
-    return jsonify({"job_id": job_id, "status": st}), 200
+    return jsonify(
+        {
+            "job_id": job_id,
+            "status": st,
+            "progress": int(job.get("sep_progress", 0)),
+            "step": job.get("sep_step") or "Separating audio…",
+            "phase": job.get("sep_phase") or "separate",
+        }
+    ), 200
 
 
 @app.get("/api/stem/<job_id>/<filename>")

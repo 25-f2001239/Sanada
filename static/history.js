@@ -1,13 +1,21 @@
-/* EchoCount — Per-user History page (loaded from /api/history for the signed-in account) */
+/* EchoCount — Per-user Saved Recordings & Analysis History page */
 (() => {
   const { $, esc, fmtTime, toast } = window.EC;
   const list = $("#hlist"),
+    rlist = $("#rlist"),
     stats = $("#hstats"),
-    q = $("#q");
+    q = $("#q"),
+    exportBtn = $("#exportBtn"),
+    clearAllBtn = $("#clearAll"),
+    clearRecsBtn = $("#clearRecs"),
+    recCountBadge = $("#recCountBadge"),
+    histCountBadge = $("#histCountBadge");
   if (!list || list.dataset.authed !== "true") return;
 
   const csrf = () => $('meta[name="csrf-token"]')?.content || "";
   let all = [];
+  let recs = [];
+  let activeTab = location.hash === "#analyses" ? "analyses" : "recordings";
 
   const when = (ts) =>
     ts
@@ -17,11 +25,35 @@
         })
       : "—";
 
-  function render() {
-    const term = (q?.value || "").trim().toLowerCase();
-    const items = all.filter((h) =>
-      (h.filename || "").toLowerCase().includes(term),
-    );
+  const fmtSize = (b) => {
+    const n = Number(b || 0);
+    if (!n) return "—";
+    return n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(2)} MB`;
+  };
+
+  function setTab(tab) {
+    activeTab = tab === "analyses" ? "analyses" : "recordings";
+    document.querySelectorAll("[data-hist-tab]").forEach((btn) => {
+      btn.setAttribute(
+        "aria-selected",
+        btn.dataset.histTab === activeTab ? "true" : "false",
+      );
+    });
+    rlist?.classList.toggle("hidden", activeTab !== "recordings");
+    list.classList.toggle("hidden", activeTab !== "analyses");
+    clearRecsBtn?.classList.toggle("hidden", activeTab !== "recordings");
+    exportBtn?.classList.toggle("hidden", activeTab !== "analyses");
+    clearAllBtn?.classList.toggle("hidden", activeTab !== "analyses");
+  }
+
+  document.querySelectorAll("[data-hist-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setTab(btn.dataset.histTab);
+      history.replaceState(null, "", `#${activeTab}`);
+    });
+  });
+
+  function renderStats() {
     const freq = {};
     all.forEach((h) => {
       if (h.predicted_k != null) freq[h.predicted_k] = (freq[h.predicted_k] || 0) + 1;
@@ -32,6 +64,7 @@
       ? validK.reduce((s, h) => s + Number(h.predicted_k), 0) / validK.length
       : 0;
     stats.innerHTML = [
+      ["Saved recordings", recs.length],
       ["Analyses", all.length],
       ["Average count", validK.length ? avg.toFixed(1) : "—"],
       ["Most common count", common ? common[0] : "—"],
@@ -40,7 +73,61 @@
         ([l, v]) => `<div class="metric"><small>${l}</small><b>${v}</b></div>`,
       )
       .join("");
+    if (recCountBadge) recCountBadge.textContent = `(${recs.length})`;
+    if (histCountBadge) histCountBadge.textContent = `(${all.length})`;
+  }
 
+  function renderRecordings() {
+    if (!rlist) return;
+    const term = (q?.value || "").trim().toLowerCase();
+    const items = recs.filter((r) =>
+      (r.filename || "").toLowerCase().includes(term),
+    );
+    if (!recs.length) {
+      rlist.innerHTML = `<div class="panel state"><div class="orbit"><svg class="ic"><use href="#i-wave"/></svg></div><h3>No saved recordings yet</h3><p>Record an 8-second clip or analyze an uploaded file — it will stay saved here under your account.</p><a class="btn primary" href="/analyze">Record or upload audio</a></div>`;
+      return;
+    }
+    if (!items.length) {
+      rlist.innerHTML = `<div class="panel state"><h3>No match</h3><p>No saved recording has “${esc(q.value)}” in its file name.</p></div>`;
+      return;
+    }
+    rlist.innerHTML = items
+      .map((r, i) => {
+        const dur = r.duration_s != null ? fmtTime(r.duration_s) : "—";
+        const srcBadge =
+          r.source === "mic"
+            ? `<span class="rec-pill mic">Mic</span>`
+            : `<span class="rec-pill">Upload</span>`;
+        const kBadge =
+          r.predicted_k != null
+            ? `<span class="rec-pill count">≈${esc(r.predicted_k)} ${Number(r.predicted_k) === 1 ? "source" : "sources"}</span>`
+            : "";
+        return `<article class="rec-card" style="animation-delay:${Math.min(i, 10) * 35}ms">
+          <div class="rec-card-top">
+            <div class="hinfo">
+              <div class="rec-title-row">
+                <strong title="${esc(r.filename)}">${esc(r.filename)}</strong>
+                ${srcBadge}${kBadge}
+              </div>
+              <small>${when(r.created_at)} · ${dur} · ${fmtSize(r.size_bytes)}</small>
+            </div>
+            <div class="rec-card-actions">
+              <a class="btn sm primary" href="/analyze?recording=${encodeURIComponent(r.id)}">Load in Analyze</a>
+              <a class="btn sm" href="${esc(r.download_url)}"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></a>
+              <button class="icon-btn" type="button" data-del-rec="${esc(r.id)}" aria-label="Delete ${esc(r.filename)}"><svg class="ic"><use href="#i-trash"/></svg></button>
+            </div>
+          </div>
+          <audio class="rec-audio" controls preload="none" src="${esc(r.route_url)}"></audio>
+        </article>`;
+      })
+      .join("");
+  }
+
+  function renderHistory() {
+    const term = (q?.value || "").trim().toLowerCase();
+    const items = all.filter((h) =>
+      (h.filename || "").toLowerCase().includes(term),
+    );
     if (!all.length) {
       list.innerHTML = `<div class="panel state"><div class="orbit"><svg class="ic"><use href="#i-wave"/></svg></div><h3>Nothing here yet</h3><p>Results appear here after you analyze a recording.</p><a class="btn primary" href="/analyze">Analyze a recording</a></div>`;
       return;
@@ -66,21 +153,57 @@
       .join("");
   }
 
+  function render() {
+    renderStats();
+    renderRecordings();
+    renderHistory();
+  }
+
   async function load() {
     try {
-      const r = await fetch("/api/history", { credentials: "same-origin" });
-      if (r.status === 401) {
+      const [rHist, rRec] = await Promise.all([
+        fetch("/api/history", { credentials: "same-origin" }),
+        fetch("/api/recordings", { credentials: "same-origin" }),
+      ]);
+      if (rHist.status === 401 || rRec.status === 401) {
         location.href = "/login?next=/history";
         return;
       }
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Could not load history.");
-      all = Array.isArray(d.items) ? d.items : [];
+      const dHist = await rHist.json();
+      const dRec = await rRec.json();
+      if (!rHist.ok) throw new Error(dHist.error || "Could not load history.");
+      if (!rRec.ok) throw new Error(dRec.error || "Could not load recordings.");
+      all = Array.isArray(dHist.items) ? dHist.items : [];
+      recs = Array.isArray(dRec.items) ? dRec.items : [];
       render();
+      setTab(activeTab);
     } catch (e) {
-      list.innerHTML = `<div class="panel state err"><h3>Could not load history</h3><p>${esc(e.message)}</p></div>`;
+      const errHtml = `<div class="panel state err"><h3>Could not load your library</h3><p>${esc(e.message)}</p></div>`;
+      if (rlist) rlist.innerHTML = errHtml;
+      list.innerHTML = errHtml;
     }
   }
+
+  rlist?.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-del-rec]");
+    if (!b) return;
+    const id = b.dataset.delRec;
+    if (!confirm("Delete this saved recording permanently?")) return;
+    try {
+      const r = await fetch(`/api/recordings/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf() },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Could not delete recording.");
+      recs = recs.filter((x) => String(x.id) !== String(id));
+      render();
+      toast("Recording deleted.");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
 
   list.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-del]");
@@ -104,7 +227,26 @@
 
   q?.addEventListener("input", render);
 
-  $("#clearAll")?.addEventListener("click", async () => {
+  clearRecsBtn?.addEventListener("click", async () => {
+    if (!recs.length) return;
+    if (!confirm("Permanently delete all saved recordings from your account?")) return;
+    try {
+      const r = await fetch("/api/recordings", {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf() },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Could not clear recordings.");
+      recs = [];
+      render();
+      toast("All saved recordings deleted.");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+
+  clearAllBtn?.addEventListener("click", async () => {
     if (!all.length) return;
     if (!confirm("Clear all saved results from your history?")) return;
     try {
@@ -123,7 +265,7 @@
     }
   });
 
-  $("#exportBtn")?.addEventListener("click", () => {
+  exportBtn?.addEventListener("click", () => {
     if (!all.length) return toast("There is nothing to export yet.");
     const cell = (v) => {
       let s = String(v ?? "");
@@ -153,5 +295,6 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
+  setTab(activeTab);
   load();
 })();
