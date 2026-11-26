@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EchoCount (SANADA) — Project Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 0.72in 0.78in 0.72in 0.78in;
+    @top-left {
+      content: "EchoCount (SANADA) — Acoustics Domain";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #555;
+      border-bottom: 0.5pt solid #ccc;
+      padding-bottom: 3pt;
+    }
+    @top-right {
+      content: "KMEC Project School · Team G1566";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #555;
+      border-bottom: 0.5pt solid #ccc;
+      padding-bottom: 3pt;
+    }
+    @bottom-left {
+      content: "II Year Full-Stack & Cloud Deployment Report";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #666;
+      border-top: 0.5pt solid #ccc;
+      padding-top: 3pt;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      color: #333;
+      font-weight: 600;
+      border-top: 0.5pt solid #ccc;
+      padding-top: 3pt;
+    }
+  }
+  @page :first {
+    @top-left { content: none; }
+    @top-right { content: none; }
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Times New Roman", Times, Georgia, serif;
+    font-size: 9.9pt;
+    line-height: 1.28;
+    color: #111;
+    margin: 0;
+    text-align: justify;
+  }
+
+  /* Title Page */
+  .title-page {
+    page-break-after: always;
+    text-align: center;
+    padding-top: 4pt;
+    display: flex;
+    flex-direction: column;
+    min-height: 242mm;
+    justify-content: space-between;
+  }
+  .logo-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12pt;
+    margin-bottom: 12pt;
+  }
+  .logo-kmec {
+    height: 46pt;
+    width: auto;
+    max-width: 155pt;
+    object-fit: contain;
+  }
+  .logo-ps {
+    height: 58pt;
+    width: auto;
+    object-fit: contain;
+  }
+  .inst-head {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 700;
+    font-size: 15pt;
+    letter-spacing: 0.4pt;
+    color: #0f172a;
+    margin: 0;
+  }
+  .inst-sub {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11pt;
+    color: #c2410c;
+    font-weight: 700;
+    margin: 3pt 0 0 0;
+  }
+  .title-banner {
+    border-top: 2.5pt solid #0f172a;
+    border-bottom: 2.5pt solid #0f172a;
+    padding: 18pt 12pt;
+    margin: 18pt 0;
+    background: #f8fafc;
+  }
+  .title-banner h1 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 18pt;
+    line-height: 1.25;
+    margin: 0 0 6pt 0;
+    color: #0f172a;
+    text-align: center;
+    border: none;
+    padding: 0;
+  }
+  .title-banner .subtitle {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10.5pt;
+    color: #475569;
+    margin: 0;
+  }
+  .meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12pt auto;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.5pt;
+    text-align: left;
+  }
+  .meta-table th, .meta-table td {
+    border: 0.75pt solid #cbd5e1;
+    padding: 6pt 8pt;
+  }
+  .meta-table th {
+    background: #f1f5f9;
+    color: #0f172a;
+    width: 34%;
+  }
+  .title-foot {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.5pt;
+    color: #334155;
+    border-top: 0.75pt solid #cbd5e1;
+    padding-top: 10pt;
+  }
+
+  /* Headings */
+  h1.ch {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12.5pt;
+    color: #0f172a;
+    border-bottom: 1.5pt solid #ea580c;
+    padding-bottom: 2.5pt;
+    margin: 0 0 6pt 0;
+    text-align: left;
+    page-break-after: avoid;
+  }
+  h2 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10.2pt;
+    color: #1e293b;
+    margin: 7pt 0 3pt 0;
+    text-align: left;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.4pt;
+    color: #334155;
+    margin: 5pt 0 2pt 0;
+    text-align: left;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 4.5pt 0; }
+  ul, ol { margin: 1.5pt 0 5pt 0; padding-left: 15pt; }
+  li { margin-bottom: 1.8pt; }
+
+  .pb { page-break-before: always; }
+
+  /* Tables */
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4pt 0 6pt 0;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.9pt;
+    line-height: 1.24;
+    text-align: left;
+    page-break-inside: avoid;
+  }
+  table.data th, table.data td {
+    border: 0.6pt solid #cbd5e1;
+    padding: 2.5pt 4.5pt;
+    vertical-align: top;
+  }
+  table.data th {
+    background: #0f172a;
+    color: #fff;
+    font-weight: 600;
+  }
+  table.data tr:nth-child(even) td { background: #f8fafc; }
+  .tbl-cap {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.2pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 4.5pt 0 2pt 0;
+    text-align: left;
+    page-break-after: avoid;
+  }
+
+  /* Figures */
+  .fig {
+    margin: 5pt 0 6pt 0;
+    padding: 4.5pt 6pt;
+    border: 0.75pt solid #cbd5e1;
+    border-radius: 5pt;
+    background: #ffffff;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .fig svg { max-width: 96%; max-height: 98pt; height: auto; display: block; margin: 0 auto; }
+  .fig-cap {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.9pt;
+    color: #334155;
+    margin-top: 3pt;
+    text-align: center;
+  }
+
+  /* Code & Boxes */
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.1pt;
+    background: #f1f5f9;
+    padding: 0.5pt 2.5pt;
+    border-radius: 2pt;
+  }
+  pre.tree {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 7.5pt;
+    line-height: 1.22;
+    background: #f8fafc;
+    border: 0.75pt solid #cbd5e1;
+    border-left: 3pt solid #ea580c;
+    padding: 4.5pt 7pt;
+    margin: 4pt 0 5pt 0;
+    text-align: left;
+    white-space: pre;
+    page-break-inside: avoid;
+  }
+  .callout {
+    background: #fff7ed;
+    border: 0.75pt solid #fdba74;
+    border-left: 3pt solid #ea580c;
+    padding: 6pt 9pt;
+    margin: 6pt 0 8pt 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  .kpi-row {
+    display: flex;
+    gap: 6pt;
+    margin: 6pt 0 8pt 0;
+    page-break-inside: avoid;
+  }
+  .kpi {
+    flex: 1;
+    border: 0.75pt solid #cbd5e1;
+    border-top: 2.5pt solid #ea580c;
+    border-radius: 4pt;
+    padding: 5pt 6pt;
+    text-align: center;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .kpi b { display: block; font-size: 13pt; color: #0f172a; }
+  .kpi span { font-size: 7.8pt; color: #475569; }
+
+  .toc-list {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.3pt;
+    line-height: 1.5;
+    list-style: none;
+    padding-left: 0;
+    margin: 4pt 0 8pt 0;
+  }
+  .toc-list li {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 0.5pt dotted #cbd5e1;
+    padding: 1.5pt 0;
+  }
+  .toc-list li.sub { padding-left: 14pt; font-size: 8.8pt; color: #334155; }
+
+  .refs {
+    font-size: 9.2pt;
+    line-height: 1.35;
+    padding-left: 18pt;
+  }
+  .refs li { margin-bottom: 3.5pt; }
+
+  .chk-list {
+    list-style: none;
+    padding-left: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9pt;
+  }
+  .chk-list li { margin-bottom: 3pt; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PAGE 1: TITLE PAGE ==================== -->
+<section class="title-page">
+  <div>
+    <div class="logo-row">
+      <img class="logo-kmec" src="assets/kmec_logo.jpg" alt="KMEC Logo">
+      <div>
+        <p class="inst-head">KESHAV MEMORIAL ENGINEERING COLLEGE</p>
+        <p class="inst-sub">Project School · Acoustics Domain (II Year Full-Stack &amp; Cloud)</p>
+      </div>
+      <img class="logo-ps" src="assets/project_school_logo.png" alt="Project School Logo">
+    </div>
+
+    <div class="title-banner">
+      <h1>EchoCount (SANADA): Overlapping Audio Source Counting, Open-Vocabulary Tagging &amp; Query-Conditioned Separation</h1>
+      <p class="subtitle">Final Technical Project Report (5-Week Schedule Alignment · Web, Mobile &amp; AWS Cloud Deployment)</p>
+    </div>
+
+    <table class="meta-table">
+      <tr><th>Project Short Title / Repo</th><td><strong>EchoCount (SANADA)</strong> · <code>https://github.com/25-f2001239/Sanada</code></td></tr>
+      <tr><th>Live Cloud Deployment</th><td><code>https://54-166-236-211.nip.io</code> (AWS EC2 Windows Server 2019 + Caddy HTTPS)</td></tr>
+      <tr><th>Team ID</th><td><strong>G1566</strong></td></tr>
+      <tr><th>Project Guide / Mentor</th><td><strong>P V N Balarama Murthy</strong> (Acoustics Domain)</td></tr>
+      <tr><th>Academic Year &amp; Track</th><td>II Year Project School · Full-Stack Web/Mobile AI Deployment (2026)</td></tr>
+    </table>
+
+    <p class="tbl-cap" style="text-align:center;margin-top:10pt">Team Members, Roll Numbers &amp; Assigned Engineering Roles (Team G1566)</p>
+    <table class="meta-table" style="font-size:8.8pt">
+      <tr><th style="width:20%">Student Name</th><th style="width:20%">Roll Number</th><th style="width:24%">Assigned Role</th><th style="width:36%">Key Responsibilities</th></tr>
+      <tr><td><strong>Harsh</strong></td><td><code>245525733089</code></td><td>Frontend Developer</td><td>UI/UX &amp; responsive design; Auth UI &amp; waveform motion</td></tr>
+      <tr><td><strong>Akshith</strong></td><td><code>245525733076</code></td><td>Backend Developer</td><td>Flask API &amp; SQLite DB; OAuth, Argon2id &amp; security</td></tr>
+      <tr><td><strong>Shiva Kumar</strong></td><td><code>245525733165</code></td><td>Model Trainer</td><td>SourceCountCNN training; Tagger &amp; specialist workflow</td></tr>
+      <tr><td><strong>Abhiram</strong></td><td><code>245525733124</code></td><td>Model Analyzer</td><td>Evaluation &amp; error metrics; Unseen-speaker &amp; dense study</td></tr>
+      <tr><td><strong>Ajay</strong></td><td><code>245525733129</code></td><td>Tester, Reviewer &amp; Analyzer</td><td>End-to-end QA &amp; reviews; Validation &amp; bug investigation</td></tr>
+    </table>
+  </div>
+
+  <div class="title-foot">
+    <strong>Department of Computer Science &amp; Engineering · Keshav Memorial Engineering College (KMEC)</strong><br>
+    All architecture diagrams, API contracts, evaluation metrics, and deployment configurations in this report reflect the verified production codebase pushed to GitHub.
+  </div>
+</section>
+
+<!-- ==================== PAGE 2: ABSTRACT & FRONT MATTER ==================== -->
+<section>
+  <h1 class="ch">Abstract</h1>
+  <p>Estimating the number of simultaneously active sound sources in a single-channel audio mixture, identifying each acoustic event, and isolating clean stems remains a challenging signal-processing problem. While prior research demonstrates strong offline accuracy inside isolated notebooks, real-world adoption is limited by the lack of calibrated uncertainty reporting, open-vocabulary sound recognition, stem quality verification, and accessible web/mobile deployment. This report documents the end-to-end engineering of <strong>EchoCount (SANADA)</strong>, a full-stack web and mobile-responsive acoustic intelligence platform.</p>
+  <p>The system is backed by a deduplicated corpus of <strong>15,559 active audio mixtures</strong> (15,757 raw clips spanning 2–31 overlapping speech and FSD50K everyday sound sources across 13 active folders, with 198 exact-hash duplicates removed and 3 speakers strictly held out for unseen-speaker testing). A unified 16 kHz mono front-end computes a shared <code>[1, 64, 501]</code> Log-Mel spectrogram and fans it out across three parallel PyTorch and HuggingFace inference branches: (1) a custom-trained <code>SourceCountCNN</code> with 30-pass Monte Carlo Dropout and validation calibration; (2) an open-vocabulary tagger fusing a custom dual-head <code>GroupFineTaggerCNN</code> (0.9926 group test mAP) with pretrained AST (527 classes) and CLAP; and (3) ECAPA-TDNN speaker diarization paired with SepFormer (2–3 speakers) and a sharpened <code>IterativeMaskSeparator</code> guarded by correlation, energy-conservation, and re-tagging quality gates.</p>
+  <p>The application is served via Flask, Waitress WSGI, SQLite (Argon2id + Google OAuth 2.0/OIDC, RBAC Admin Dashboard, per-user History, SHA-256 ground-truth comparison, and a Live 2D Neural Architecture Visualizer), and deployed publicly on AWS EC2 Windows Server 2019 with automatic Caddy HTTPS and boot-level persistence. Shared spectrogram caching achieves a 2.70× core latency speedup (175.3 ms to 65.0 ms), and automated regression tests confirm functional, security, and isolation guarantees.</p>
+
+  <h2 style="margin-top:10pt">Table of Contents</h2>
+  <ul class="toc-list">
+    <li><span><strong>Abstract &amp; Front Matter</strong></span><span>2</span></li>
+    <li><span><strong>Chapter 1:</strong> Initiation, Problem Statement &amp; Literature Survey (Week 1)</span><span>3</span></li>
+    <li><span><strong>Chapter 2:</strong> Dataset Collection, Organization &amp; Preprocessing (Week 2)</span><span>4</span></li>
+    <li><span><strong>Chapter 3:</strong> Web/Mobile Application Architecture &amp; Model Hosting (Week 3)</span><span>5</span></li>
+    <li><span><strong>Chapter 4:</strong> Full-Stack Integration, Multi-Role UI &amp; Cloud Deployment (Week 4)</span><span>6</span></li>
+    <li><span><strong>Chapter 5:</strong> Testing, Enhancements &amp; Quality Assurance (Week 5)</span><span>7</span></li>
+    <li><span><strong>Chapter 6:</strong> Conclusion &amp; Future Work (9-Node Hadoop &amp; Spark Migration)</span><span>8</span></li>
+    <li><span><strong>References, Appendices A–B &amp; Verification Checklist</strong></span><span>9</span></li>
+  </ul>
+
+  <div style="display:flex;gap:14pt;margin-top:6pt">
+    <div style="flex:1">
+      <h3 style="margin-top:0">List of Figures</h3>
+      <ul class="toc-list" style="font-size:8.4pt">
+        <li><span>Fig. 1: Audio Signal to Log-Mel Feature Pipeline</span><span>3</span></li>
+        <li><span>Fig. 2: Dataset Split Balance &amp; Per-K Accuracy</span><span>4</span></li>
+        <li><span>Fig. 3: 3-Tier System &amp; 3-Branch ML Architecture</span><span>5</span></li>
+        <li><span>Fig. 4: Multi-Role UI &amp; Mobile Architecture Layout</span><span>6</span></li>
+        <li><span>Fig. 5: Before/After Latency Optimization Chart</span><span>7</span></li>
+        <li><span>Fig. 6: Target 9-Node Hadoop &amp; Spark Migration</span><span>8</span></li>
+      </ul>
+    </div>
+    <div style="flex:1">
+      <h3 style="margin-top:0">List of Tables</h3>
+      <ul class="toc-list" style="font-size:8.4pt">
+        <li><span>Table 1: Comparative Literature Survey (6 Works)</span><span>3</span></li>
+        <li><span>Table 2: Dataset &amp; Zero-Leakage Split Distribution</span><span>4</span></li>
+        <li><span>Table 3: Audio Preprocessing Specification Sheet</span><span>4</span></li>
+        <li><span>Table 4: REST API Routes &amp; Security Controls</span><span>5</span></li>
+        <li><span>Table 5: Cloud Deployment &amp; Multi-Role Stack</span><span>6</span></li>
+        <li><span>Table 6: Automated Unit, Security &amp; E2E Tests</span><span>7</span></li>
+        <li><span>Table 7: Latency &amp; Separation Quality Benchmarks</span><span>7</span></li>
+        <li><span>Table 8: 9-Node Cluster Role Allocation</span><span>8</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PAGE 3: CHAPTER 1 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 1: Initiation, Problem Statement &amp; Literature Survey (Week 1)</h1>
+
+  <h2>1.1 Problem Statement &amp; Application Scope</h2>
+  <p>Single-channel acoustic mixtures frequently contain multiple overlapping human voices and environmental sounds. Counting active sources (<em>K</em>) is an essential precursor to blind source separation, meeting analytics, and acoustic scene monitoring, yet most neural models reside in static research notebooks without calibrated confidence intervals, open-vocabulary labels, or stem verification. <strong>EchoCount</strong> bridges this gap by accepting single-channel audio (WAV, FLAC, MP3, OGG, M4A up to 40 MB / 600 s) and outputting: (i) an estimated source count with decomposed epistemic (MC-Dropout) and aleatoric (softmax) uncertainty; (ii) open-vocabulary sound labels with frame-level time ranges across 559 classes; and (iii) quality-gated separated WAV stems plus an exact energy-conserving residual.</p>
+  <p><strong>Selected Enhancements:</strong> (a) 3-model open-vocab tagging fusion, (b) automated near-copy correlation, energy, and re-tagging quality gates, (c) live 2D Neural Architecture Visualizer (desktop &amp; phone portrait + chimes), (d) Argon2id + Google OAuth RBAC &amp; Admin Dashboard, and (e) SHA-256 ground-truth verification.</p>
+
+  <h2>1.2 Background &amp; Literature Survey</h2>
+  <p class="tbl-cap">Table 1: Comparative Literature Survey of Related Acoustic Counting, Tagging, and Separation Works</p>
+  <table class="data">
+    <thead>
+      <tr><th>Work / Model</th><th>Task Domain</th><th>Core Architecture</th><th>Dataset / Scale</th><th>Key Limitation Addressed by EchoCount</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>CountNet</strong> (Stöter et al., 2018)</td><td>Speaker counting</td><td>CRNN on STFT magnitude</td><td>LibriSpeech (0–10 spk)</td><td>Speech-only; lacks uncertainty bands and general sound tagging.</td></tr>
+      <tr><td><strong>FSD50K</strong> (Fonseca et al., 2021)</td><td>Sound event tagging</td><td>Multi-label CNNs</td><td>51k clips, 200 classes</td><td>Classifies events but does not estimate overlapping source cardinality.</td></tr>
+      <tr><td><strong>AST</strong> (Gong et al., 2021)</td><td>Audio classification</td><td>Vision Transformer on mel patches</td><td>AudioSet (527 classes)</td><td>Strong global tags, no source count or waveform separation.</td></tr>
+      <tr><td><strong>CLAP</strong> (Wu et al., 2023)</td><td>Zero-shot audio-text</td><td>HTSAT + RoBERTa contrastive</td><td>LAION-Audio-630K</td><td>High latency alone; fused selectively in EchoCount for open-vocab recall.</td></tr>
+      <tr><td><strong>SepFormer</strong> (Subakan et al., 2021)</td><td>Speech separation</td><td>Dual-path Transformer masks</td><td>WSJ0-2/3mix (8 kHz)</td><td>Fixed speaker count (2–3); EchoCount routes only verified pure speech to it.</td></tr>
+      <tr><td><strong>ECAPA-TDNN</strong> (Desplanques, 2020)</td><td>Speaker verification</td><td>Channel-attentive TDNN</td><td>VoxCeleb (16 kHz)</td><td>Embeddings only; used in EchoCount for distinct-voice verification.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>1.3 Audio Fundamentals &amp; Feature Exploration</h2>
+  <p>Audio exploration uses <code>soundfile</code>, <code>librosa</code>, and <code>torchaudio</code> to standardize heterogeneous uploads into mono 16 kHz float32 waveforms, inspect amplitude envelopes, and compute 64-band Log-Mel spectrograms (<code>n_fft=1024</code>, <code>hop_length=256</code>, 40–8000 Hz, 80 dB range). Bulk indexing across 15,559 files verifies duration integrity, SHA-256 uniqueness, and harmonic-percussive separation (HPSS) characteristics.</p>
+  <div class="fig" style="padding:3pt 5pt;margin:3.5pt 0 4pt 0">
+    <svg viewBox="0 0 700 105" style="max-height:74pt" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="16" width="135" height="72" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="73" y="34" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Raw Audio Upload</text>
+      <polyline points="18,62 28,48 38,72 48,42 58,76 68,52 78,68 88,45 98,70 108,54 118,64 128,58" fill="none" stroke="#ea580c" stroke-width="1.8"/>
+      <text x="73" y="82" text-anchor="middle" font-family="Consolas" font-size="8" fill="#475569">WAV/MP3/FLAC</text>
+
+      <line x1="141" y1="52" x2="176" y2="52" stroke="#334155" stroke-width="1.5"/>
+      <polygon points="176,48 184,52 176,56" fill="#334155"/>
+
+      <rect x="186" y="16" width="142" height="72" rx="8" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/>
+      <text x="257" y="34" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Decode &amp; Resample</text>
+      <text x="257" y="51" text-anchor="middle" font-family="Consolas" font-size="8.2" fill="#334155">soundfile / librosa</text>
+      <text x="257" y="65" text-anchor="middle" font-family="Consolas" font-size="8.2" fill="#0f172a">16 kHz mono · 8.0 s</text>
+      <text x="257" y="79" text-anchor="middle" font-family="Consolas" font-size="8" fill="#64748b">[128,000 samples]</text>
+
+      <line x1="328" y1="52" x2="363" y2="52" stroke="#334155" stroke-width="1.5"/>
+      <polygon points="363,48 371,52 363,56" fill="#334155"/>
+
+      <rect x="373" y="16" width="148" height="72" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+      <text x="447" y="34" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Shared Log-Mel STFT</text>
+      <rect x="387" y="42" width="120" height="22" rx="3" fill="url(#melGrad)"/>
+      <defs><linearGradient id="melGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#1e1b4b"/><stop offset="45%" stop-color="#ea580c"/><stop offset="100%" stop-color="#facc15"/></linearGradient></defs>
+      <text x="447" y="79" text-anchor="middle" font-family="Consolas" font-size="8" fill="#854d0e">[1, 64, 501] in [-1, 0]</text>
+
+      <line x1="521" y1="52" x2="554" y2="52" stroke="#ca8a04" stroke-width="1.8"/>
+      <polygon points="554,48 562,52 554,56" fill="#ca8a04"/>
+
+      <rect x="564" y="10" width="130" height="25" rx="5" fill="#fff7ed" stroke="#ea580c"/>
+      <text x="629" y="26" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#9a3412">3A. SourceCountCNN</text>
+      <rect x="564" y="40" width="130" height="25" rx="5" fill="#f0fdfa" stroke="#0d9488"/>
+      <text x="629" y="56" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#115e59">3B. Tagger+AST+CLAP</text>
+      <rect x="564" y="70" width="130" height="25" rx="5" fill="#f5f3ff" stroke="#7c3aed"/>
+      <text x="629" y="86" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#5b21b6">3C. ECAPA+SepFormer</text>
+    </svg>
+    <div class="fig-cap">Figure 1: Shared Audio Front-End — Single-Pass Decoding and Log-Mel Feature Extraction Fanning Out to Three Neural Branches.</div>
+  </div>
+
+  <h2>1.4 Project Plan, 5-Week SDLC &amp; Repository Organization</h2>
+  <p><strong>5-Week SDLC:</strong> W1 (framing, survey, audio features) → W2 (dataset audit, zero-leakage splits, training) → W3 (Flask API, HF caching, mobile UI) → W4 (Argon2id/OAuth RBAC, Admin, AWS EC2 + Caddy HTTPS) → W5 (regression tests, 2.7× speedup, portrait arch view, mask sharpening).</p>
+  <pre class="tree" style="font-size:7pt;line-height:1.15;padding:3.5pt 6pt;margin:3pt 0 0 0">Sanada/
+├── app.py, auth.py, audio.py, config.py, data.py     # Flask app, RBAC auth, audio I/O, GT index
+├── counting.py, tagging.py, separation.py, quality.py # 3-branch ML inference &amp; quality gates
+├── checkpoints/ (source_count_clip.pt, tagger.pt, separator_iterative.pt — SHA-256 verified)
+├── models/      (ast-audioset, clap-htsat-unfused, sepformer-wsj02/03mix, spkrec-ecapa-voxceleb)
+├── templates/ &amp; static/ (analyze, archview.js, history, admin, evaluation, how, docs, style.css)
+└── scripts/ (download_models, train, evaluate) · evaluation/ · tests/ &amp; test_templates.py</pre>
+</section>
+
+<!-- ==================== PAGE 4: CHAPTER 2 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 2: Dataset Collection, Organization &amp; Preprocessing (Week 2)</h1>
+
+  <h2>2.1 Dataset Identification &amp; Verification</h2>
+  <p>EchoCount utilizes the <strong>SANADA Combined Acoustic &amp; Speech Mixtures</strong> corpus alongside a held-out <strong>FSD50K Isolated Subset</strong> (480 clips across 16 everyday sound classes, Zenodo <code>4060432</code>, CC-BY). Automated auditing in <code>data.py</code> scanned all 14 mixture folders, identified <strong>15,757 raw WAV mixtures</strong>, and verified file integrity and exact content uniqueness via SHA-256 hashing. One redundant folder (<code>Org_Fsd_Mix/Org_Mix_4_Sounds_Variable</code>) and <strong>198 exact-hash duplicate mixtures</strong> were excluded prior to splitting, leaving <strong>15,559 clean active mixtures</strong> (15,341 unique hashes) spanning 2 to 31 simultaneous sources across 5 coarse acoustic groups and 32 fine FSD domain classes.</p>
+
+  <h2>2.2 Folder Architecture &amp; Zero-Leakage Splits</h2>
+  <p>Each mixture family (<code>FSD_Mix_{2,3,15,20,25,Variable}_Sounds</code> and <code>Org_Mix_{2,3,4,6,9}_Sounds</code>) contains isolated <code>train/</code>, <code>val/</code>, and <code>test/</code> directories paired with a <code>metadata.csv</code> schema (<code>mixture_path</code>, <code>num_speakers</code>/<code>num_sources</code>, <code>speaker_labels</code>, <code>source_files</code>). Fixed random seed <code>42</code> ensures deterministic reproducibility. To evaluate true speaker generalization without identity leakage, 3 of the 13 unique speakers (<code>Speaker_4_1</code>, <code>Speaker8</code>, <code>Speaker9</code>; <code>n = 352</code> mixtures) are strictly isolated in a held-out unseen-speaker split. Ground-truth verification in production uses an indexed SHA-256 registry (<code>data/ground_truth_index.json</code>, 15,559 entries) rather than filename heuristics.</p>
+
+  <p class="tbl-cap">Table 2: Active Dataset &amp; Zero-Leakage Split Distribution (15,559 Mixtures)</p>
+  <table class="data">
+    <thead>
+      <tr><th>Dataset Family</th><th>Folders</th><th>Train</th><th>Validation</th><th>Test</th><th>Total Active</th><th>Source Range (K)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Speech Mixtures</strong> (<code>Org_Mix_*</code>)</td><td>7 active (1 dup excl.)</td><td>6,999</td><td>695</td><td>695</td><td><strong>8,389</strong></td><td>2 – 9 speakers</td></tr>
+      <tr><td><strong>Acoustic Mixtures</strong> (<code>FSD_Mix_*</code>)</td><td>6 active</td><td>5,990</td><td>590</td><td>590</td><td><strong>7,170</strong></td><td>2 – 31 sounds</td></tr>
+      <tr><td><strong>Combined Active Corpus</strong></td><td><strong>13 active</strong></td><td><strong>12,989</strong></td><td><strong>1,285</strong></td><td><strong>1,285</strong></td><td><strong>15,559</strong></td><td><strong>2 – 31 sources</strong></td></tr>
+      <tr><td><strong>Held-Out Unseen Speakers</strong></td><td>3 isolated speakers</td><td>0</td><td>0</td><td>352</td><td><strong>352</strong></td><td>Unseen-speaker eval</td></tr>
+      <tr><td><strong>FSD50K Isolated Eval Subset</strong></td><td>16 sound classes</td><td>—</td><td>—</td><td>480</td><td><strong>480</strong></td><td>Open-vocab &amp; sep bench</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2.3 Preprocessing &amp; Augmentation Pipeline</h2>
+  <p>Every audio file passes through a deterministic preprocessing pipeline enforced identically during training (<code>scripts/train.py</code>) and live inference (<code>audio.py</code>), with checkpoint metadata assertions preventing feature drift. During training, SpecAugment time/frequency masking, random gain perturbation, and balanced class sampling mitigate sparse-vs-dense imbalance, sustaining PyTorch DataLoader throughput above 12 batches/sec on CPU.</p>
+
+  <p class="tbl-cap">Table 3: Audio Preprocessing &amp; Tensor Alignment Specification Sheet</p>
+  <table class="data">
+    <thead>
+      <tr><th>Parameter</th><th>Specification</th><th>Parameter</th><th>Specification</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Sample Rate / Channels</td><td>16,000 Hz · Mono (float32)</td><td>Mel Bands &amp; Frequency Range</td><td>64 mels · 40 Hz – 8,000 Hz</td></tr>
+      <tr><td>Analysis Window</td><td>8.0 s centred (128,000 samples)</td><td>Log Scaling &amp; Normalization</td><td><code>power_to_db(top_db=80)/80</code> ∈ [-1, 0]</td></tr>
+      <tr><td>STFT Window / Hop</td><td><code>n_fft=1024</code> (64 ms) · <code>hop=256</code> (16 ms)</td><td>Output Tensor Shape</td><td><code>[1, 64, 501]</code> (32,064 TF cells)</td></tr>
+      <tr><td>Random Seed / Policy</td><td><code>seed=42</code> · zero-pad clips &lt; 8 s</td><td>Augmentations (Train Only)</td><td>SpecAugment, gain jitter, additive noise</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 680 155" xmlns="http://www.w3.org/2000/svg">
+      <!-- Left: Split Balance -->
+      <text x="165" y="16" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Dataset Split Balance (15,559 Active)</text>
+      <text x="14" y="48" font-family="Arial" font-size="8.5" fill="#334155">Speech</text>
+      <rect x="64" y="36" width="182" height="18" fill="#ea580c"/><text x="155" y="49" text-anchor="middle" font-family="Arial" font-size="8" fill="#fff">Train 6,999</text>
+      <rect x="246" y="36" width="24" height="18" fill="#f59e0b"/>
+      <rect x="270" y="36" width="24" height="18" fill="#0d9488"/>
+      <text x="298" y="49" font-family="Consolas" font-size="8" fill="#334155">8,389</text>
+
+      <text x="14" y="78" font-family="Arial" font-size="8.5" fill="#334155">FSD</text>
+      <rect x="64" y="66" width="156" height="18" fill="#ea580c"/><text x="142" y="79" text-anchor="middle" font-family="Arial" font-size="8" fill="#fff">Train 5,990</text>
+      <rect x="220" y="66" width="21" height="18" fill="#f59e0b"/>
+      <rect x="241" y="66" width="21" height="18" fill="#0d9488"/>
+      <text x="268" y="79" font-family="Consolas" font-size="8" fill="#334155">7,170</text>
+
+      <rect x="64" y="102" width="10" height="8" fill="#ea580c"/><text x="78" y="109" font-family="Arial" font-size="8" fill="#334155">Train (83.5%)</text>
+      <rect x="146" y="102" width="10" height="8" fill="#f59e0b"/><text x="160" y="109" font-family="Arial" font-size="8" fill="#334155">Val (8.3%)</text>
+      <rect x="214" y="102" width="10" height="8" fill="#0d9488"/><text x="228" y="109" font-family="Arial" font-size="8" fill="#334155">Test (8.3%)</text>
+      <text x="165" y="136" text-anchor="middle" font-family="Arial" font-size="8" fill="#64748b">198 exact-hash duplicates removed pre-split</text>
+
+      <!-- Divider -->
+      <line x1="342" y1="12" x2="342" y2="144" stroke="#e2e8f0" stroke-width="1"/>
+
+      <!-- Right: Per-K Accuracy -->
+      <text x="512" y="16" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Held-Out Exact Accuracy vs. Source Count K</text>
+      <line x1="378" y1="120" x2="660" y2="120" stroke="#94a3b8" stroke-width="1"/>
+      <!-- Bars: K=2 (77.8%), K=3 (73.0%), K=4 (56%), K=6 (50%), K=9 (18%), K=15 (6%) -->
+      <rect x="392" y="42" width="30" height="78" rx="3" fill="#0d9488"/><text x="407" y="38" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">78%</text><text x="407" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K=2</text>
+      <rect x="436" y="47" width="30" height="73" rx="3" fill="#0d9488"/><text x="451" y="43" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">73%</text><text x="451" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K=3</text>
+      <rect x="480" y="64" width="30" height="56" rx="3" fill="#f59e0b"/><text x="495" y="60" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">56%</text><text x="495" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K=4</text>
+      <rect x="524" y="70" width="30" height="50" rx="3" fill="#f59e0b"/><text x="539" y="66" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">50%</text><text x="539" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K=6</text>
+      <rect x="568" y="102" width="30" height="18" rx="3" fill="#ea580c"/><text x="583" y="98" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">18%</text><text x="583" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K=9</text>
+      <rect x="612" y="112" width="30" height="8" rx="3" fill="#dc2626"/><text x="627" y="108" text-anchor="middle" font-family="Consolas" font-size="7.8" fill="#0f172a">8%</text><text x="627" y="133" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">K≥15</text>
+      <text x="512" y="148" text-anchor="middle" font-family="Arial" font-size="7.8" fill="#64748b">Sparse regime (K≤6) drives separation eligibility; dense regime (K≥9) surfaces saturation warning</text>
+    </svg>
+    <div class="fig-cap">Figure 2: Dataset Split Distribution (Left) and Measured Held-Out Counting Accuracy by Source Cardinality K (Right).</div>
+  </div>
+</section>
+
+<!-- ==================== PAGE 5: CHAPTER 3 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 3: Web/Mobile Application Architecture &amp; Model Hosting (Week 3)</h1>
+
+  <h2>3.1 System Architecture &amp; Data Flow</h2>
+  <p>EchoCount implements a clean 3-tier architecture separating the responsive web/mobile client, the Python/Flask REST API and RBAC layer, and the 3-branch PyTorch + HuggingFace inference engine. Heavy stem separation is decoupled onto a background <code>ThreadPoolExecutor</code> so analysis responses return in ~1.7 s while separation jobs stream status via polling.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 700 170" xmlns="http://www.w3.org/2000/svg">
+      <!-- Tier 1 -->
+      <rect x="8" y="14" width="155" height="142" rx="8" fill="#f8fafc" stroke="#0f172a" stroke-width="1.5"/>
+      <text x="85" y="32" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Tier 1: Web &amp; Mobile UI</text>
+      <text x="85" y="50" text-anchor="middle" font-family="Arial" font-size="8.2" fill="#334155">HTML5 · CSS3 · Vanilla JS</text>
+      <rect x="18" y="60" width="135" height="22" rx="4" fill="#fff" stroke="#cbd5e1"/><text x="85" y="74" text-anchor="middle" font-family="Arial" font-size="8" fill="#0f172a">Analysis + WaveSurfer</text>
+      <rect x="18" y="88" width="135" height="22" rx="4" fill="#fff7ed" stroke="#ea580c"/><text x="85" y="102" text-anchor="middle" font-family="Arial" font-size="8" fill="#9a3412">Live 2D Architecture View</text>
+      <rect x="18" y="116" width="135" height="22" rx="4" fill="#fff" stroke="#cbd5e1"/><text x="85" y="130" text-anchor="middle" font-family="Arial" font-size="8" fill="#0f172a">History · Admin · Eval</text>
+
+      <!-- Arrow 1->2 -->
+      <line x1="163" y1="85" x2="205" y2="85" stroke="#0f172a" stroke-width="1.6"/>
+      <polygon points="205,81 213,85 205,89" fill="#0f172a"/>
+      <text x="186" y="76" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#0d9488">HTTPS</text>
+
+      <!-- Tier 2 -->
+      <rect x="215" y="14" width="195" height="142" rx="8" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+      <text x="312" y="32" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#115e59">Tier 2: API, Auth &amp; Proxy</text>
+      <text x="312" y="48" text-anchor="middle" font-family="Consolas" font-size="8" fill="#334155">Caddy HTTPS → Waitress + Flask</text>
+      <rect x="226" y="58" width="173" height="22" rx="4" fill="#fff" stroke="#99f6e4"/><text x="312" y="72" text-anchor="middle" font-family="Arial" font-size="8" fill="#0f172a">Argon2id + Google OAuth 2.0</text>
+      <rect x="226" y="86" width="173" height="22" rx="4" fill="#fff" stroke="#99f6e4"/><text x="312" y="100" text-anchor="middle" font-family="Arial" font-size="8" fill="#0f172a">RBAC · CSRF · Rate Limiter</text>
+      <rect x="226" y="114" width="173" height="28" rx="4" fill="#fff" stroke="#99f6e4"/><text x="312" y="126" text-anchor="middle" font-family="Arial" font-size="8" fill="#0f172a">SQLite (users, sessions, analyses)</text>
+      <text x="312" y="137" text-anchor="middle" font-family="Consolas" font-size="7.3" fill="#64748b">SHA-256 GT Registry (15,559 files)</text>
+
+      <!-- Arrow 2->3 -->
+      <line x1="410" y1="85" x2="452" y2="85" stroke="#0f172a" stroke-width="1.6"/>
+      <polygon points="452,81 460,85 452,89" fill="#0f172a"/>
+      <text x="433" y="76" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#ca8a04">Log-Mel</text>
+
+      <!-- Tier 3 -->
+      <rect x="462" y="14" width="230" height="142" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="577" y="32" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#9a3412">Tier 3: 3-Branch Inference Engine</text>
+      <rect x="474" y="42" width="206" height="30" rx="4" fill="#fff" stroke="#fdba74"/>
+      <text x="577" y="54" text-anchor="middle" font-family="Arial" font-size="8.2" font-weight="700" fill="#9a3412">3A. SourceCountCNN (checkpoints/)</text>
+      <text x="577" y="66" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#475569">4×Conv + MLP · 30× MC-Dropout</text>
+
+      <rect x="474" y="78" width="206" height="30" rx="4" fill="#fff" stroke="#5eead4"/>
+      <text x="577" y="90" text-anchor="middle" font-family="Arial" font-size="8.2" font-weight="700" fill="#115e59">3B. Open-Vocab Tagger (559 cls)</text>
+      <text x="577" y="102" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#475569">GroupFineTagger + AST-527 + CLAP</text>
+
+      <rect x="474" y="114" width="206" height="32" rx="4" fill="#fff" stroke="#c4b5fd"/>
+      <text x="577" y="126" text-anchor="middle" font-family="Arial" font-size="8.2" font-weight="700" fill="#5b21b6">3C. Diarization &amp; Separation</text>
+      <text x="577" y="138" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#475569">ECAPA + SepFormer + MaskNet + Gates</text>
+    </svg>
+    <div class="fig-cap">Figure 3: Three-Tier System Architecture Connecting Responsive Clients, Authenticated Flask API, and the 3-Branch ML Engine.</div>
+  </div>
+
+  <h2>3.2 Frontend &amp; Mobile UI Strategy</h2>
+  <p>The frontend uses semantic Jinja2 templates, modular vanilla ES6 JavaScript, and responsive CSS Grid/Flexbox with dedicated tablet (<code>≤ 760px</code>) and phone (<code>≤ 520px</code>) breakpoints. Mobile constraints are explicitly addressed: (i) zero horizontal overflow (<code>overflow-x: clip</code>), swipeable horizontal tab strips, and full-width 50/50 touch buttons; (ii) the Live 2D Architecture Canvas switches dynamically from a <code>1200×620</code> horizontal desktop view to a native <code>440×1272</code> vertical portrait diagram on phones; (iii) long tag lists and Ground Truth chip groups render inside compact scrollable containers; and (iv) boot-stamped cache-busting query parameters (<code>?v={{ asset_v }}</code>) ensure mobile browsers always fetch current assets.</p>
+
+  <h2>3.3 Backend API Design &amp; Security</h2>
+  <p class="tbl-cap">Table 4: Core REST API Routes, Payloads, and Security Controls</p>
+  <table class="data">
+    <thead>
+      <tr><th>Endpoint</th><th>Method</th><th>Auth / Guard</th><th>Payload &amp; Function</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>/api/analyze</code></td><td>POST</td><td>Login + Rate limit</td><td><code>multipart/form-data</code> (WAV/MP3/FLAC ≤40 MB) → count, uncertainty, tags, speakers, GT.</td></tr>
+      <tr><td><code>/api/separate</code> &amp; <code>/api/separate/&lt;id&gt;</code></td><td>POST / GET</td><td>Login + Job Owner</td><td>JSON <code>{job_id}</code> → async SepFormer or IterativeMaskSeparator + quality gate polling.</td></tr>
+      <tr><td><code>/api/stem/&lt;id&gt;/&lt;f&gt;</code> &amp; <code>/download/&lt;id&gt;.zip</code></td><td>GET</td><td>Login + Job Owner</td><td>Streams isolated WAV stems or verified ZIP archive (blocked if quality gate fails).</td></tr>
+      <tr><td><code>/api/history</code> &amp; <code>/api/history/&lt;id&gt;</code></td><td>GET / DEL</td><td>Login + CSRF</td><td>Per-user analysis history isolation; soft-delete preserves Admin Activity log.</td></tr>
+      <tr><td><code>/api/evaluation</code></td><td>GET</td><td>Admin RBAC (403/404)</td><td>Returns held-out test metrics from <code>evaluation/results.json</code> &amp; separation benchmarks.</td></tr>
+      <tr><td><code>/api/admin/*</code></td><td>GET/POST/DEL</td><td>Admin RBAC + CSRF</td><td>Overview analytics, user role promote/demote, admin invites, disable/revoke, CSV, audit.</td></tr>
+      <tr><td><code>/api/health</code> &amp; <code>/api/public-stats</code></td><td>GET</td><td>Public</td><td>Live checkpoint readiness and aggregated public benchmark summary.</td></tr>
+      <tr><td><code>/auth/*</code> &amp; <code>/auth/oauth/google</code></td><td>GET / POST</td><td>CSRF + Rate limit</td><td>Argon2id sign-in/register/reset and Google OIDC callback with HttpOnly SameSite cookie.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3.4 Model Hosting &amp; Cloud Retrieval</h2>
+  <p>Trained EchoCount checkpoints (<code>source_count_clip.pt</code> 8.24 MB, <code>tagger.pt</code> 4.14 MB, <code>separator_iterative.pt</code> 0.46 MB) are SHA-256 verified against <code>checkpoints_manifest.json</code> and versioned in git. Large pretrained HuggingFace models (~1.2 GB total: <code>MIT/ast-finetuned-audioset-10-10-0.4593</code>, <code>laion/clap-htsat-unfused</code>, <code>speechbrain/sepformer-wsj02mix</code> / <code>wsj03mix</code>, and <code>speechbrain/spkrec-ecapa-voxceleb</code>) are retrieved and cached locally on server provisioning via <code>scripts/download_models.py</code> with graceful fallback if offline.</p>
+</section>
+
+<!-- ==================== PAGE 6: CHAPTER 4 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 4: Full-Stack Integration, Multi-Role UI &amp; Cloud Deployment (Week 4)</h1>
+
+  <h2>4.1 Multi-Role Frontend Architecture</h2>
+  <p>EchoCount enforces strict server-side and template-level separation between anonymous visitors, authenticated end-users, and administrators:</p>
+  <ul>
+    <li><strong>End-User Prediction Portal (<code>/analyze</code>, <code>/history</code>):</strong> Supports drag-and-drop uploads, synthetic 1–4 source test generators, interactive waveform playback, and a toggle between <em>Analysis View</em> (instant ~1.7 s results, Ground Truth comparison, on-demand stem separation) and <em>Live Architecture View</em> (choreographed 1 s/step signal visualization with custom step &amp; completion chimes). <code>/history</code> displays strictly the logged-in user's analyses with search, CSV export, and per-account clearing.</li>
+    <li><strong>Administrator &amp; Evaluation Portal (<code>/admin</code>, <code>/evaluation</code>):</strong> Hidden from non-admins (returning HTTP 404 on pages and 403 on APIs). Provides 5 tabs: <em>Overview</em> (DAU/WAU, active sessions, 14-day bar charts, K-histogram, GT accuracy), <em>Users</em> (promote/demote admins, pre-authorized email invites, disable/sign-out/delete, CSV export), <em>Activity</em> (cross-user analysis stream), <em>Audit Log</em> (immutable admin action trail), and <em>System</em> (uptime, checkpoints, index count, storage). <code>/evaluation</code> renders held-out scatter plots, per-K tables, and real-room benchmarks.</li>
+    <li><strong>Supporting &amp; Analytical Pages (<code>/</code>, <code>/how</code>, <code>/docs</code>):</strong> Present interactive methodology walkthroughs, dataset audit tables, and REST API documentation backed by <code>evaluation/public_summary.json</code>.</li>
+  </ul>
+
+  <h2>4.2 Full-Stack API Wiring &amp; Cloud Deployment Stack</h2>
+  <p>Asynchronous XHR/Fetch calls drive live upload progress bars, stage badges (Decode → Count → Tag → Separate → ZIP), error toasts, and CSRF-protected mutations. For public cloud hosting, the application is deployed on an <strong>AWS EC2 Windows Server 2019</strong> instance (<code>t3.large</code>, 8 GB RAM, Elastic IP <code>54.166.236.211</code>) behind a <strong>Caddy</strong> reverse proxy providing automatic Let's Encrypt TLS on <code>https://54-166-236-211.nip.io</code>. Flask runs under <strong>Waitress WSGI</strong> (4 threads, trusting Caddy's <code>X-Forwarded-*</code> headers via <code>ProxyFix</code>), and two Windows <code>SYSTEM</code> boot tasks (<code>EchoCountServer</code> and <code>EchoCountHTTPS</code>) guarantee automatic startup after any EC2 stop/start or reboot without RDP login.</p>
+
+  <p class="tbl-cap">Table 5: Production Cloud Deployment &amp; Multi-Role Stack Configuration</p>
+  <table class="data">
+    <thead>
+      <tr><th>Layer</th><th>Technology / Configuration</th><th>Production Role &amp; Security Hygiene</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cloud Compute &amp; IP</td><td>AWS EC2 Windows Server 2019 (<code>t3.large</code>)</td><td>Elastic IP <code>54.166.236.211</code>; Security Group allows 443/80 (public) &amp; 3389 (admin).</td></tr>
+      <tr><td>HTTPS Reverse Proxy</td><td>Caddy v2 (<code>EchoCountHTTPS</code> boot task)</td><td>Automatic Let's Encrypt TLS on <code>https://54-166-236-211.nip.io</code> → <code>127.0.0.1:5000</code>.</td></tr>
+      <tr><td>WSGI &amp; App Server</td><td>Waitress 3.0 + Flask 3.1 (<code>EchoCountServer</code>)</td><td>4 worker threads, <code>ProxyFix</code>, <code>ECHOCOUNT_COOKIE_SECURE=1</code>, logs to <code>logs/server.log</code>.</td></tr>
+      <tr><td>Auth &amp; Database</td><td>SQLite + Argon2id + Google OAuth 2.0/OIDC</td><td><code>.env</code> secrets gitignored; bootstrap admin via <code>ECHOCOUNT_ADMIN_EMAILS</code>.</td></tr>
+      <tr><td>Local / Linux Parity</td><td><code>Dockerfile</code> + <code>Procfile</code> + <code>.venv</code></td><td>Container-ready Linux image for Ubuntu/ECS/Cloud Run deployments.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 700 132" xmlns="http://www.w3.org/2000/svg">
+      <!-- Desktop Mockup -->
+      <rect x="8" y="8" width="212" height="114" rx="7" fill="#18181b" stroke="#334155" stroke-width="1.2"/>
+      <rect x="16" y="16" width="196" height="14" rx="3" fill="#27272a"/><text x="114" y="26" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#f4f4f5">End-User Portal (/analyze)</text>
+      <rect x="16" y="36" width="84" height="78" rx="4" fill="#27272a"/><text x="58" y="54" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#a1a1aa">Upload + Player</text><text x="58" y="72" text-anchor="middle" font-family="Consolas" font-size="7" fill="#ea580c">Waveform Seek</text><rect x="26" y="92" width="64" height="14" rx="7" fill="#f4f4f5"/><text x="58" y="102" text-anchor="middle" font-family="Arial" font-size="7" font-weight="700" fill="#0f172a">Analyze</text>
+      <rect x="106" y="36" width="106" height="32" rx="4" fill="#09090b" stroke="#ea580c"/><text x="159" y="55" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">≈3 sources</text>
+      <rect x="106" y="73" width="106" height="41" rx="4" fill="#27272a"/><text x="159" y="87" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#2dd4bf">GT Match · Scroll Chips</text><text x="159" y="102" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#a1a1aa">Stems + Quality Gates</text>
+
+      <!-- Admin Mockup -->
+      <rect x="234" y="8" width="212" height="114" rx="7" fill="#18181b" stroke="#0d9488" stroke-width="1.2"/>
+      <rect x="242" y="16" width="196" height="14" rx="3" fill="#134e4a"/><text x="340" y="26" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#ccfbf1">Admin Portal (/admin · RBAC)</text>
+      <rect x="242" y="36" width="46" height="22" rx="3" fill="#27272a"/><text x="265" y="50" text-anchor="middle" font-family="Consolas" font-size="7" fill="#fff">Users</text>
+      <rect x="292" y="36" width="46" height="22" rx="3" fill="#27272a"/><text x="315" y="50" text-anchor="middle" font-family="Consolas" font-size="7" fill="#fff">24h Act</text>
+      <rect x="342" y="36" width="46" height="22" rx="3" fill="#27272a"/><text x="365" y="50" text-anchor="middle" font-family="Consolas" font-size="7" fill="#fff">GT Acc</text>
+      <rect x="392" y="36" width="46" height="22" rx="3" fill="#27272a"/><text x="415" y="50" text-anchor="middle" font-family="Consolas" font-size="7" fill="#fff">Audit</text>
+      <rect x="242" y="64" width="196" height="50" rx="4" fill="#27272a"/><text x="340" y="81" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#e4e4e7">Promote/Demote · Admin Invites</text><text x="340" y="96" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#94a3b8">All-User Activity · System Health · Eval</text>
+
+      <!-- Mobile Portrait Arch View -->
+      <rect x="466" y="8" width="96" height="114" rx="10" fill="#18181b" stroke="#ea580c" stroke-width="1.3"/>
+      <text x="514" y="21" text-anchor="middle" font-family="Arial" font-size="7" font-weight="700" fill="#f4f4f5">Phone Arch View</text>
+      <rect x="476" y="27" width="76" height="15" rx="3" fill="#27272a" stroke="#ea580c"/><text x="514" y="37" text-anchor="middle" font-family="Consolas" font-size="6.5" fill="#fff">1. Decode</text>
+      <rect x="476" y="47" width="76" height="15" rx="3" fill="#27272a" stroke="#f59e0b"/><text x="514" y="57" text-anchor="middle" font-family="Consolas" font-size="6.5" fill="#fde047">2. Log-Mel</text>
+      <rect x="476" y="67" width="76" height="28" rx="3" fill="#27272a" stroke="#0d9488"/><text x="514" y="79" text-anchor="middle" font-family="Consolas" font-size="6.2" fill="#5eead4">3A/3B/3C Models</text><text x="514" y="90" text-anchor="middle" font-family="Consolas" font-size="6" fill="#a78bfa">(440×1272)</text>
+      <rect x="476" y="100" width="76" height="15" rx="3" fill="#27272a" stroke="#84cc16"/><text x="514" y="110" text-anchor="middle" font-family="Consolas" font-size="6.5" fill="#bef264">4. Fusion</text>
+
+      <!-- Live URL Badge -->
+      <rect x="576" y="22" width="116" height="86" rx="7" fill="#f0fdfa" stroke="#0d9488"/>
+      <text x="634" y="42" text-anchor="middle" font-family="Arial" font-size="8.2" font-weight="700" fill="#115e59">Verified Live</text>
+      <text x="634" y="58" text-anchor="middle" font-family="Consolas" font-size="7" fill="#0f172a">54-166-236-211</text>
+      <text x="634" y="70" text-anchor="middle" font-family="Consolas" font-size="7" fill="#0f172a">.nip.io (HTTPS)</text>
+      <text x="634" y="90" text-anchor="middle" font-family="Arial" font-size="7.3" fill="#0d9488">Auto-Boot Active</text>
+    </svg>
+    <div class="fig-cap">Figure 4: Multi-Role Interface Blueprint — End-User Portal, RBAC Admin Dashboard, and Portrait Mobile Architecture View.</div>
+  </div>
+</section>
+
+<!-- ==================== PAGE 7: CHAPTER 5 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 5: Testing, Enhancements &amp; Quality Assurance (Week 5)</h1>
+
+  <h2>5.1 Comprehensive Testing Strategy &amp; Execution</h2>
+  <p>Automated verification is implemented in <code>test_templates.py</code> and <code>tests/golden_check.py</code>, exercising taxonomy integrity, windowed separation quality gates, RBAC enforcement, CSRF protection, per-user history isolation, and 5-clip end-to-end API regression. All frontend JavaScript modules are additionally verified with <code>node --check</code>.</p>
+
+  <p class="tbl-cap">Table 6: Automated Unit, Integration, Security &amp; End-to-End Test Matrix</p>
+  <table class="data">
+    <thead>
+      <tr><th>Test Suite / Case</th><th>Scope Verified</th><th>Key Assertion / Metric</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>test_taxonomy_consistency</code></td><td>Taxonomy, <code>tagger.pt</code>, GT index</td><td>Zero class/group mismatch across 32 FSD classes</td><td><strong>PASS</strong></td></tr>
+      <tr><td><code>test_quality_gates_and_windowing</code></td><td>14 s windowed separation + gates</td><td><code>corr = 0.0762 &lt; 0.90</code>, Energy SNR <code>151.8 dB</code></td><td><strong>PASS</strong></td></tr>
+      <tr><td><code>test_templates_and_routes</code></td><td>Public &amp; gated routes</td><td>Public 200; anon <code>/evaluation</code> &amp; <code>/admin</code> → 302/401</td><td><strong>PASS</strong></td></tr>
+      <tr><td><code>test_admin_access_and_management</code></td><td>RBAC, CSRF, invites, history</td><td>User 404/403; promote/demote/disable; history isolated</td><td><strong>PASS</strong></td></tr>
+      <tr><td><code>test_expo_ready_pages_and_privacy</code></td><td>Public stats &amp; job TTL cleanup</td><td>No PII exposed; orphaned job folders swept on boot</td><td><strong>PASS</strong></td></tr>
+      <tr><td><code>test_auth_security_and_ground_truth</code></td><td>Argon2id, OAuth, SHA-256 GT</td><td>Cross-user job isolation (404); exact GT hash match</td><td><strong>PASS</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2>5.2 Inference Latency Optimization &amp; Model Benchmarks</h2>
+  <p>Profiling revealed redundant Mel-spectrogram recomputation between the Counter and Domain Tagger plus synchronous blocking during separation. Sharing one precomputed <code>[1, 64, 501]</code> Log-Mel tensor across branches and moving separation to on-demand background execution reduced core <code>/api/analyze</code> compute from <strong>175.3 ms to 65.0 ms (2.70× speedup)</strong>. On the 1,285-clip held-out test set, EchoCount achieves <strong>Speech MAE 0.80</strong> (78.9% within ±1), <strong>Group Tagging mAP 0.9926</strong>, <strong>Fine 32-Class mAP 0.8052</strong>, and <strong>AST+CLAP Open-Vocab AP 0.9068</strong>.</p>
+
+  <p class="tbl-cap">Table 7: Before/After Latency Optimization (8 s Clip, 30 MC Passes, CPU) &amp; Separation Refinement</p>
+  <table class="data">
+    <thead>
+      <tr><th>Pipeline Stage / Metric</th><th>Before Optimization</th><th>After Optimization</th><th>Improvement</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Count (30 MC-Dropout passes)</td><td>127.8 ms</td><td>49.8 ms</td><td><strong>2.57× faster</strong></td></tr>
+      <tr><td>Domain Tagger (<code>GroupFineTaggerCNN</code>)</td><td>35.8 ms</td><td>3.5 ms</td><td><strong>10.2× faster</strong> (shared Mel)</td></tr>
+      <tr><td>Core <code>/api/analyze</code> (Decode + Count + Tag)</td><td>175.3 ms</td><td>65.0 ms</td><td><strong>2.70× faster</strong></td></tr>
+      <tr><td>Full Open-Vocab Analysis (incl. AST+CLAP+ECAPA)</td><td>~2.8 s (with sync sep)</td><td>1.74 s (sep on-demand)</td><td>Non-blocking UX</td></tr>
+      <tr><td>Mixed Separation (<code>FSD_Mix_2</code> stem–mix corr)</td><td>0.906 (FAIL &gt; 0.90)</td><td>0.816 (PASS · 149.7 dB SNR)</td><td>Sharpened mask + 35% neural</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 680 124" xmlns="http://www.w3.org/2000/svg">
+      <text x="340" y="15" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="700" fill="#0f172a">Before vs. After Core Inference Latency (ms, 8 s Audio Clip, Windows CPU)</text>
+      <!-- Row 1: Count -->
+      <text x="12" y="42" font-family="Arial" font-size="8.5" fill="#334155">Count (30× MC)</text>
+      <rect x="120" y="31" width="332" height="10" rx="2" fill="#94a3b8"/><text x="458" y="39" font-family="Consolas" font-size="8" fill="#475569">127.8 ms</text>
+      <rect x="120" y="43" width="129" height="10" rx="2" fill="#ea580c"/><text x="255" y="51" font-family="Consolas" font-size="8" font-weight="700" fill="#9a3412">49.8 ms (2.57×)</text>
+      <!-- Row 2: Domain Tag -->
+      <text x="12" y="74" font-family="Arial" font-size="8.5" fill="#334155">Domain Tagger</text>
+      <rect x="120" y="63" width="93" height="10" rx="2" fill="#94a3b8"/><text x="219" y="71" font-family="Consolas" font-size="8" fill="#475569">35.8 ms</text>
+      <rect x="120" y="75" width="10" height="10" rx="2" fill="#0d9488"/><text x="136" y="83" font-family="Consolas" font-size="8" font-weight="700" fill="#115e59">3.5 ms (10.2×)</text>
+      <!-- Row 3: Total Core -->
+      <text x="12" y="106" font-family="Arial" font-size="8.5" font-weight="700" fill="#0f172a">Core Analyze</text>
+      <rect x="120" y="95" width="455" height="10" rx="2" fill="#94a3b8"/><text x="581" y="103" font-family="Consolas" font-size="8" fill="#475569">175.3 ms</text>
+      <rect x="120" y="107" width="169" height="10" rx="2" fill="#0f172a"/><text x="295" y="115" font-family="Consolas" font-size="8" font-weight="700" fill="#0f172a">65.0 ms (2.70×)</text>
+    </svg>
+    <div class="fig-cap">Figure 5: Core Inference Latency Reduction via Shared Log-Mel Feature Caching (Measured from <code>evaluation/efficiency_profile.json</code>).</div>
+  </div>
+
+  <h2>5.3 UI/UX Refinements &amp; Security Audit</h2>
+  <p>Post-Week-4 refinements eliminated CSS Grid overflow on long code blocks, fixed dark-mode toggle button contrast, omitted distracting <code>(±1)</code> bands for small predictions (<code>K ≤ 4</code>), replaced long overlap lists with scrollable chip boxes, and sharpened query separation masks (neural weight <code>0.10 → 0.35</code>, exponent <code>2.2 → 3.8</code>). Security audits verified strict input extension/size/duration caps (40 MB / 600 s), sliding-window auth &amp; API rate limits, CSRF token validation, HttpOnly Secure cookies, and zero secrets in git history.</p>
+</section>
+
+<!-- ==================== PAGE 8: CHAPTER 6 ==================== -->
+<section class="pb">
+  <h1 class="ch">Chapter 6: Conclusion &amp; Future Work (Cluster Migration Roadmap)</h1>
+
+  <h2>6.1 Conclusion</h2>
+  <p>EchoCount (SANADA) demonstrates that multi-model acoustic research pipelines can be operationalized into a reliable, transparent, and mobile-ready full-stack web application. By combining a custom-trained uncertainty-aware counter (<code>SourceCountCNN</code>), a 559-class open-vocabulary tagger fusion, and quality-gated speech/general separation behind a secure Flask/Waitress/Caddy stack on AWS EC2, the system delivers fast single-clip inference (~1.74 s), honest failure reporting when spectral overlap saturates (<code>K ≥ 9</code> or near-copy stems <code>r &gt; 0.90</code>), and complete administrative observability.</p>
+
+  <div class="kpi-row">
+    <div class="kpi"><b>15,559</b><span>Deduplicated Mixtures</span></div>
+    <div class="kpi"><b>0.9926</b><span>Group Tagging mAP</span></div>
+    <div class="kpi"><b>2.70×</b><span>Core Latency Speedup</span></div>
+    <div class="kpi"><b>100%</b><span>Energy Conservation</span></div>
+  </div>
+
+  <h2>6.2 Future Work — 9-Node Hadoop &amp; Spark Cluster Migration</h2>
+  <p>While the single-node AWS EC2 deployment handles interactive single-clip requests smoothly, institutional-scale batch processing (thousands of multi-minute recordings) and periodic full-corpus retraining require distributed storage and compute. The planned migration maps EchoCount onto the institutional <strong>9-Node Hadoop &amp; Spark Cluster</strong>:</p>
+  <ul>
+    <li><strong>Web/API Gateway &amp; Shared Environment (<code>slave4</code> — <code>192.168.5.104</code>):</strong> Hosts the Flask/Waitress gateway using the centralized NFS Anaconda Python stack (<code>/home/hduser/anaconda3</code>), migrating relational user/audit/history tables from local SQLite to the centralized <strong><code>kmit-database</code></strong> node (<code>192.168.5.102</code>).</li>
+    <li><strong>4 TB HDFS Vault (<code>Name Node</code> — <code>192.168.5.100</code>):</strong> Stores raw audio corpora, versioned PyTorch checkpoints (<code>*.pt</code>), HuggingFace model archives, and large-scale batch separation outputs with HDFS replication.</li>
+    <li><strong>Distributed Training &amp; Batch Inference (<code>YARN 192.168.5.101</code> &amp; <code>Spark Master 192.168.5.103</code>):</strong> Heavy retraining and bulk folder inference jobs are submitted asynchronously from the gateway via <code>spark-submit</code> to YARN/Spark Master and partitioned across the active worker fleet (<strong><code>slave4–slave7</code></strong>), writing aggregated JSON results back to HDFS and <code>kmit-database</code>.</li>
+  </ul>
+
+  <p class="tbl-cap">Table 8: Target 9-Node Institutional Hadoop &amp; Spark Cluster Role Mapping</p>
+  <table class="data">
+    <thead>
+      <tr><th>Cluster Node</th><th>IP Address</th><th>Assigned EchoCount Migration Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Name Node</strong></td><td><code>192.168.5.100</code></td><td>4 TB HDFS vault for raw audio datasets, <code>checkpoints/*.pt</code>, and batch stem outputs.</td></tr>
+      <tr><td><strong>YARN ResourceManager</strong></td><td><code>192.168.5.101</code></td><td>Cluster resource negotiation and scheduling for asynchronous <code>spark-submit</code> jobs.</td></tr>
+      <tr><td><strong>kmit-database</strong></td><td><code>192.168.5.102</code></td><td>Centralized relational store replacing SQLite for users, RBAC, history, and audit logs.</td></tr>
+      <tr><td><strong>Spark Master</strong></td><td><code>192.168.5.103</code></td><td>Coordinates distributed PySpark audio feature extraction, batch counting, and retraining.</td></tr>
+      <tr><td><strong>Gateway (<code>slave4</code>)</strong></td><td><code>192.168.5.104</code></td><td>Hosts Flask/Waitress API using NFS Anaconda (<code>/home/hduser/anaconda3</code>) + job submitter.</td></tr>
+      <tr><td><strong>Worker Fleet (<code>slave4–slave7</code>)</strong></td><td><code>192.168.5.104–107</code></td><td>Parallel Spark executors running PyTorch/HuggingFace inference &amp; DataLoader shards.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 700 158" xmlns="http://www.w3.org/2000/svg">
+      <!-- Gateway -->
+      <rect x="10" y="42" width="150" height="74" rx="8" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+      <text x="85" y="60" text-anchor="middle" font-family="Arial" font-size="9" font-weight="700" fill="#115e59">Web/API Gateway</text>
+      <text x="85" y="74" text-anchor="middle" font-family="Consolas" font-size="8" fill="#0f172a">slave4 (192.168.5.104)</text>
+      <text x="85" y="88" text-anchor="middle" font-family="Consolas" font-size="7.3" fill="#475569">NFS /home/hduser/anaconda3</text>
+      <text x="85" y="102" text-anchor="middle" font-family="Arial" font-size="7.5" fill="#0d9488">Flask + spark-submit</text>
+
+      <!-- Arrows to DB, YARN, Spark, HDFS -->
+      <line x1="160" y1="62" x2="216" y2="34" stroke="#334155" stroke-width="1.4"/>
+      <line x1="160" y1="79" x2="216" y2="79" stroke="#ea580c" stroke-width="1.6"/>
+      <line x1="160" y1="96" x2="216" y2="124" stroke="#334155" stroke-width="1.4"/>
+
+      <!-- Control Plane -->
+      <rect x="218" y="10" width="175" height="42" rx="6" fill="#f8fafc" stroke="#475569"/>
+      <text x="305" y="27" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#0f172a">kmit-database (192.168.5.102)</text>
+      <text x="305" y="41" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#475569">Users · RBAC · History · Audit</text>
+
+      <rect x="218" y="58" width="175" height="42" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="1.4"/>
+      <text x="305" y="75" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#9a3412">YARN (.101) &amp; Spark Master (.103)</text>
+      <text x="305" y="89" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#7c2d12">Async Batch Inference &amp; Training</text>
+
+      <rect x="218" y="106" width="175" height="42" rx="6" fill="#fefce8" stroke="#ca8a04"/>
+      <text x="305" y="123" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="700" fill="#854d0e">Name Node (192.168.5.100)</text>
+      <text x="305" y="137" text-anchor="middle" font-family="Consolas" font-size="7.5" fill="#713f12">4 TB HDFS Vault (Audio &amp; Models)</text>
+
+      <!-- Arrow Control -> Workers -->
+      <line x1="393" y1="79" x2="444" y2="79" stroke="#ea580c" stroke-width="1.6"/>
+      <polygon points="444,75 452,79 444,83" fill="#ea580c"/>
+      <line x1="393" y1="127" x2="452" y2="108" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>
+
+      <!-- Worker Fleet -->
+      <rect x="454" y="18" width="234" height="122" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="571" y="36" text-anchor="middle" font-family="Arial" font-size="9" font-weight="700" fill="#5b21b6">Active Worker Fleet (slave4–slave7)</text>
+      <rect x="468" y="46" width="96" height="36" rx="5" fill="#fff" stroke="#c4b5fd"/><text x="516" y="62" text-anchor="middle" font-family="Consolas" font-size="8" font-weight="700" fill="#0f172a">slave4 (.104)</text><text x="516" y="74" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#475569">PyTorch Executor</text>
+      <rect x="576" y="46" width="96" height="36" rx="5" fill="#fff" stroke="#c4b5fd"/><text x="624" y="62" text-anchor="middle" font-family="Consolas" font-size="8" font-weight="700" fill="#0f172a">slave5 (.105)</text><text x="624" y="74" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#475569">PyTorch Executor</text>
+      <rect x="468" y="90" width="96" height="36" rx="5" fill="#fff" stroke="#c4b5fd"/><text x="516" y="106" text-anchor="middle" font-family="Consolas" font-size="8" font-weight="700" fill="#0f172a">slave6 (.106)</text><text x="516" y="118" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#475569">PyTorch Executor</text>
+      <rect x="576" y="90" width="96" height="36" rx="5" fill="#fff" stroke="#c4b5fd"/><text x="624" y="106" text-anchor="middle" font-family="Consolas" font-size="8" font-weight="700" fill="#0f172a">slave7 (.107)</text><text x="624" y="118" text-anchor="middle" font-family="Arial" font-size="7.2" fill="#475569">PyTorch Executor</text>
+    </svg>
+    <div class="fig-cap">Figure 6: Target 9-Node Institutional Hadoop &amp; Spark Cluster Migration Architecture.</div>
+  </div>
+</section>
+
+<!-- ==================== PAGE 9: REFERENCES & APPENDICES ==================== -->
+<section class="pb">
+  <h1 class="ch">References &amp; Appendices</h1>
+
+  <h2>References (IEEE Format)</h2>
+  <ol class="refs">
+    <li>F.-R. Stöter, S. Chakrabarty, B. Edler, and E. A. P. Habets, "CountNet: Estimating the number of concurrent speakers using supervised learning," <em>IEEE/ACM Trans. Audio, Speech, Language Process.</em>, vol. 27, no. 2, pp. 268–282, Feb. 2019.</li>
+    <li>E. Fonseca, X. Favory, J. Pons, F. Font, and X. Serra, "FSD50K: An open dataset of human-labeled sound events," <em>IEEE/ACM Trans. Audio, Speech, Language Process.</em>, vol. 30, pp. 829–852, 2022.</li>
+    <li>Y. Gong, Y.-A. Chung, and J. Glass, "AST: Audio Spectrogram Transformer," in <em>Proc. Interspeech</em>, 2021, pp. 571–575.</li>
+    <li>Y. Wu, K. Chen, T. Zhang, Y. Hui, T. Berg-Kirkpatrick, and S. Dubnov, "Large-scale contrastive language-audio pretraining with feature fusion and keyword-to-caption augmentation," in <em>Proc. IEEE ICASSP</em>, 2023.</li>
+    <li>C. Subakan, M. Ravanelli, S. Cornell, M. Bronzi, and J. Zhong, "Attention is all you need in speech separation," in <em>Proc. IEEE ICASSP</em>, 2021, pp. 21–25.</li>
+    <li>B. Desplanques, J. Thienpondt, and K. Demuynck, "ECAPA-TDNN: Emphasized channel attention, propagation and aggregation in TDNN based speaker verification," in <em>Proc. Interspeech</em>, 2020, pp. 3830–3834.</li>
+    <li>B. McFee et al., "librosa: Audio and music signal analysis in Python," in <em>Proc. 14th Python in Science Conf. (SciPy)</em>, 2015, pp. 18–24.</li>
+    <li>A. Paszke et al., "PyTorch: An imperative style, high-performance deep learning library," in <em>Proc. NeurIPS</em>, 2019.</li>
+  </ol>
+
+  <h2>Appendix A: End-User &amp; Administrator Quick-Start Guide</h2>
+  <ul>
+    <li><strong>End-User Workflow:</strong> Open <code>https://54-166-236-211.nip.io/login</code>, sign in via Google OAuth or verified email, navigate to <strong>Analyze</strong>, drop a WAV/MP3/FLAC file (or generate a synthetic 1–4 source mixture), and click <strong>Analyze mixture</strong>. Switch to <strong>Architecture view</strong> to inspect the live 2D neural flow; click <strong>Separate</strong> when eligible to audition/download isolated stems; view personal runs under <strong>History</strong>.</li>
+    <li><strong>Administrator &amp; Developer Workflow:</strong> Sign in with an account configured in <code>ECHOCOUNT_ADMIN_EMAILS</code> to unlock <strong>Admin</strong> (<code>/admin</code>) and <strong>Evaluation</strong> (<code>/evaluation</code>). Local training &amp; verification commands:
+      <code>python scripts/download_models.py</code> · <code>python scripts/train.py all --full</code> · <code>python test_templates.py</code>.</li>
+  </ul>
+
+  <h2>Appendix B: Live Project Links</h2>
+  <table class="data">
+    <thead><tr><th>Resource</th><th>Verified URL / Reference</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub Repository</td><td><code>https://github.com/25-f2001239/Sanada</code> (branch: <code>main</code>)</td></tr>
+      <tr><td>Hosted Web &amp; Mobile App (HTTPS)</td><td><code>https://54-166-236-211.nip.io</code></td></tr>
+      <tr><td>Backend Health &amp; Public Benchmarks</td><td><code>https://54-166-236-211.nip.io/api/health</code> · <code>/api/public-stats</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Pre-Submission Verification Checklist</h2>
+  <ul class="chk-list">
+    <li>[✓] Chapters 1–6 align sequentially with the 5-week schedule and repository structure.</li>
+    <li>[✓] All 6 figures and 8 tables are numbered sequentially, captioned, and referenced in the text.</li>
+    <li>[✓] Zero data leakage (198 exact-hash duplicates excluded, 3 unseen speakers held out) and DataLoader throughput (≥ 10 batches/s) documented.</li>
+    <li>[✓] Both End-User (<code>/analyze</code>, <code>/history</code>) and Administrator/Evaluation (<code>/admin</code>, <code>/evaluation</code>) portals and mobile portrait viewports documented.</li>
+    <li>[✓] Unit, integration, RBAC/security, latency optimization (2.70× speedup), and separation benchmarks recorded with real measured metrics.</li>
+    <li>[✓] Public HTTPS deployment URL, GitHub repository link, and <code>.env</code> secret hygiene verified.</li>
+  </ul>
+</section>
+
+</body>
+</html>

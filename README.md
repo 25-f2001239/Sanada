@@ -9,18 +9,28 @@ EchoCount is a Flask + PyTorch audio analysis web app. Upload a recording (WAV, 
 
 ---
 
-## 1. Quick Setup (Windows PowerShell)
+## 1. Quick Setup (One Command)
 
-**Requirements:** Python **3.11 – 3.14** (verified on Python `3.14.8`).
+**Requirements:** Python **3.10+** (verified on Python `3.12` / `3.14`).
 
 ```powershell
 git clone https://github.com/25-f2001239/Sanada.git
 cd Sanada
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-copy .env.example .env
+python setup.py
+```
+
+`setup.py` automatically creates `.venv`, installs `requirements.txt`, creates `.env` with a fresh `SECRET_KEY`, downloads all required pretrained models (`ast-audioset`, `clap-htsat-unfused`, `spkrec-ecapa-voxceleb`, and 2-, 3-, and 4-speaker SepFormer checkpoints), verifies checkpoint hashes, initializes the auth DB, and runs a health self-check.
+
+To set up and launch immediately in one step:
+```powershell
+python setup.py --run
+# Open http://127.0.0.1:5000
+```
+
+### Run the App (after setup)
+```powershell
+.\.venv\Scripts\python.exe app.py
+# Open http://127.0.0.1:5000
 ```
 
 ### Optional GPU Build of PyTorch (CUDA)
@@ -29,18 +39,10 @@ copy .env.example .env
 .\.venv\Scripts\python.exe -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### Download Pretrained Models & Trained Checkpoints
-Model weights are excluded from git. Download the pretrained HuggingFace models (`models/`) and trained checkpoints (`checkpoints/`):
+### Manual Model Check / Download
 ```powershell
 .\.venv\Scripts\python.exe scripts\download_models.py
 .\.venv\Scripts\python.exe scripts\download_models.py --check
-```
-*(If hosted checkpoints are not yet uploaded to GitHub Releases, the app still starts gracefully and reports `"Trained checkpoint not found, run scripts/download_models.py"`. You can also train checkpoints locally from your dataset using `scripts/train.py`.)*
-
-### Run the App
-```powershell
-.\.venv\Scripts\python.exe app.py
-# Open http://127.0.0.1:5000
 ```
 
 ---
@@ -102,6 +104,6 @@ All figures below are read directly from `evaluation/results.json` (`SourceCount
 
 1. **Dense Mixtures ($K > 6$)**: Counting accuracy drops to `0.0%` exact at `K=9` (`MAE = 2.809`); EchoCount warns `"Too many overlapping sounds to separate reliably"` and disables separation.
 2. **Unseen-Speaker Generalization**: On held-out unseen speakers (`n=352`), exact count accuracy is `13.1%` (`MAE = 2.054`), showing a measurable domain/speaker generalization gap compared to seen-speaker mixtures (`53.1%` exact).
-3. **Speech Separation ($K \le 2$)**: `sepformer-wsj02mix` separates up to 2 simultaneous speakers; for $K \ge 3$ pure speech mixtures without `sepformer-wsj03mix`, separation is disabled.
+3. **Speech Separation ($K \le 4$)**: Native pretrained SepFormer checkpoints support 2 speakers (`sepformer-wsj02mix`), 3 speakers (`sepformer-wsj03mix`), and 4 speakers (`sepformer-libri4mix`); pure speech mixtures with $K \ge 5$ disable separation.
 4. **Speaker Clustering ($K \le 3$)**: Windowed ECAPA-TDNN clustering is shown only for $K \le 3$ because simultaneous overlap blends 1-second window embeddings.
 5. **Co-Channel Broadband Overlap**: Non-speech sounds sharing identical frequency bands and timestamps share TF bins and may be flagged `"Low confidence"` by the self-consistency re-tagging gate (`39.3%` pass rate across `K=2..5` mixtures).

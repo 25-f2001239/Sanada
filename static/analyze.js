@@ -543,14 +543,14 @@
                   )
                   .join(" ")
               : `<span class="fine">0:00–${fmtTime(a.analysed_window_seconds || 8)}</span>`;
-          return `<div class="named-sound-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid rgba(255,255,255,.1);border-radius:8px;margin-bottom:6px">
-          <div>
+          return `<div class="named-sound-row">
+          <div class="named-sound-main">
             <strong>${esc(ns.name || ns.friendly_name || ns.class)}</strong>
-            <small style="margin-left:8px;opacity:.75">${esc(ns.group || "")}</small>
+            <small>${esc(ns.group || "")}</small>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="named-sound-meta">
             <span>${trs}</span>
-            <span class="tag-chip above" style="margin:0"><strong>${confPct}</strong></span>
+            <span class="tag-chip above"><strong>${confPct}</strong></span>
           </div>
         </div>`;
         })
@@ -637,12 +637,14 @@
 
     const gt = data.ground_truth;
     let groundTruthHtml = "";
+    let gtHeroBadge = "";
     if (gt && gt.available) {
       const delta = c.rounded_count - gt.true_k;
       const deltaBadge =
         delta === 0
           ? `<span class="gt-badge ok">Exact count match</span>`
           : `<span class="gt-badge diff">Delta ${delta > 0 ? "+" + delta : delta}</span>`;
+      gtHeroBadge = deltaBadge;
       const gtLabels =
         Array.isArray(gt.true_labels) && gt.true_labels.length
           ? gt.true_labels.map((l) => `<span class="tag-chip">${esc(l)}</span>`).join("")
@@ -664,10 +666,10 @@
         Array.isArray(tg.active_groups) && tg.active_groups.length
           ? tg.active_groups.map((g) => esc(g)).join(", ")
           : "None above threshold";
-      groundTruthHtml = `<details open class="gt-panel" aria-label="Ground Truth vs Model Prediction">
+      groundTruthHtml = `<details class="gt-panel" aria-label="Ground Truth vs Model Prediction">
         <summary class="gt-summary">
-          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>Matched by audio content hash (${esc(gt.dataset || "corpus")} · ${esc(gt.split || "split")})</small></span>
-          ${deltaBadge}
+          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>Matched by audio content hash (${esc(gt.dataset || "corpus")} · ${esc(gt.split || "split")}) · Ref ${esc(gt.true_k)}</small></span>
+          <span class="gt-sum-right">${deltaBadge}<span class="gt-toggle-hint">Details</span></span>
         </summary>
         <div class="gt-compare-grid">
           <div class="gt-col">
@@ -697,22 +699,65 @@
     const pmHtml =
       c.rounded_count > 4 ? `<span class="count-pm">(±${spread})</span>` : "";
 
-    el.res.innerHTML = `<div class="result">
+    const criticalWarn =
+      (c.dense_warning
+        ? `<div class="notice warn" role="alert"><strong>${esc(c.dense_warning)}</strong></div>`
+        : "") +
+      (c.out_of_range || c.rounded_count < c.min_sources
+        ? `<div class="notice warn"><strong>Input outside model range:</strong> ${esc(c.range_warning || `Model calibrated for ${c.min_sources}–${c.max_sources} overlapping sources.`)}</div>`
+        : "");
+    const activeGroupCount = Array.isArray(tg.groups)
+      ? tg.groups.filter((g) => g.above_threshold).length
+      : 0;
+
+    el.res.innerHTML = `<div class="result result-compact">
       <div id="resStages" class="res-stages">${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "idle", zip: "idle" })}</div>
-      <div class="count-card" role="group" aria-label="Model prediction">
-        <div class="gt-col-head pred" style="margin-bottom:2px">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
-        <div class="count-main"><b id="bigN">≈${c.rounded_count}</b> ${pmHtml}<span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
-        <p>${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
+      <div class="count-card count-card-compact" role="group" aria-label="Model prediction">
+        <div class="count-card-left">
+          <div class="gt-col-head pred">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
+          <div class="count-main"><b id="bigN">≈${c.rounded_count}</b> ${pmHtml}<span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
+          ${gtHeroBadge ? `<div class="count-gt-pill">${gtHeroBadge}</div>` : ""}
+        </div>
+        <p class="count-card-desc">${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
       </div>
-      ${groundTruthHtml}
-      ${spkClusterHtml}
-      ${namedSoundsHtml}
-      <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
-      ${warn}
-      ${tagsHtml}
-      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the ${document.body.dataset.admin === "true" ? '<a href="/evaluation">Evaluation</a> tab' : '<a href="/how#findings">How it works</a> page'} for measured error by source count.</div>
-      <section class="stems" aria-labelledby="stemsH"><h3 id="stemsH" class="sub">Separated stems</h3><div id="stemsBody"></div></section>
+      <div class="res-tabs" role="tablist" aria-label="Analysis result sections">
+        <button type="button" role="tab" class="res-tab" data-res-tab="overview" aria-selected="true">Overview &amp; Stems</button>
+        <button type="button" role="tab" class="res-tab" data-res-tab="metrics" aria-selected="false">Metrics &amp; Info</button>
+        <button type="button" role="tab" class="res-tab" data-res-tab="tags" aria-selected="false">Sound Tags${activeGroupCount ? ` (${activeGroupCount})` : ""}</button>
+      </div>
+      <div class="res-tab-body">
+        <div class="res-pane" data-res-pane="overview">
+          ${criticalWarn}
+          ${namedSoundsHtml}
+          ${groundTruthHtml}
+          <section class="stems" aria-labelledby="stemsH"><h3 id="stemsH" class="sub">Separated stems</h3><div id="stemsBody"></div></section>
+        </div>
+        <div class="res-pane hidden" data-res-pane="metrics">
+          ${spkClusterHtml}
+          <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
+          ${warn}
+          <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the ${document.body.dataset.admin === "true" ? '<a href="/evaluation">Evaluation</a> tab' : '<a href="/how#findings">How it works</a> page'} for measured error by source count.</div>
+        </div>
+        <div class="res-pane hidden" data-res-pane="tags">
+          ${tagsHtml}
+        </div>
+      </div>
     </div>`;
+
+    // Result tabs switcher
+    const resTabs = el.res.querySelectorAll("[data-res-tab]");
+    const resPanes = el.res.querySelectorAll("[data-res-pane]");
+    resTabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.dataset.resTab;
+        resTabs.forEach((t) =>
+          t.setAttribute("aria-selected", t.dataset.resTab === target ? "true" : "false"),
+        );
+        resPanes.forEach((p) =>
+          p.classList.toggle("hidden", p.dataset.resPane !== target),
+        );
+      });
+    });
 
     // Interactive time-range pills highlight the waveform and seek audio
     el.res.querySelectorAll(".time-pill").forEach((btn) => {
@@ -754,7 +799,11 @@
     if (s.can_separate && s.trained) {
       let btnLabel = `Separate into ${roundedCount} stems`;
       if (s.speech_mode) {
-        btnLabel = `Separate into ${roundedCount} speaker stems (Human 1, Human 2)`;
+        const spkLabels = Array.from(
+          { length: Math.max(1, roundedCount) },
+          (_, i) => `Human ${i + 1}`,
+        ).join(", ");
+        btnLabel = `Separate into ${roundedCount} speaker stems (${spkLabels})`;
       } else if (Array.isArray(namedSounds) && namedSounds.length > 0) {
         const namesPreview = namedSounds
           .slice(0, 3)

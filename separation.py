@@ -38,14 +38,13 @@ OVERLAP_SECONDS = 2.0
 POWERSHELL_DOWNLOAD_COMMANDS = (
     "cd C:\\coding\\SANADA\\Sanada\n"
     ".\\.venv\\Scripts\\python -m pip install huggingface_hub speechbrain torchaudio\n"
-    '.\\.venv\\Scripts\\python -c "from huggingface_hub import snapshot_download; '
-    "snapshot_download('speechbrain/sepformer-wsj02mix', local_dir='models/sepformer-wsj02mix'); "
-    "snapshot_download('speechbrain/spkrec-ecapa-voxceleb', local_dir='models/spkrec-ecapa-voxceleb')\""
+    ".\\.venv\\Scripts\\python scripts\\download_models.py"
 )
 
 _ECAPA_CACHE: Any | None = None
 _SEP2_CACHE: Any | None = None
 _SEP3_CACHE: Any | None = None
+_SEP4_CACHE: Any | None = None
 
 # Acoustic priors: (f_lo, f_hi, harmonic_w, percussive_w, center_hz)
 QUERY_ACOUSTIC_PRIORS: dict[str, tuple[int, int, float, float, int]] = {
@@ -216,33 +215,39 @@ def separator_status(path: Path | str = SEPARATOR_PATH) -> dict[str, Any]:
 
 
 def pretrained_speech_status() -> dict[str, Any]:
-    """Check whether pretrained SpeechBrain SepFormer and ECAPA weights exist in models/."""
+    """Check whether pretrained SpeechBrain SepFormer (2/3/4-spk) and ECAPA weights exist in models/."""
     cfg_dir = Path(load_config().get("models_dir", str(MODELS_DIR)))
     models_root = cfg_dir if cfg_dir.is_dir() else MODELS_DIR
-    sep2_dir, sep3_dir, ecapa_dir = (
+    sep2_dir, sep3_dir, sep4_dir, ecapa_dir = (
         (models_root / "sepformer-wsj02mix").resolve(),
         (models_root / "sepformer-wsj03mix").resolve(),
+        (models_root / "sepformer-libri4mix").resolve(),
         (models_root / "spkrec-ecapa-voxceleb").resolve(),
     )
     has_sep2 = sep2_dir.is_dir() and any(sep2_dir.glob("*.ckpt"))
     has_sep3 = sep3_dir.is_dir() and any(sep3_dir.glob("*.ckpt"))
+    has_sep4 = sep4_dir.is_dir() and (sep4_dir / "masknet.ckpt").is_file()
     has_ecapa = ecapa_dir.is_dir() and any(ecapa_dir.glob("*.ckpt"))
+    any_sep = bool(has_sep2 or has_sep3 or has_sep4)
+    max_spks = 4 if has_sep4 else (3 if has_sep3 else (2 if has_sep2 else 0))
     return {
-        "available": bool(has_sep2 or has_sep3),
+        "available": any_sep,
         "has_2spk_model": bool(has_sep2),
         "has_3spk_model": bool(has_sep3),
+        "has_4spk_model": bool(has_sep4),
         "has_speaker_encoder": bool(has_ecapa),
-        "max_supported_speakers": 3 if has_sep3 else (2 if has_sep2 else 0),
+        "max_supported_speakers": max_spks,
         "sepformer_dir": str(sep2_dir),
         "sepformer3_dir": str(sep3_dir),
+        "sepformer4_dir": str(sep4_dir),
         "ecapa_dir": str(ecapa_dir),
         "download_commands": POWERSHELL_DOWNLOAD_COMMANDS,
         "powershell_download_cmd": POWERSHELL_DOWNLOAD_COMMANDS,
         "reason": None
-        if (has_sep2 or has_sep3)
+        if any_sep
         else "Pretrained speech separator weights (models/sepformer-wsj02mix) are not installed on disk.",
         "offline_fallback_message": None
-        if (has_sep2 or has_sep3)
+        if any_sep
         else "Pretrained speech separator weights (models/sepformer-wsj02mix) are not installed on disk.",
     }
 
@@ -272,13 +277,71 @@ def _get_ecapa_encoder() -> Any | None:
         return None
 
 
+def _load_sepformer_4spk(model_dir: str) -> Any:
+    """Load hahmadraz/sepformer-libri4mix directly from its checkpoint files for SpeechBrain 1.x compatibility."""
+    from speechbrain.inference.separation import SepformerSeparation
+    from speechbrain.lobes.models.dual_path import (
+        Decoder,
+        Dual_Path_Model,
+        Encoder,
+        SBTransformerBlock,
+    )
+
+    d = Path(model_dir)
+    enc = Encoder(kernel_size=16, out_channels=256)
+    intra = SBTransformerBlock(
+        num_layers=8,
+        d_model=256,
+        nhead=8,
+        d_ffn=1024,
+        dropout=0,
+        use_positional_encoding=True,
+        norm_before=True,
+    )
+    inter = SBTransformerBlock(
+        num_layers=8,
+        d_model=256,
+        nhead=8,
+        d_ffn=1024,
+        dropout=0,
+        use_positional_encoding=True,
+        norm_before=True,
+    )
+    masknet = Dual_Path_Model(
+        num_spks=4,
+        in_channels=256,
+        out_channels=256,
+        num_layers=2,
+        K=250,
+        intra_model=intra,
+        inter_model=inter,
+        norm="ln",
+        linear_layer_after_inter_intra=False,
+        skip_around_intra=True,
+    )
+    dec = Decoder(in_channels=256, out_channels=1, kernel_size=16, stride=8, bias=False)
+    enc.load_state_dict(torch.load(d / "encoder.ckpt", map_location="cpu", weights_only=True))
+    masknet.load_state_dict(torch.load(d / "masknet.ckpt", map_location="cpu", weights_only=True))
+    dec.load_state_dict(torch.load(d / "decoder.ckpt", map_location="cpu", weights_only=True))
+    model = SepformerSeparation(
+        modules={"encoder": enc, "masknet": masknet, "decoder": dec},
+        hparams={"sample_rate": 48000, "num_spks": 4},
+        run_opts={"device": str(DEVICE)},
+    )
+    model.eval()
+    return model
+
+
 def _get_sepformer_model(num_spks: int = 2) -> Any | None:
-    global _SEP2_CACHE, _SEP3_CACHE
+    global _SEP2_CACHE, _SEP3_CACHE, _SEP4_CACHE
     st = pretrained_speech_status()
     try:
         from speechbrain.inference.separation import SepformerSeparation
         from speechbrain.utils.fetching import LocalStrategy
 
+        if num_spks == 4 and st["has_4spk_model"]:
+            _SEP4_CACHE = _SEP4_CACHE or _load_sepformer_4spk(st["sepformer4_dir"])
+            return _SEP4_CACHE
         if num_spks == 3 and st["has_3spk_model"]:
             _SEP3_CACHE = _SEP3_CACHE or SepformerSeparation.from_hparams(
                 source=st["sepformer3_dir"],
@@ -301,7 +364,7 @@ def _get_sepformer_model(num_spks: int = 2) -> Any | None:
 def separate_speech_pretrained(
     waveform: np.ndarray, k: int, sample_rate: int = SAMPLE_RATE
 ) -> dict[str, Any]:
-    """Run pretrained SpeechBrain SepFormer for K=2 (or K=3 if wsj03mix exists)."""
+    """Run pretrained SpeechBrain SepFormer for K=2, K=3 (wsj03mix), or K=4 (libri4mix)."""
     st, k_int = pretrained_speech_status(), int(k)
     model = _get_sepformer_model(k_int)
     if model is None:
@@ -311,21 +374,30 @@ def separate_speech_pretrained(
             "reason": f"Separation is supported for up to {st['max_supported_speakers'] or 2} speakers with the installed model.",
         }
     try:
-        y16 = np.asarray(waveform, dtype=np.float32).reshape(-1)
-        y8 = resample(y16, sample_rate, 8000) if sample_rate != 8000 else y16
+        target_sr = int(
+            getattr(getattr(model, "hparams", None), "sample_rate", None)
+            or (48000 if k_int == 4 else 8000)
+        )
+        y_in = np.asarray(waveform, dtype=np.float32).reshape(-1)
+        y_model = resample(y_in, sample_rate, target_sr) if sample_rate != target_sr else y_in
         with torch.inference_mode():
-            est = model.separate_batch(torch.from_numpy(y8).unsqueeze(0))
+            est = model.separate_batch(torch.from_numpy(y_model).unsqueeze(0))
         stems = []
         for idx in range(min(k_int, int(est.shape[-1]))):
-            s16 = resample(
-                est[0, :, idx].detach().cpu().numpy().astype(np.float32), 8000, sample_rate
+            s_out = resample(
+                est[0, :, idx].detach().cpu().numpy().astype(np.float32), target_sr, sample_rate
             )
-            s16 = s16[: len(y16)] if len(s16) >= len(y16) else np.pad(s16, (0, len(y16) - len(s16)))
-            stems.append(s16.astype(np.float32))
+            s_out = (
+                s_out[: len(y_in)]
+                if len(s_out) >= len(y_in)
+                else np.pad(s_out, (0, len(y_in) - len(s_out)))
+            )
+            stems.append(s_out.astype(np.float32))
+        model_name = "sepformer-libri4mix" if k_int == 4 else f"sepformer-wsj0{k_int}mix"
         return {
             "available": True,
             "stems": stems,
-            "model_name": f"sepformer-wsj0{k_int}mix",
+            "model_name": model_name,
             "reason": None,
         }
     except Exception as exc:
@@ -762,17 +834,23 @@ def separate_by_queries(
         list(named_sounds or []),
     )
     non_speech = [s for s in named if s.get("group") != "Human voice"]
-    max_spk = int(pretrained_speech_status().get("max_supported_speakers") or 2)
+    speech_st = pretrained_speech_status()
+    max_spk = int(speech_st.get("max_supported_speakers") or 2)
 
     if speech_mode and not non_speech:
-        if k_int < 2 or k_int > max_spk:
+        has_k_model = bool(speech_st.get(f"has_{k_int}spk_model", False))
+        if k_int < 2 or k_int > max_spk or not has_k_model:
             return {
                 "available": False,
                 "stems": [],
                 "residual_stem": None,
                 "queries": [],
                 "used_pretrained_speech": False,
-                "reason": f"Separation is supported for up to {max_spk} speakers.",
+                "reason": (
+                    f"Separation is supported for up to {max_spk} speakers."
+                    if k_int > max_spk or k_int < 2
+                    else f"Pretrained {k_int}-speaker separation model is not installed."
+                ),
             }
 
         def _sep_spk(seg: np.ndarray, _off: float) -> list[np.ndarray]:
@@ -792,7 +870,8 @@ def separate_by_queries(
                 for rs in out["stems"]
             ]
 
-        stems = separate_long_audio_windowed(y, _sep_spk, sr=sr)
+        win_s, ov_s = (3.0, 0.75) if k_int == 4 else (WINDOW_SECONDS, OVERLAP_SECONDS)
+        stems = separate_long_audio_windowed(y, _sep_spk, sr=sr, window_s=win_s, overlap_s=ov_s)
         if not stems:
             return {
                 "available": False,
@@ -812,13 +891,14 @@ def separate_by_queries(
             }
             for i in range(len(stems))
         ]
+        model_name = "sepformer-libri4mix" if k_int == 4 else f"sepformer-wsj0{k_int}mix"
         return {
             "available": True,
             "stems": stems,
             "residual_stem": residual,
             "queries": queries,
             "used_pretrained_speech": True,
-            "model_name": f"sepformer-wsj0{k_int}mix",
+            "model_name": model_name,
             "stopped_early": False,
             "residual_energy_ratio": round(float(np.sum(residual**2) / (np.sum(y**2) + 1e-12)), 4),
             "reason": None,

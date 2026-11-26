@@ -429,7 +429,8 @@ def test_auth_security_and_ground_truth() -> None:
     assert "data-pw-toggle" in login_html
     assert 'name="username"' not in login_html
     assert "turnstile" not in login_html.lower()
-    assert "Google" in login_html and "Microsoft" in login_html and "Yahoo" in login_html
+    assert "/auth/oauth/google" in login_html
+    assert "/auth/oauth/microsoft" not in login_html and "/auth/oauth/yahoo" not in login_html
 
     # Fetch CSRF token from /login
     import re

@@ -37,6 +37,20 @@ PRETRAINED_MODELS: Dict[str, Dict[str, str]] = {
         "license": "Apache-2.0 (commercial use allowed)",
         "marker": "masknet.ckpt",
     },
+    "sepformer3": {
+        "repo_id": "speechbrain/sepformer-wsj03mix",
+        "local_dir": "models/sepformer-wsj03mix",
+        "size": "~113 MB",
+        "license": "Apache-2.0 (commercial use allowed)",
+        "marker": "masknet.ckpt",
+    },
+    "sepformer4": {
+        "repo_id": "hahmadraz/sepformer-libri4mix",
+        "local_dir": "models/sepformer-libri4mix",
+        "size": "~114 MB",
+        "license": "Apache-2.0 (community Libri4Mix 48k checkpoint)",
+        "marker": "masknet.ckpt",
+    },
     "ecapa": {
         "repo_id": "speechbrain/spkrec-ecapa-voxceleb",
         "local_dir": "models/spkrec-ecapa-voxceleb",
@@ -115,7 +129,15 @@ def download_all(only: str | None = None, base_url: str | None = None) -> None:
         from huggingface_hub import snapshot_download
 
         print(f"[DOWNLOAD] {spec['repo_id']} ({spec['size']}) -> {spec['local_dir']}")
-        ignore = ["*.bin", "*.md", ".gitattributes"] if key == "ast" else ["*.md", ".gitattributes"]
+        ignore = (
+            ["*.bin", "*.md", ".gitattributes"]
+            if key == "ast"
+            else (
+                ["optimizer.ckpt", "*.md", ".gitattributes"]
+                if key in ("sepformer3", "sepformer4")
+                else ["*.md", ".gitattributes"]
+            )
+        )
         snapshot_download(spec["repo_id"], local_dir=str(target_dir), ignore_patterns=ignore)
 
     if MANIFEST_PATH.is_file():
@@ -146,7 +168,7 @@ def download_all(only: str | None = None, base_url: str | None = None) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--check", action="store_true", help="Verify local models and checkpoint hashes")
-    p.add_argument("--only", type=str, default=None, help="Download/check one item (ast, clap, sepformer, ecapa, or checkpoint filename)")
+    p.add_argument("--only", type=str, default=None, help="Download/check one item (ast, clap, sepformer, sepformer3, sepformer4, ecapa, or checkpoint filename)")
     p.add_argument("--base-url", type=str, default=None, help="Override base URL for hosted checkpoints")
     args = p.parse_args()
     if args.check:

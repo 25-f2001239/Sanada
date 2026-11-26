@@ -827,8 +827,10 @@ def _separation_eligibility(
             "reason": "Too many overlapping sounds to separate reliably.",
         }
     if is_pure_speech:
-        supports_k = (k == 2 and bool(speech_sep.get("has_2spk_model"))) or (
-            k == 3 and bool(speech_sep.get("has_3spk_model"))
+        supports_k = (
+            (k == 2 and bool(speech_sep.get("has_2spk_model")))
+            or (k == 3 and bool(speech_sep.get("has_3spk_model")))
+            or (k == 4 and bool(speech_sep.get("has_4spk_model")))
         )
         reason = (
             None
@@ -836,7 +838,11 @@ def _separation_eligibility(
             else (
                 f"Separation not available for this recording: only {k} source estimated."
                 if k < 2
-                else f"Separation not available for this recording: Separation is supported for up to {max_spk} speakers with the installed model."
+                else (
+                    f"Separation not available for this recording: pretrained {k}-speaker model is not installed."
+                    if k <= max_spk
+                    else f"Separation not available for this recording: Separation is supported for up to {max_spk} speakers with the installed model."
+                )
             )
         )
         return {
@@ -1075,10 +1081,18 @@ def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
         return {"error": f"Separation not available for this recording: estimated {k} source."}, 409
     if k > last_reliable_k or k > separation.MAX_SEPARABLE:
         return {"error": "Too many overlapping sounds to separate reliably."}, 409
-    if speech_mode and k > max_spk:
-        return {
-            "error": f"Separation is supported for up to {max_spk} speakers with the installed model."
-        }, 409
+    non_speech = [s for s in job.get("named_sounds", []) if s.get("group") != "Human voice"]
+    is_pure_speech = speech_mode and not non_speech
+    if is_pure_speech:
+        has_k_model = bool(speech_sep_st.get(f"has_{k}spk_model", False))
+        if k > max_spk:
+            return {
+                "error": f"Separation is supported for up to {max_spk} speakers with the installed model."
+            }, 409
+        if not has_k_model:
+            return {
+                "error": f"Pretrained {k}-speaker separation model is not installed."
+            }, 409
 
     timings = {}
     try:
