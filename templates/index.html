@@ -6,62 +6,15 @@
 {% set sr = status.sample_rate if status.sample_rate else 16000 %}
 {% set clip_s = status.clip_seconds if status.clip_seconds else 8 %}
 {% set max_src = status.max_sources if status.max_sources else 0 %}
-<section class="hero wrap hero-wave-host">
-  <canvas id="homeWaveField" class="wave-field-calm" aria-hidden="true"></canvas>
-  <div class="portal-welcome">
-    <span class="portal-kicker">Welcome to EchoCount</span>
-    <h1 data-split>Count every <span class="inline-wave" aria-hidden="true">{% for k in range(7) %}<i style="--k:{{ k }}"></i>{% endfor %}</span> sound hiding in the mix.</h1>
-  </div>
+<section class="hero wrap">
+  <h1 data-split>Count every <span class="inline-wave" aria-hidden="true">{% for k in range(7) %}<i style="--k:{{ k }}"></i>{% endfor %}</span> sound hiding in the mix.</h1>
   <div class="hero-row">
-    <p>Understand the sounds hidden inside your recordings. Upload a WAV, MP3, or FLAC clip to estimate how many sources overlap, identify sound classes, and separate sparse speech with automatic {{ job_ttl_minutes }}-minute cleanup.</p>
+    <p>Drop in a single-channel recording and EchoCount estimates how many sources overlap, names each sound, and separates sparse speech. Processed on the server with automatic {{ job_ttl_minutes }}-minute cleanup.</p>
     <div class="actions">
       <a class="btn primary" data-magnetic href="{{ url_for('analyze_page') }}"><svg class="ic"><use href="#i-upload"/></svg>Analyze a recording</a>
-      <a class="btn" data-magnetic href="{{ url_for('history_page') }}">My recordings</a>
-      <a class="btn" data-magnetic href="{{ url_for('how_page') }}">How it works</a>
+      <a class="btn" data-magnetic href="{{ url_for('how_page') }}">See how it works</a>
     </div>
   </div>
-  <div class="portal-pillars" aria-label="Core capabilities">
-    <article class="pillar-card">
-      <span class="pillar-tag">01 · COUNT</span>
-      <h3>Overlap Source Count</h3>
-      <p>Estimates how many distinct sounds overlap in an 8-second window with calibrated uncertainty bounds.</p>
-    </article>
-    <article class="pillar-card">
-      <span class="pillar-tag">02 · IDENTIFY</span>
-      <h3>Open-Vocabulary Tagging</h3>
-      <p>Recognises 5 sound groups, 32 domain classes, and 527 AudioSet concepts with frame-level time ranges.</p>
-    </article>
-    <article class="pillar-card">
-      <span class="pillar-tag">03 · SEPARATE</span>
-      <h3>Quality-Gated Stems</h3>
-      <p>Separates 2-speaker speech and sparse mixtures into playable WAV stems, residual track, and ZIP bundle.</p>
-    </article>
-  </div>
-  {% if recent_jobs %}
-  <section class="panel portal-recent" aria-labelledby="recentH">
-    <div class="portal-recent-head">
-      <div>
-        <h2 id="recentH" style="font-size: 1.15rem;">Your recent recordings</h2>
-        <p class="fine">Private to {{ current_user.display_label if current_user else 'your account' }}.</p>
-      </div>
-      <a class="btn sm" href="{{ url_for('history_page') }}">View all</a>
-    </div>
-    <div class="recent-grid">
-      {% for job in recent_jobs[:4] %}
-      <div class="recent-item">
-        <div class="recent-name" title="{{ job.filename }}">{{ job.filename }}</div>
-        <div class="recent-meta">
-          {% if job.summary and job.summary.display %}<span class="mini-chip">{{ job.summary.display }}</span>{% endif %}
-          {% if job.summary and job.summary.duration_seconds %}<span class="fine">{{ job.summary.duration_seconds }}s</span>{% endif %}
-        </div>
-        {% if job.summary and job.summary.top_sounds %}
-        <div class="fine">{{ job.summary.top_sounds | join(' · ') }}</div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
   <div class="stage beam" data-tilt role="img" aria-label="Animated demo: coloured wave lanes, one per source, add together into one mixture line while the count changes">
     <canvas id="heroCanvas"></canvas>
     <div class="lanes" id="lanes"></div>
@@ -104,8 +57,8 @@
       </div>
       <p class="fine">Unseen speakers (n={{ c_unseen.n }}): {{ '%.1f'|format(c_unseen.exact_accuracy * 100) }}% exact · MAE {{ '%.2f'|format(c_unseen.mae) }}</p>
       <div class="card-links">
-        {% if effective_role in ('developer', 'admin') %}<a href="{{ url_for('evaluation_page') }}">Full evaluation →</a>{% endif %}
-        <a href="{{ url_for('how_page') }}#evaluate">How reliable is this result?</a>
+        {% if is_admin %}<a href="{{ url_for('evaluation_page') }}">Full evaluation →</a>{% endif %}
+        <a href="{{ url_for('how_page') }}#evaluate">How we measured this</a>
       </div>
     </article>
 
@@ -188,15 +141,14 @@
   <div class="acc rv">
     <details open><summary>Does it separate the sources into files?</summary><p>For 2-speaker speech mixtures, yes — the installed SepFormer model separates two speakers into WAV stems plus a residual and ZIP bundle. General non-speech separation and 3+ speaker separation are disabled unless a trained separator checkpoint is loaded.</p></details>
     <details><summary>Why does it say the model is not trained?</summary><p>The app needs a checkpoint at checkpoints/source_count_clip.pt. Run <code>python scripts/download_models.py</code> or train with <code>python scripts/train.py all --full</code>. The Docs page lists the exact commands.</p></details>
-    <details><summary>What happens to my audio?</summary><p>Uploaded audio is processed on the server in an isolated job folder and deleted automatically after {{ job_ttl_minutes }} minutes and on server startup. Your analysis history is stored privately per account and never shared with other users.</p></details>
+    <details><summary>What happens to my audio?</summary><p>Uploaded audio is processed on the server in an isolated job folder and deleted automatically after {{ job_ttl_minutes }} minutes and on server startup. Your run history stays in this browser only.</p></details>
     <details><summary>What about recordings longer than 8 seconds?</summary><p>Only the middle 8 seconds are analysed, and the waveform marks which part. Shorter recordings are padded with silence.</p></details>
     <details><summary>Can I trust the confidence number?</summary><p>It shows how decisive the network was, not whether it was right. Check accuracy on a held-out test set before relying on it.</p></details>
   </div>
 </section>
 
 <section class="section wrap" style="padding-top:0">
-  <div class="cta rv"><h2>Drop a file. Get a count.</h2><p>Upload a WAV, MP3, or FLAC clip to inspect source counts, sound classes, and separated stems.</p>
+  <div class="cta rv"><h2>Drop a file. Get a count.</h2><p>No account required. Try a synthetic mixture if you do not have audio handy.</p>
     <a class="btn primary" data-magnetic href="{{ url_for('analyze_page') }}"><svg class="ic"><use href="#i-upload"/></svg>Open the analyzer</a></div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='waves.js') }}"></script>{% endblock %}

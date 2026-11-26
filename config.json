@@ -1,5 +1,5 @@
 {
-  "dataset_path": "data",
+  "dataset_path": "C:\\Users\\areys\\Downloads\\sanada",
   "local_data_path": "data",
   "real_eval_manifest": "data/real_eval/manifest.json",
   "models_dir": "models",

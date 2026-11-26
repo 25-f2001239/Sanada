@@ -124,149 +124,16 @@ def test_quality_gates_and_windowing() -> None:
     )
 
 
-def _login_test_user(client, email: str = "qa.tester@gmail.com", role: str = "user"):
-    import auth as auth_mod
-
-    auth_mod.init_db()
-    with auth_mod._conn() as con:
-        row = con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-        if row:
-            uid = int(row["id"])
-            con.execute(
-                "UPDATE users SET email_verified = 1, role = ?, is_active = 1 WHERE id = ?",
-                (role, uid),
-            )
-        else:
-            cur = con.execute(
-                "INSERT INTO users (email, password_hash, email_verified, role, is_active, created_at) VALUES (?, ?, 1, ?, 1, ?)",
-                (email, auth_mod.hash_password("TestPass123!"), role, time.time()),
-            )
-            uid = int(cur.lastrowid)
-    sid, csrf = auth_mod.create_session(uid)
-    client.set_cookie(auth_mod.SESSION_COOKIE, sid)
-    return uid, csrf
-
-
 def test_templates_and_routes() -> None:
-    """Verify mandatory auth gateway, 3-role RBAC (user/developer/admin), admin APIs, and template resilience."""
-    anon = flask_app.app.test_client()
-    assert anon.get("/api/health").status_code == 200
-    assert anon.get("/login").status_code == 200
-    for route in (
-        "/",
-        "/analyze",
-        "/evaluation",
-        "/admin/evaluation",
-        "/admin",
-        "/history",
-        "/how",
-        "/docs",
-    ):
-        r = anon.get(route)
-        assert r.status_code == 302 and "/login" in (r.headers.get("Location") or ""), (
-            f"Expected 302->/login for {route}, got {r.status_code}"
-        )
-    for api in (
-        "/api/evaluation",
-        "/api/evaluation/export.csv",
-        "/api/admin/overview",
-        "/api/my-jobs",
-    ):
-        assert anon.get(api).status_code == 401
-
-    # Regular user: product portal allowed, dev/admin blocked with 403
-    u_client = flask_app.app.test_client()
-    target_uid, _ = _login_test_user(u_client, "role.user@gmail.com", role="user")
-    for route in ("/", "/analyze", "/history", "/how", "/docs", "/api/my-jobs"):
-        assert u_client.get(route).status_code == 200
-    for restricted in (
-        "/evaluation",
-        "/admin/evaluation",
-        "/admin",
-        "/api/evaluation",
-        "/api/evaluation/export.csv",
-        "/api/admin/overview",
-    ):
-        assert u_client.get(restricted).status_code == 403, (
-            f"Regular user should get 403 on {restricted}"
-        )
-
-    # Developer: evaluation + CSV export allowed, admin blocked with 403
-    d_client = flask_app.app.test_client()
-    _login_test_user(d_client, "role.dev@gmail.com", role="developer")
-    for route in (
-        "/",
-        "/analyze",
-        "/evaluation",
-        "/admin/evaluation",
-        "/api/evaluation",
-        "/api/evaluation/export.csv",
-    ):
-        assert d_client.get(route).status_code == 200
-    for restricted in ("/admin", "/api/admin/overview"):
-        assert d_client.get(restricted).status_code == 403
-
-    # Admin: all consoles, product preview, and user governance APIs (with self-protection)
-    a_client = flask_app.app.test_client()
-    admin_uid, admin_csrf = _login_test_user(a_client, "role.admin@outlook.com", role="admin")
-    for route in (
-        "/admin",
-        "/admin/evaluation",
-        "/evaluation",
-        "/?preview=user",
-        "/api/admin/overview",
-    ):
-        assert a_client.get(route).status_code == 200
-    preview_html = a_client.get("/?preview=user").get_data(as_text=True)
-    assert "ADMIN PREVIEW" in preview_html and "Return to Admin Console" in preview_html
-    # Roles are permanently locked (403 on all role-change attempts); cannot disable own admin account
-    assert (
-        a_client.post(
-            f"/api/admin/users/{admin_uid}/role",
-            json={"role": "user"},
-            headers={"X-CSRF-Token": admin_csrf},
-        ).status_code
-        == 403
-    )
-    assert (
-        a_client.post(
-            f"/api/admin/users/{target_uid}/role",
-            json={"role": "admin"},
-            headers={"X-CSRF-Token": admin_csrf},
-        ).status_code
-        == 403
-    )
-    assert (
-        a_client.post(
-            f"/api/admin/users/{admin_uid}/status",
-            json={"is_active": False},
-            headers={"X-CSRF-Token": admin_csrf},
-        ).status_code
-        == 400
-    )
-    # Can disable/enable another user and run cleanup
-    assert (
-        a_client.post(
-            f"/api/admin/users/{target_uid}/status",
-            json={"is_active": False},
-            headers={"X-CSRF-Token": admin_csrf},
-        ).status_code
-        == 200
-    )
-    assert u_client.get("/api/my-jobs").status_code == 401
-    assert (
-        a_client.post(
-            f"/api/admin/users/{target_uid}/status",
-            json={"is_active": True},
-            headers={"X-CSRF-Token": admin_csrf},
-        ).status_code
-        == 200
-    )
-    assert (
-        a_client.post("/api/admin/cleanup", headers={"X-CSRF-Token": admin_csrf}).status_code == 200
-    )
-    assert a_client.get("/settings/account").status_code == 200
-
+    """Verify public pages return HTTP 200, admin pages are gated, and templates tolerate missing keys."""
+    client = flask_app.app.test_client()
+    for route in ("/", "/analyze", "/history", "/how", "/docs", "/api/health"):
+        assert client.get(route).status_code == 200
+    # Evaluation & Admin are hidden from anonymous users
+    for route in ("/evaluation", "/admin"):
+        assert client.get(route).status_code == 302
+    assert client.get("/api/evaluation").status_code == 401
+    assert client.get("/api/admin/overview").status_code == 401
     cases = [
         flask_app.model_status(),
         {
@@ -285,20 +152,136 @@ def test_templates_and_routes() -> None:
     with flask_app.app.test_request_context("/"):
         for st_dict in cases:
             assert "Count every" in render_template("index.html", status=st_dict)
-    print("  [PASS] Templates, mandatory auth gateway, and 3-role RBAC.")
+    print("  [PASS] Templates & routes.")
+
+
+def test_admin_access_and_management() -> None:
+    """Verify admin-only evaluation, user promotion/demotion, invites, disabling, and audit log."""
+    import tempfile
+    import auth as auth_mod
+
+    orig_db = auth_mod.DB_PATH
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        auth_mod.DB_PATH = Path(td) / "test_admin.db"
+        auth_mod.init_db()
+        try:
+            admin_uid = auth_mod.ensure_admin_account("root_admin@gmail.com", "AdminStrong#2026")
+            c_admin = flask_app.app.test_client()
+            a_sid, a_csrf = auth_mod.create_session(admin_uid)
+            c_admin.set_cookie(auth_mod.SESSION_COOKIE, a_sid)
+
+            c_user = flask_app.app.test_client()
+            user_uid, _ = _login_test_user(c_user, "regular.member@gmail.com")
+
+            # Regular user cannot see /evaluation, /admin, or admin APIs
+            assert c_user.get("/evaluation").status_code == 404
+            assert c_user.get("/admin").status_code == 404
+            assert c_user.get("/api/evaluation").status_code == 403
+            assert c_user.get("/api/admin/overview").status_code == 403
+            user_home = c_user.get("/").get_data(as_text=True)
+            assert 'href="/evaluation"' not in user_home and 'href="/admin"' not in user_home
+
+            # Admin can see /evaluation, /admin, and all admin APIs
+            assert c_admin.get("/evaluation").status_code == 200
+            assert c_admin.get("/admin").status_code == 200
+            assert c_admin.get("/api/evaluation").status_code == 200
+            assert c_admin.get("/api/admin/overview").status_code == 200
+            assert c_admin.get("/api/admin/users").status_code == 200
+            assert c_admin.get("/api/admin/users.csv").status_code == 200
+            assert c_admin.get("/api/admin/analyses").status_code == 200
+            admin_home = c_admin.get("/").get_data(as_text=True)
+            assert 'href="/evaluation"' in admin_home and 'href="/admin"' in admin_home
+
+            # CSRF required on mutations
+            assert c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "admin"}).status_code == 403
+
+            # Promote user -> admin -> now user can access /evaluation
+            h = {"X-CSRF-Token": a_csrf}
+            r = c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "admin"}, headers=h)
+            assert r.status_code == 200 and r.get_json()["ok"] is True
+            assert c_user.get("/evaluation").status_code == 200
+
+            # Admin cannot demote themselves
+            r_self = c_admin.post(f"/api/admin/users/{admin_uid}/role", json={"role": "user"}, headers=h)
+            assert r_self.status_code == 400
+
+            # Demote user back to regular
+            r_dem = c_admin.post(f"/api/admin/users/{user_uid}/role", json={"role": "user"}, headers=h)
+            assert r_dem.status_code == 200
+            assert c_user.get("/evaluation").status_code == 404
+
+            # Pre-authorize future admin by email invite -> auto-promoted on first sign-in
+            r_inv = c_admin.post("/api/admin/invites", json={"email": "future.admin@gmail.com"}, headers=h)
+            assert r_inv.status_code == 200
+            c_future = flask_app.app.test_client()
+            _login_test_user(c_future, "future.admin@gmail.com")
+            assert c_future.get("/admin").status_code == 200
+
+            # Disable user -> immediately invalidates session
+            r_dis = c_admin.post(f"/api/admin/users/{user_uid}/disabled", json={"disabled": True}, headers=h)
+            assert r_dis.status_code == 200
+            assert c_user.get("/api/auth/me").get_json()["authenticated"] is False
+
+            # Audit log recorded actions
+            audit = c_admin.get("/api/admin/audit").get_json()["audit"]
+            actions = {row["action"] for row in audit}
+            assert {"promote", "demote", "invite_admin", "invite_accepted", "disable"}.issubset(actions)
+
+            # Per-user history isolation: each user (and admin) only sees their own history;
+            # admin Activity sees everyone's even after a user clears their own history.
+            auth_mod.record_analysis(admin_uid, "j1", "admin_clip.wav", 8.0, 2, 91.0, None, None, 120.0)
+            auth_mod.record_analysis(user_uid, "j2", "user_clip.wav", 8.0, 4, 82.0, 4, "Org_Mix_4", 150.0)
+            # Re-enable user to verify history API
+            assert c_admin.post(f"/api/admin/users/{user_uid}/disabled", json={"disabled": False}, headers=h).status_code == 200
+            c_user2 = flask_app.app.test_client()
+            u_sid, u_csrf = auth_mod.create_session(user_uid)
+            c_user2.set_cookie(auth_mod.SESSION_COOKIE, u_sid)
+
+            adm_hist = c_admin.get("/api/history").get_json()["items"]
+            usr_hist = c_user2.get("/api/history").get_json()["items"]
+            assert [x["filename"] for x in adm_hist] == ["admin_clip.wav"]
+            assert [x["filename"] for x in usr_hist] == ["user_clip.wav"]
+
+            # User cannot delete admin's history item
+            assert c_user2.delete(f"/api/history/{adm_hist[0]['id']}", headers={"X-CSRF-Token": u_csrf}).status_code == 404
+            # User clears own history -> gone from /api/history, still visible in /api/admin/analyses
+            assert c_user2.delete("/api/history", headers={"X-CSRF-Token": u_csrf}).status_code == 200
+            assert c_user2.get("/api/history").get_json()["items"] == []
+            all_act = [x["filename"] for x in c_admin.get("/api/admin/analyses").get_json()["analyses"]]
+            assert "admin_clip.wav" in all_act and "user_clip.wav" in all_act
+        finally:
+            auth_mod.DB_PATH = orig_db
+    print("  [PASS] Admin access control, role management, invites, and audit log.")
+
+
+def _login_test_user(client, email: str = "qa.tester@gmail.com"):
+    import auth as auth_mod
+
+    auth_mod.init_db()
+    with auth_mod._conn() as con:
+        row = con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if row:
+            uid = int(row["id"])
+            con.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
+        else:
+            cur = con.execute(
+                "INSERT INTO users (email, password_hash, email_verified, created_at) VALUES (?, ?, 1, ?)",
+                (email, auth_mod.hash_password("TestPass123!"), time.time()),
+            )
+            uid = int(cur.lastrowid)
+    sid, csrf = auth_mod.create_session(uid)
+    client.set_cookie(auth_mod.SESSION_COOKIE, sid)
+    return uid, csrf
 
 
 def test_five_fixed_clips_regression() -> None:
     """Run 5-clip end-to-end API regression including async separation and WAV/ZIP downloads."""
     os.environ.pop("ECHOCOUNT_DEV", None)
     client = flask_app.app.test_client()
-    _login_test_user(client, "regression.tester@gmail.com", role="admin")
+    _login_test_user(client, "regression.tester@gmail.com")
     ds_root = cfg_mod.get_dataset_root(cfg_mod.load_config())
 
     c1 = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
-    if not c1.is_file():
-        print("  [SKIP] 5-clip regression (local private dataset not present on fresh clone).")
-        return
     with open(c1, "rb") as f:
         j1 = client.post(
             "/api/analyze", data={"audio": (f, c1.name)}, content_type="multipart/form-data"
@@ -385,36 +368,16 @@ def test_expo_ready_pages_and_privacy() -> None:
 
     client = app_mod.app.test_client()
     assert client.get("/api/public-stats").status_code == 200
-    _login_test_user(client, "expo.viewer@gmail.com", role="user")
 
     home_html = client.get("/").get_data(as_text=True)
-    for forbidden in (
-        "podcast_ep12",
-        "cafe_corner",
-        "duet_take4",
-        "87%",
-        ">Example<",
-        "Model ready",
-    ):
+    for forbidden in ("podcast_ep12", "cafe_corner", "duet_take4", "87%", ">Example<", "Model ready"):
         assert forbidden not in home_html, f"Found forbidden string {forbidden!r} on Home"
     assert "Measured, not promised" in home_html
     assert "What it can hear" in home_html
     assert "Fast and checked" in home_html
 
     how_html = client.get("/how").get_data(as_text=True)
-    for anchor in (
-        "#problem",
-        "#data",
-        "#pipeline",
-        "#quality-gates",
-        "#train",
-        "#evaluate",
-        "#findings",
-        "#facts",
-        "#keep-in-mind",
-        "#reproducibility",
-        "#references",
-    ):
+    for anchor in ("#problem", "#data", "#pipeline", "#quality-gates", "#train", "#evaluate", "#findings", "#facts", "#keep-in-mind", "#reproducibility", "#references"):
         assert anchor in how_html, f"Missing TOC anchor {anchor} on /how"
 
     orig_path = app_mod.PUBLIC_SUMMARY_PATH
@@ -446,207 +409,135 @@ def test_expo_ready_pages_and_privacy() -> None:
 
 
 def test_auth_security_and_ground_truth() -> None:
-    """Verify Google-only OAuth, Email OTP flow, Argon2id, CSRF, locked admin, isolation, and Ground Truth."""
-    import re
+    """Verify OAuth provider restrictions, email policy, Argon2id, CSRF, authz, and Ground Truth."""
     import auth as auth_mod
-    import mail as mail_mod
-
-    class _MemMail(mail_mod.MailProvider):
-        def __init__(self) -> None:
-            self.sent: list[tuple[str, str, str]] = []
-
-        def send(self, to_email: str, subject: str, body: str) -> tuple[bool, str | None]:
-            self.sent.append((to_email, subject, body))
-            return True, None
 
     auth_mod.init_db()
-    mem_mail = _MemMail()
-    prev_skip_mx = os.environ.get("ECHOCOUNT_SKIP_MX_CHECK")
-    prev_no_delay = os.environ.get("ECHOCOUNT_NO_AUTH_DELAY")
-    os.environ["ECHOCOUNT_SKIP_MX_CHECK"] = "1"
-    os.environ["ECHOCOUNT_NO_AUTH_DELAY"] = "1"
-    mail_mod.set_provider(mem_mail)
-    test_email = f"verify_{int(time.time() * 1000)}@temp-mail.test"
-    try:
-        anon = flask_app.app.test_client()
+    anon = flask_app.app.test_client()
 
-        # Protected endpoints reject unauthenticated callers
-        assert anon.post("/api/analyze").status_code == 401
-        assert anon.post("/api/separate", json={"job_id": "abc"}).status_code == 401
-        assert anon.post("/api/predict").status_code == 401
-        assert anon.get("/api/download/abc.zip").status_code == 401
+    # Protected endpoints reject unauthenticated callers
+    assert anon.post("/api/analyze").status_code == 401
+    assert anon.post("/api/separate", json={"job_id": "abc"}).status_code == 401
+    assert anon.post("/api/predict").status_code == 401
+    assert anon.get("/api/download/abc.zip").status_code == 401
 
-        # Removed/unsupported OAuth providers rejected with 404
-        for bad_prov in ("facebook", "microsoft", "yahoo", "github"):
-            assert anon.get(f"/auth/oauth/{bad_prov}").status_code == 404
+    # Unsupported OAuth provider rejected
+    assert anon.get("/auth/oauth/facebook").status_code == 404
 
-        # Auth pages render without username fields, CAPTCHA, or removed OAuth providers
-        login_html = anon.get("/login").get_data(as_text=True)
-        assert "data-pw-toggle" in login_html
-        assert 'name="username"' not in login_html
-        assert "turnstile" not in login_html.lower()
-        for removed in ("Microsoft", "Yahoo", "GitHub"):
-            assert removed not in login_html, f"Removed provider {removed} still appears on /login"
+    # Auth pages render without username fields or CAPTCHA, and include eye toggle
+    login_html = anon.get("/login").get_data(as_text=True)
+    assert "data-pw-toggle" in login_html
+    assert 'name="username"' not in login_html
+    assert "turnstile" not in login_html.lower()
+    assert "Google" in login_html and "Microsoft" in login_html and "Yahoo" in login_html
 
-        m = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_html)
-        assert m, "CSRF token missing from /login"
-        csrf = m.group(1)
+    # Fetch CSRF token from /login
+    import re
 
-        # Invalid email syntax, mismatched confirmation & common weak passwords rejected
-        r_bad = anon.post(
-            "/auth/register",
-            json={
-                "email": "not-an-email",
-                "password": "StrongPassword123!",
-                "password_confirm": "StrongPassword123!",
-                "csrf_token": csrf,
-            },
-            headers={"X-CSRF-Token": csrf},
-        )
-        assert r_bad.status_code == 400
+    m = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_html)
+    assert m, "CSRF token missing from /login"
+    csrf = m.group(1)
 
-        r_mis = anon.post(
-            "/auth/register",
-            json={
-                "email": "mismatch@example.com",
-                "password": "StrongPassword123!",
-                "password_confirm": "DifferentPass123!",
-                "csrf_token": csrf,
-            },
-            headers={"X-CSRF-Token": csrf},
-        )
-        assert r_mis.status_code == 400
+    # Disposable & unsupported emails rejected
+    r_disp = anon.post(
+        "/auth/register",
+        json={"email": "bad@mailinator.com", "password": "StrongPassword123!", "csrf_token": csrf},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r_disp.status_code == 400
 
-        r_weak = anon.post(
-            "/auth/register",
-            json={
-                "email": "weak@example.com",
-                "password": "password123",
-                "password_confirm": "password123",
-                "csrf_token": csrf,
-            },
-            headers={"X-CSRF-Token": csrf},
-        )
-        assert r_weak.status_code == 400
+    r_dom = anon.post(
+        "/auth/register",
+        json={"email": "bad@unknown-domain.example", "password": "StrongPassword123!", "csrf_token": csrf},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r_dom.status_code == 400
 
-        # Valid email (including temp-mail domains) -> Argon2id hash -> 6-digit OTP verification
-        r_ok = anon.post(
-            "/auth/register",
-            json={
-                "email": test_email,
-                "password": "StrongPassword123!",
-                "password_confirm": "StrongPassword123!",
-                "csrf_token": csrf,
-            },
-            headers={"X-CSRF-Token": csrf},
-            environ_base={"REMOTE_ADDR": "127.0.0.1"},
-        )
-        assert r_ok.status_code == 201 and r_ok.get_json().get("otp_required") is True
-        with auth_mod._conn() as con:
-            row = con.execute(
-                "SELECT password_hash, email_verified FROM users WHERE email = ?", (test_email,)
-            ).fetchone()
-            assert row["password_hash"].startswith("$argon2id$")
-            assert row["email_verified"] == 0
+    # Valid Google email registration -> Argon2id hash -> verification required before login
+    # (localhost remote_addr automatically surfaces verify_url when SMTP_HOST is unset)
+    test_email = f"verify_{int(time.time() * 1000)}@gmail.com"
+    r_ok = anon.post(
+        "/auth/register",
+        json={"email": test_email, "password": "StrongPassword123!", "csrf_token": csrf},
+        headers={"X-CSRF-Token": csrf},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    )
+    assert r_ok.status_code == 201
+    v_url = r_ok.get_json()["verify_url"]
+    with auth_mod._conn() as con:
+        row = con.execute("SELECT password_hash, email_verified FROM users WHERE email = ?", (test_email,)).fetchone()
+        assert row["password_hash"].startswith("$argon2id$")
+        assert row["email_verified"] == 0
 
-        # Extract 6-digit OTP from mock mail provider and verify
-        assert mem_mail.sent, "Expected signup OTP email"
-        otp_m = re.search(r"\b(\d{6})\b", mem_mail.sent[-1][2])
-        assert otp_m, "6-digit OTP code missing from email body"
-        r_ver = anon.post(
-            "/auth/otp/verify",
-            json={"email": test_email, "purpose": "signup", "code": otp_m.group(1)},
-            headers={"X-CSRF-Token": csrf},
-        )
-        assert r_ver.status_code == 200 and r_ver.get_json().get("ok") is True
-        assert anon.get("/api/auth/me").get_json()["authenticated"] is True
+    # Cannot log in before verifying email
+    r_pre = anon.post(
+        "/auth/login",
+        json={"email": test_email, "password": "StrongPassword123!", "csrf_token": csrf},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r_pre.status_code == 401
 
-        # Fresh login on new client with verified credentials works
-        c_fresh = flask_app.app.test_client()
-        h_fresh = c_fresh.get("/login").get_data(as_text=True)
-        csrf_fresh = re.search(r'name="csrf_token"\s+value="([^"]+)"', h_fresh).group(1)
-        r_in = c_fresh.post(
-            "/auth/login",
-            json={"email": test_email, "password": "StrongPassword123!", "csrf_token": csrf_fresh},
-            headers={"X-CSRF-Token": csrf_fresh},
-        )
-        assert r_in.status_code == 200 and r_in.get_json()["ok"] is True
-        assert c_fresh.get("/api/auth/me").get_json()["authenticated"] is True
+    # Verify via token link -> activates account & logs in
+    from urllib.parse import urlparse
 
-        # Cross-user job isolation & GROUND_TRUTH_PUBLIC gating (default 0: hidden for non-admin, shown for admin)
-        user_a = flask_app.app.test_client()
-        user_b = flask_app.app.test_client()
-        admin_c = flask_app.app.test_client()
-        _login_test_user(user_a, "user_a@example.test")
-        _login_test_user(user_b, "user_b@example.test")
-        _login_test_user(admin_c, "gt_admin@example.test", role="admin")
-        c_real = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
-        has_real = c_real.is_file()
-        sample_clip = (
-            c_real if has_real else (BASE_DIR / "tests" / "fixtures" / "two_tone_test.wav")
-        )
-        with open(sample_clip, "rb") as f:
-            ja = user_a.post(
-                "/api/analyze",
-                data={"audio": (f, sample_clip.name)},
-                content_type="multipart/form-data",
-            ).get_json()
-        jid = ja["job_id"]
-        assert "ground_truth" not in ja, (
-            "Non-admin must NOT receive ground_truth when GROUND_TRUTH_PUBLIC=0"
-        )
-        if has_real:
-            with open(sample_clip, "rb") as f:
-                ja_adm = admin_c.post(
-                    "/api/analyze",
-                    data={"audio": (f, sample_clip.name)},
-                    content_type="multipart/form-data",
-                ).get_json()
-            assert ja_adm.get("ground_truth", {}).get("available") is True
-        assert user_b.post("/api/separate", json={"job_id": jid}).status_code == 404
-        assert user_b.get(f"/api/separate/{jid}").status_code == 404
-        assert user_b.get(f"/api/download/{jid}.zip").status_code == 404
-        assert user_b.get(f"/api/jobs/{jid}/pairs").status_code == 404
+    r_ver = anon.get(urlparse(v_url).path + "?" + urlparse(v_url).query)
+    assert r_ver.status_code in (200, 302)
+    assert anon.get("/api/auth/me").get_json()["authenticated"] is True
 
-        # Non-dataset audio has no ground_truth match even for admin (never fabricated)
-        import io, audio as audio_mod
+    # Logout -> re-login with verified credentials
+    me_page = anon.get("/login")
+    assert me_page.status_code in (200, 302)
+    r_out = anon.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+    # Note: after verification, session has its own CSRF token; test fresh login on new client
+    c_fresh = flask_app.app.test_client()
+    h_fresh = c_fresh.get("/login").get_data(as_text=True)
+    csrf_fresh = re.search(r'name="csrf_token"\s+value="([^"]+)"', h_fresh).group(1)
+    r_in = c_fresh.post(
+        "/auth/login",
+        json={"email": test_email, "password": "StrongPassword123!", "csrf_token": csrf_fresh},
+        headers={"X-CSRF-Token": csrf_fresh},
+    )
+    assert r_in.status_code == 200 and r_in.get_json()["ok"] is True
+    assert c_fresh.get("/api/auth/me").get_json()["authenticated"] is True
 
-        synth_wav = audio_mod.wav_bytes(np.zeros(16000, dtype=np.float32), 16000)
-        j_synth = admin_c.post(
-            "/api/analyze",
-            data={"audio": (io.BytesIO(synth_wav), "custom_room.wav")},
-            content_type="multipart/form-data",
-        ).get_json()
-        assert "ground_truth" not in j_synth
+    # Permanent admin account provisioning is idempotent & verified
+    admin_uid = auth_mod.ensure_admin_account("qa_admin@outlook.com", "AdminStrong#2026")
+    assert admin_uid > 0
+    with auth_mod._conn() as con:
+        adm = con.execute("SELECT role, email_verified FROM users WHERE id = ?", (admin_uid,)).fetchone()
+        assert adm["role"] == "admin" and adm["email_verified"] == 1
 
-        # Ground Truth SHA-256 match on known dataset file for admin
-        ds_root = cfg_mod.get_dataset_root(cfg_mod.load_config())
-        c_gt = ds_root / "FSD_Mix_3_Sounds" / "test" / "mix_00035.wav"
-        if c_gt.is_file():
-            with open(c_gt, "rb") as f:
-                jgt = admin_c.post(
-                    "/api/analyze",
-                    data={"audio": (f, c_gt.name)},
-                    content_type="multipart/form-data",
-                ).get_json()
-            assert jgt.get("ground_truth", {}).get("available") is True
-            assert jgt["ground_truth"]["true_k"] == 3
-        print(
-            "  [PASS] Auth security, Google-only OAuth, Email OTP, Argon2id, user isolation, and Ground Truth."
-        )
-    finally:
-        mail_mod.set_provider(None)
-        if prev_skip_mx is None:
-            os.environ.pop("ECHOCOUNT_SKIP_MX_CHECK", None)
-        else:
-            os.environ["ECHOCOUNT_SKIP_MX_CHECK"] = prev_skip_mx
-        if prev_no_delay is None:
-            os.environ.pop("ECHOCOUNT_NO_AUTH_DELAY", None)
-        else:
-            os.environ["ECHOCOUNT_NO_AUTH_DELAY"] = prev_no_delay
-        with auth_mod._conn() as con:
-            con.execute("DELETE FROM users WHERE email = ?", (test_email,))
-            con.execute("DELETE FROM email_otps WHERE email = ?", (test_email,))
+    # Cross-user job isolation: User B cannot access User A's job
+    user_a = flask_app.app.test_client()
+    user_b = flask_app.app.test_client()
+    _login_test_user(user_a, "user_a@outlook.com")
+    _login_test_user(user_b, "user_b@yahoo.com")
+    c_real = BASE_DIR / "data" / "real_eval" / "two_teachers_speaking.wav"
+    with open(c_real, "rb") as f:
+        ja = user_a.post("/api/analyze", data={"audio": (f, c_real.name)}, content_type="multipart/form-data").get_json()
+    jid = ja["job_id"]
+    assert ja.get("ground_truth", {}).get("available") is True
+    assert user_b.post("/api/separate", json={"job_id": jid}).status_code == 404
+    assert user_b.get(f"/api/separate/{jid}").status_code == 404
+    assert user_b.get(f"/api/download/{jid}.zip").status_code == 404
+
+    # Non-dataset audio has no ground_truth match (never fabricated)
+    import io, audio as audio_mod
+    synth_wav = audio_mod.wav_bytes(np.zeros(16000, dtype=np.float32), 16000)
+    j_synth = user_a.post(
+        "/api/analyze", data={"audio": (io.BytesIO(synth_wav), "custom_room.wav")}, content_type="multipart/form-data"
+    ).get_json()
+    assert "ground_truth" not in j_synth
+
+    # Ground Truth SHA-256 match on known dataset file
+    ds_root = cfg_mod.get_dataset_root(cfg_mod.load_config())
+    c_gt = ds_root / "FSD_Mix_3_Sounds" / "test" / "mix_00035.wav"
+    if c_gt.is_file():
+        with open(c_gt, "rb") as f:
+            jgt = user_a.post("/api/analyze", data={"audio": (f, c_gt.name)}, content_type="multipart/form-data").get_json()
+        assert jgt.get("ground_truth", {}).get("available") is True
+        assert jgt["ground_truth"]["true_k"] == 3
+    print("  [PASS] Auth security, OAuth/email policy, Argon2id, user isolation, and Ground Truth.")
 
 
 def main() -> None:
@@ -658,6 +549,7 @@ def main() -> None:
     test_production_hygiene()
     test_quality_gates_and_windowing()
     test_templates_and_routes()
+    test_admin_access_and_management()
     test_expo_ready_pages_and_privacy()
     test_auth_security_and_ground_truth()
     test_five_fixed_clips_regression()

@@ -35,6 +35,14 @@ def env_int(name: str, default: int, low: int = 1) -> int:
         return default
 
 
+def env_float(name: str, default: float) -> float:
+    """Read a float environment variable with fallback."""
+    try:
+        return float(os.getenv(name, default))
+    except ValueError:
+        return default
+
+
 MAX_SOURCES = env_int("MAX_SOURCES", 32)
 MODEL_PATH = (
     Path(os.getenv("MODEL_PATH", str(CHECKPOINTS_DIR / "source_count_clip.pt")))
@@ -56,7 +64,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
     if path.is_file():
         return json.loads(path.read_text(encoding="utf-8"))
     return {
-        "dataset_path": os.getenv("ECHOCOUNT_DATASET_PATH", str(DATA_DIR)),
+        "dataset_path": r"C:\coding\SANADA\sanada dataset",
         "local_data_path": str(DATA_DIR),
         "models_dir": str(MODELS_DIR),
         "checkpoints_dir": str(CHECKPOINTS_DIR),
@@ -108,9 +116,5 @@ def get_friendly_name(label: str, tax: dict[str, Any] | None = None) -> str:
 def get_dataset_root(cfg: dict[str, Any] | None = None) -> Path:
     """Return the configured dataset root directory if present, else local data dir."""
     cfg = cfg or load_config()
-    env_ds = os.getenv("ECHOCOUNT_DATASET_PATH", "").strip()
-    if env_ds and Path(env_ds).is_dir():
-        return Path(env_ds)
-    raw = cfg.get("dataset_path", "data")
-    ext = Path(raw) if Path(raw).is_absolute() else (BASE_DIR / raw)
-    return ext if ext.is_dir() else DATA_DIR
+    ext = Path(cfg["dataset_path"])
+    return ext if ext.is_dir() else Path(cfg.get("local_data_path", str(DATA_DIR)))

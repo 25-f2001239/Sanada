@@ -1,108 +1,71 @@
 {% extends "base.html" %}
-{% block title %}Administrator Console{% endblock %}
+{% block title %}Admin{% endblock %}
 {% block page %}admin{% endblock %}
 {% block content %}
-<div class="wrap admin-wrap" data-self-id="{{ current_user.id if current_user else '' }}">
-  <div class="page-head dev-head">
-    <div>
-      <span class="portal-kicker">Administrator Console</span>
-      <h1>System &amp; User Governance</h1>
-      <p class="lead">Monitor EchoCount accounts, active sessions, worker health, audit logs, and temporary job storage. Roles are locked via <code>ADMIN_EMAILS</code> in <code>.env</code>.</p>
-    </div>
-    <div class="actions">
-      <a class="btn sm primary" href="{{ url_for('evaluation_page') }}">Developer Evaluation</a>
-      <a class="btn sm" href="{{ url_for('index', preview='user') }}">Preview User Portal</a>
-      <button class="btn sm" id="adminCleanupBtn" type="button">Clean Temp Jobs</button>
-      <button class="btn sm" id="adminRefreshBtn" type="button">Refresh</button>
-    </div>
+<div class="wrap admin">
+  <div class="page-head">
+    <h1>Admin</h1>
+    <p class="lead">Users, usage, access control, and system health. Visible to administrators only.</p>
   </div>
 
-  <div id="adminFeedback" class="notice hidden" role="status" aria-live="polite"></div>
-
-  <div class="metrics" id="adminMetrics">
-    <div class="metric"><small>Loading</small><b>—</b></div>
-  </div>
-
-  <section class="panel stack" aria-labelledby="usrH">
-    <div class="portal-recent-head">
-      <div>
-        <h2 id="usrH" style="font-size: 1.25rem;">User Management</h2>
-        <p class="fine">Account suspensions and permanent deletions apply immediately on the server. Roles are locked in <code>.env</code> and the administrator account cannot be disabled or deleted here.</p>
-      </div>
-      <input class="search" id="adminUserSearch" type="search" placeholder="Filter by email or role…" aria-label="Filter users" style="max-width: 260px;">
+  <div data-tabs class="admin-tabs">
+    <div class="tab-list" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true" type="button">Overview</button>
+      <button role="tab" data-tab="users" aria-selected="false" type="button">Users</button>
+      <button role="tab" data-tab="activity" aria-selected="false" type="button">Activity</button>
+      <button role="tab" data-tab="audit" aria-selected="false" type="button">Audit log</button>
+      <button role="tab" data-tab="system" aria-selected="false" type="button">System</button>
     </div>
-    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="usrH">
-      <table class="kv admin-table" id="adminUsersTable">
-        <caption class="sr-only">Registered EchoCount users and role controls</caption>
-        <thead>
-          <tr>
-            <th scope="col">Email</th>
-            <th scope="col">Role</th>
-            <th scope="col">Verified</th>
-            <th scope="col">Status</th>
-            <th scope="col">Sessions</th>
-            <th scope="col">Jobs</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="adminUsersBody">
-          <tr><td colspan="7">Loading accounts…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
 
-  <div class="split">
-    <section class="panel stack" aria-labelledby="sysH">
-      <h2 id="sysH" style="font-size: 1.15rem;">Model &amp; Worker Telemetry</h2>
-      <div class="table-wrap" tabindex="0" role="region" aria-labelledby="sysH">
-        <table class="kv" id="adminSysTable">
-          <caption class="sr-only">Model and worker status</caption>
-          <tbody id="adminSysBody"><tr><td>Loading…</td></tr></tbody>
-        </table>
+    <section data-panel="overview">
+      <div class="hstats" id="admUserStats"></div>
+      <div class="hstats" id="admUsageStats"></div>
+      <div class="admin-grid">
+        <div class="panel"><div class="sub">Analyses per day (14 days)</div><div class="adm-bars" id="admDaily"></div></div>
+        <div class="panel"><div class="sub">New sign-ups per day (14 days)</div><div class="adm-bars" id="admSignups"></div></div>
+        <div class="panel"><div class="sub">Predicted source count distribution</div><div class="adm-bars" id="admKHist"></div></div>
+        <div class="panel"><div class="sub">Sign-in methods &amp; top users</div><div id="admProviders"></div></div>
       </div>
     </section>
 
-    <section class="panel stack" aria-labelledby="oauthH">
-      <h2 id="oauthH" style="font-size: 1.15rem;">Google Sign-In Status</h2>
-      <p class="fine">Google sign-in is enabled automatically when configured in <code>.env</code>. Admin accounts always sign in with email and password (never Google).</p>
-      <div class="oauth-status-grid" id="adminOAuthGrid"></div>
+    <section data-panel="users" hidden>
+      <div class="panel adm-invite">
+        <div class="sub">Make someone an admin</div>
+        <form id="admInviteForm" class="toolbar" autocomplete="off">
+          <input class="search" id="admInviteEmail" type="email" required placeholder="name@gmail.com" aria-label="Email to make admin">
+          <button class="btn sm primary" type="submit">Grant admin</button>
+        </form>
+        <p class="fine">Existing users are promoted immediately. If the email has not signed up yet, it becomes an admin automatically on first sign-in.</p>
+        <div id="admInvites"></div>
+      </div>
+      <div class="toolbar">
+        <input class="search" id="admUserQ" type="search" placeholder="Search by email" aria-label="Search users">
+        <select class="search adm-select" id="admUserFilter" aria-label="Filter users">
+          <option value="all">All users</option>
+          <option value="admin">Admins</option>
+          <option value="user">Regular users</option>
+          <option value="disabled">Disabled</option>
+          <option value="online">Has active session</option>
+        </select>
+        <a class="btn sm" href="/api/admin/users.csv"><svg class="ic"><use href="#i-download"/></svg>Export CSV</a>
+      </div>
+      <div class="table-wrap"><table class="kv adm-table" id="admUsers"><caption class="sr-only">Users</caption></table></div>
+    </section>
+
+    <section data-panel="activity" hidden>
+      <p class="fine">Most recent analyses across all users (file names and results only; audio is never stored).</p>
+      <div class="table-wrap"><table class="kv adm-table" id="admAnalyses"><caption class="sr-only">Recent analyses</caption></table></div>
+    </section>
+
+    <section data-panel="audit" hidden>
+      <p class="fine">Every admin action is recorded here.</p>
+      <div class="table-wrap"><table class="kv adm-table" id="admAudit"><caption class="sr-only">Audit log</caption></table></div>
+    </section>
+
+    <section data-panel="system" hidden>
+      <div class="table-wrap"><table class="kv" id="admSystem"><caption class="sr-only">System status</caption></table></div>
     </section>
   </div>
-
-  <section class="panel stack" aria-labelledby="auditH">
-    <div>
-      <h2 id="auditH" style="font-size: 1.15rem;">Admin Audit Log</h2>
-      <p class="fine">Records account disable, enable, and permanent delete actions using user IDs only (no email addresses stored).</p>
-    </div>
-    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="auditH">
-      <table class="kv admin-table" id="adminAuditTable">
-        <caption class="sr-only">Recent administrator account actions</caption>
-        <thead>
-          <tr>
-            <th scope="col">Time (UTC)</th>
-            <th scope="col">Admin ID</th>
-            <th scope="col">Action</th>
-            <th scope="col">Target User ID</th>
-          </tr>
-        </thead>
-        <tbody id="adminAuditBody">
-          <tr><td colspan="4">Loading audit log…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <dialog id="adminDeleteDialog" class="acct-dialog" aria-labelledby="adminDelTitle">
-    <div class="stack">
-      <h3 id="adminDelTitle">Permanently delete user account?</h3>
-      <p class="fine" id="adminDelDesc">This permanently removes the user, sessions, analysis history, and uploaded audio files on disk.</p>
-      <div class="acct-dialog-actions">
-        <button type="button" class="btn sm" id="adminDelCancelBtn">Cancel</button>
-        <button type="button" class="btn sm danger" id="adminDelConfirmBtn">Delete Permanently</button>
-      </div>
-    </div>
-  </dialog>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='admin.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='admin.js', v=asset_v) }}"></script>{% endblock %}

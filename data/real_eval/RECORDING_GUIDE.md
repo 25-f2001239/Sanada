@@ -79,8 +79,8 @@ Add each recorded WAV file to `data/real_eval/` and register an entry under `"cl
 Once your clips are in `data/real_eval/`, run:
 
 ```powershell
-# From the EchoCount project root:
-.\.venv\Scripts\python scripts\evaluate.py all --full
+cd C:\coding\SANADA\Sanada
+.\.venv\Scripts\python evaluate_real_eval.py
 ```
 
 This evaluates and writes `evaluation/real_eval_results.json` with:

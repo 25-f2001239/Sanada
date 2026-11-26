@@ -76,7 +76,7 @@ python scripts/evaluate.py --export-public</pre><button class="btn sm" data-copy
         <ul>
           <li>Without a trained checkpoint, analysis endpoints report that no trained model is loaded.</li>
           <li>One eight-second clip produces one count prediction. Long files are centre-cropped and short files are padded.</li>
-          <li>Softmax confidence is not a guarantee of correctness; check the <a href="{{ url_for('evaluation_page') }}">Evaluation</a> and <a href="{{ url_for('how_page') }}#findings">How it works</a> pages for held-out accuracy and unseen-speaker limits.</li>
+          <li>Softmax confidence is not a guarantee of correctness; check the {% if is_admin %}<a href="{{ url_for('evaluation_page') }}">Evaluation</a> and {% endif %}<a href="{{ url_for('how_page') }}#findings">How it works</a> {{ 'pages' if is_admin else 'page' }} for held-out accuracy and unseen-speaker limits.</li>
           <li>Uploaded audio, stems, and ZIPs live in <code>uploads/jobs/</code> and are deleted automatically after {{ job_ttl_minutes }} minutes and on server startup.</li>
         </ul>
       </section>

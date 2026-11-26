@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import csv
 import io
 import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -18,41 +18,30 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import numpy as np
 from dotenv import load_dotenv
-from flask import (
-    Flask,
-    jsonify,
-    make_response,
-    redirect,
-    render_template,
-    request,
-    send_file,
-    session as flask_session,
-    url_for,
-)
+from flask import Flask, jsonify, make_response, redirect, render_template, request, send_file, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 import audio
 import auth
-import capabilities
 import counting
 import data as data_mod
-import mail as mail_mod
 import quality as quality_mod
 import separation
 import tagging
 from config import (
     BASE_DIR,
+    CHECKPOINTS_DIR,
     CLIP_SAMPLES,
     CLIP_SECONDS,
     EVAL_DIR,
     MODEL_PATH,
     SAMPLE_RATE,
+    get_dataset_root,
 )
 
 load_dotenv(BASE_DIR / ".env")
@@ -78,6 +67,7 @@ logging.basicConfig(
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+APP_STARTED_AT = time.time()
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.secret_key = auth.get_or_create_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -223,25 +213,16 @@ def load_public_summary() -> dict | None:
 
 @app.context_processor
 def inject_site_globals() -> dict:
-    """Expose public stats, auth state, preview mode, dev flag, and job retention TTL to Jinja."""
-    user = auth.get_current_user()
-    admin_preview = bool(
-        user and user.get("role") == "admin" and request.args.get("preview") == "user"
-    )
+    """Expose public stats, auth state, dev flag, and job retention TTL to all Jinja templates."""
     return {
         "public_stats": load_public_summary(),
-        "capabilities": capabilities.load_registry(),
         "is_dev": data_mod.is_dev_mode(),
         "job_ttl_minutes": max(1, round(JOB_TTL_SECONDS / 60)),
-        "current_user": user,
-        "admin_preview": admin_preview,
-        "effective_role": (
-            "user" if admin_preview else (user.get("role", "user") if user else "guest")
-        ),
+        "current_user": auth.get_current_user(),
+        "is_admin": auth.is_admin(),
         "csrf_token": auth.get_or_create_form_csrf(),
         "oauth_providers": auth.provider_availability(),
-        "google_auth_mode": auth.google_auth_mode(),
-        "firebase_web_config": auth.firebase_web_config(),
+        "asset_v": int(APP_STARTED_AT),
     }
 
 
@@ -290,42 +271,33 @@ def analysis_clip(samples: np.ndarray, rate: int):
 
 
 @app.get("/")
-@auth.login_required
 def index():
-    user = auth.get_current_user()
-    recent_jobs = auth.list_user_jobs(user["id"], limit=8) if user else []
-    return render_template("index.html", status=model_status(), recent_jobs=recent_jobs)
+    return render_template("index.html", status=model_status())
 
 
 @app.get("/analyze")
-@auth.login_required
 def analyze_page():
     return render_template("analyze.html", status=model_status())
 
 
 @app.get("/evaluation")
-@app.get("/admin/evaluation")
-@auth.role_required("developer", "admin")
+@auth.admin_required
 def evaluation_page():
     return render_template("evaluation.html", status=model_status())
 
 
 @app.get("/admin")
-@auth.role_required("admin")
+@auth.admin_required
 def admin_page():
     return render_template("admin.html", status=model_status())
 
 
 @app.get("/history")
-@auth.login_required
 def history_page():
-    user = auth.get_current_user()
-    server_jobs = auth.list_user_jobs(user["id"], limit=50) if user else []
-    return render_template("history.html", status=model_status(), server_jobs=server_jobs)
+    return render_template("history.html", status=model_status())
 
 
 @app.get("/how")
-@auth.login_required
 def how_page():
     return render_template(
         "how.html",
@@ -335,224 +307,8 @@ def how_page():
 
 
 @app.get("/docs")
-@auth.login_required
 def docs_page():
     return render_template("docs.html", status=model_status())
-
-
-@app.before_request
-def enforce_same_origin_mutations():
-    """Defense-in-depth: reject cross-origin Origin headers on state-changing requests."""
-    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        origin = (request.headers.get("Origin") or "").strip()
-        if origin:
-            req_parts = urlsplit(request.host_url)
-            ori_parts = urlsplit(origin)
-            if (ori_parts.scheme, ori_parts.netloc) != (req_parts.scheme, req_parts.netloc):
-                return jsonify({"error": "Cross-origin request rejected."}), 403
-
-
-@app.after_request
-def apply_security_and_cache_headers(resp):
-    """Apply baseline security headers to all responses and no-store to private routes."""
-    p = request.path or ""
-    if p.startswith(
-        (
-            "/api/history",
-            "/api/my-jobs",
-            "/api/admin/",
-            "/api/account",
-            "/api/auth/",
-            "/api/me",
-            "/api/analyze",
-            "/api/jobs/",
-            "/api/separate",
-            "/api/stem/",
-            "/api/download/",
-            "/settings/account",
-        )
-    ):
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
-        resp.headers["Pragma"] = "no-cache"
-
-    g_connect = ""
-    g_frame = ""
-    if auth.provider_availability().get("google"):
-        if auth.google_auth_mode() == "firebase":
-            g_connect = " https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com"
-            g_frame = " https://accounts.google.com https://*.firebaseapp.com"
-        else:
-            g_connect = " https://accounts.google.com https://oauth2.googleapis.com"
-
-    resp.headers["Content-Security-Policy"] = (
-        f"default-src 'self'; "
-        f"script-src 'self' 'unsafe-inline'; "
-        f"style-src 'self' 'unsafe-inline'; "
-        f"img-src 'self' data: blob:; "
-        f"media-src 'self' blob:; "
-        f"connect-src 'self'{g_connect}; "
-        f"frame-src 'self'{g_frame}; "
-        f"frame-ancestors 'none'; "
-        f"base-uri 'self'; "
-        f"form-action 'self' https://accounts.google.com"
-    )
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["X-Frame-Options"] = "DENY"
-    resp.headers["Referrer-Policy"] = "no-referrer"
-    resp.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
-    if auth.is_https_base() or request.is_secure:
-        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return resp
-
-
-def _purge_job_files(job_ids: list[str]) -> tuple[int, bool]:
-    """Remove in-memory job state and on-disk uploads/jobs/<job_id> dirs; verify gone."""
-    if not job_ids:
-        return 0, True
-    with _jobs_lock:
-        for jid in job_ids:
-            _jobs.pop(jid, None)
-    removed = 0
-    all_gone = True
-    for jid in job_ids:
-        if jid and all(c in "0123456789abcdef" for c in jid):
-            d = JOB_DIR / jid
-            if d.exists():
-                shutil.rmtree(d, ignore_errors=True)
-                removed += 1
-            if d.exists():
-                all_gone = False
-    return removed, all_gone
-
-
-def _csv_cell(val) -> str:
-    """Neutralize spreadsheet formula injection in user-controlled CSV cells."""
-    s = "" if val is None else str(val)
-    return f"'{s}" if s and s[0] in ("=", "+", "-", "@", "\t", "\r") else s
-
-
-def _history_csv_response(
-    items: list[dict], include_user: bool = False, filename: str = "echocount-history.csv"
-):
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    header = (
-        ["created_at", "job_id"]
-        + (["user_email"] if include_user else [])
-        + [
-            "filename",
-            "estimated_sources",
-            "confidence_percent",
-            "duration_seconds",
-            "top_sounds",
-            "status",
-        ]
-    )
-    w.writerow(header)
-    for it in items:
-        s = it.get("summary") or {}
-        ts = datetime.fromtimestamp(float(it.get("created_at") or 0), UTC).isoformat(
-            timespec="seconds"
-        )
-        sounds = "; ".join(str(x) for x in (s.get("top_sounds") or []))
-        row = [ts, it.get("job_id", "")]
-        if include_user:
-            row.append(_csv_cell(it.get("user_email", "")))
-        row.extend(
-            [
-                _csv_cell(it.get("filename", "")),
-                s.get("rounded_count", ""),
-                s.get("confidence_percent", ""),
-                s.get("duration_seconds", ""),
-                _csv_cell(sounds),
-                it.get("status", "analyzed"),
-            ]
-        )
-        w.writerow(row)
-    resp = make_response(buf.getvalue())
-    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
-    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return resp
-
-
-@app.get("/api/my-jobs")
-@auth.login_required
-def my_jobs_route():
-    user = auth.get_current_user()
-    return jsonify({"jobs": auth.list_user_jobs(user["id"], limit=30)})
-
-
-@app.get("/api/history")
-@auth.login_required
-def history_list_route():
-    """Return ONLY the authenticated user's own analysis history (never accepts client user_id)."""
-    user = auth.get_current_user()
-    return jsonify({"items": auth.list_user_jobs(user["id"], limit=100), "scope": "self"})
-
-
-@app.delete("/api/history/<job_id>")
-@auth.login_required
-@auth.csrf_required
-def history_delete_item_route(job_id: str):
-    user = auth.get_current_user()
-    if not auth.delete_user_job(job_id, user):
-        return jsonify({"error": "History item not found."}), 404
-    _purge_job_files([job_id])
-    return jsonify({"ok": True, "deleted": job_id})
-
-
-@app.delete("/api/history")
-@auth.login_required
-@auth.csrf_required
-def history_clear_route():
-    user = auth.get_current_user()
-    deleted_ids = auth.clear_user_jobs(user["id"])
-    _purge_job_files(deleted_ids)
-    return jsonify({"ok": True, "deleted_count": len(deleted_ids)})
-
-
-@app.get("/api/history/export.csv")
-@auth.login_required
-def history_export_csv_route():
-    user = auth.get_current_user()
-    items = auth.list_user_jobs(user["id"], limit=500)
-    return _history_csv_response(items, include_user=False, filename="echocount-history.csv")
-
-
-def _parse_optional_uid() -> tuple[int | None, tuple | None]:
-    raw = (request.args.get("user_id") or "").strip()
-    if not raw:
-        return None, None
-    try:
-        return int(raw), None
-    except ValueError:
-        return None, (jsonify({"error": "Invalid user_id filter."}), 400)
-
-
-@app.get("/api/admin/history")
-@auth.role_required("admin")
-def admin_history_list_route():
-    """Admin-only view of all users' analysis history with optional user_id filter."""
-    filter_uid, err = _parse_optional_uid()
-    if err:
-        return err
-    items = auth.list_all_jobs(user_id=filter_uid, limit=250)
-    users = [{"id": u["id"], "email": u["email"], "role": u["role"]} for u in auth.list_users()]
-    return jsonify(
-        {"items": items, "users": users, "scope": "all_users", "filter_user_id": filter_uid}
-    )
-
-
-@app.get("/api/admin/history/export.csv")
-@auth.role_required("admin")
-def admin_history_export_csv_route():
-    filter_uid, err = _parse_optional_uid()
-    if err:
-        return err
-    items = auth.list_all_jobs(user_id=filter_uid, limit=1000)
-    return _history_csv_response(
-        items, include_user=True, filename="echocount-all-users-history.csv"
-    )
 
 
 @app.get("/api/health")
@@ -564,54 +320,36 @@ def health():
 def public_stats_route():
     summary = load_public_summary()
     if summary is None:
-        return jsonify(
-            {"available": False, "reason": "Public summary has not been exported yet."}
-        ), 404
+        return jsonify({"available": False, "reason": "Public summary has not been exported yet."}), 404
     return jsonify(summary)
 
 
-@app.get("/api/capabilities")
-def capabilities_route():
-    """Return the data-driven separation & counting capability registry."""
-    return jsonify(capabilities.load_registry())
-
-
-def _safe_next_url(raw: str | None, role: str | None = None) -> str:
-    fallback = auth.default_landing_for_role(role)
-    target = (raw or "").strip()
-    if not target or target in ("/login", "/register"):
-        return fallback
-    if "\\" in target or any(ord(c) < 32 for c in target):
-        return fallback
-    parsed = urlsplit(target)
-    if parsed.scheme or parsed.netloc:
-        return fallback
-    return target if target.startswith("/") and not target.startswith("//") else fallback
+def _safe_next_url(raw: str | None) -> str:
+    target = (raw or "/analyze").strip()
+    return target if target.startswith("/") and not target.startswith("//") else "/analyze"
 
 
 @app.get("/login")
 def login_page():
-    user = auth.get_current_user()
-    if user:
-        return redirect(_safe_next_url(request.args.get("next"), user.get("role")))
+    if auth.get_current_user():
+        return redirect(_safe_next_url(request.args.get("next")))
     return render_template(
         "auth.html",
         status=model_status(),
         mode="login",
-        next_url=request.args.get("next", ""),
+        next_url=_safe_next_url(request.args.get("next")),
     )
 
 
 @app.get("/register")
 def register_page():
-    user = auth.get_current_user()
-    if user:
-        return redirect(_safe_next_url(request.args.get("next"), user.get("role")))
+    if auth.get_current_user():
+        return redirect(_safe_next_url(request.args.get("next")))
     return render_template(
         "auth.html",
         status=model_status(),
         mode="register",
-        next_url=request.args.get("next", ""),
+        next_url=_safe_next_url(request.args.get("next")),
     )
 
 
@@ -620,563 +358,244 @@ def forgot_password_page():
     return render_template("auth.html", status=model_status(), mode="forgot", next_url="/analyze")
 
 
+@app.get("/reset-password")
+def reset_password_page():
+    return render_template(
+        "auth.html",
+        status=model_status(),
+        mode="reset",
+        token=request.args.get("token", ""),
+        next_url="/analyze",
+    )
+
+
 @app.get("/api/auth/me")
-@app.get("/api/me")
 def auth_me():
     user = auth.get_current_user()
     if not user:
         return jsonify({"authenticated": False}), 200
-    is_admin = user.get("role") == "admin"
     return jsonify(
         {
             "authenticated": True,
-            "display_label": "Admin" if is_admin else user["email"],
-            "email": user["masked_email"] if is_admin else user["email"],
-            "masked_email": user["masked_email"],
+            "email": user["email"],
             "email_verified": user["email_verified"],
-            "has_password": user.get("has_password", True),
             "role": user.get("role", "user"),
         }
     )
 
 
-def _issue_login_session(user_id: int, role: str, next_raw: str | None = None):
-    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
-    sid, _ = auth.create_session(user_id, rotate_from_sid=prev_sid)
-    is_admin = role == "admin"
-    flask_session.pop("_otp_pending", None)
-    resp = make_response(
-        jsonify(
-            {
-                "ok": True,
-                "role": role,
-                "display_label": "Admin" if is_admin else "",
-                "redirect": _safe_next_url(next_raw, role),
-            }
-        )
-    )
-    return auth.set_session_cookie(resp, sid, is_admin=is_admin)
-
-
 @app.post("/auth/login")
-@auth.csrf_required
 def auth_login_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
-    email = auth.normalize_email(str(data.get("email", "")))
+    email = str(data.get("email", ""))
     password = str(data.get("password", ""))
     ip = request.remote_addr or "local"
-    ip_h = auth.hash_ip(ip)
-    if (
-        auth.is_locked_out(f"fail:email:{email}")
-        or auth.is_locked_out(f"fail:ip:{ip_h}", max_failures=15)
-        or not auth.check_auth_rate_limit(f"login:ip:{ip_h}", limit=12, window_s=300.0)
-        or not auth.check_auth_rate_limit(f"login:email:{email}", limit=6, window_s=300.0)
+    if not auth.check_auth_rate_limit(f"login:ip:{ip}") or not auth.check_auth_rate_limit(
+        f"login:email:{auth.normalize_email(email)}", limit=5, window_s=300.0
     ):
-        return jsonify(
-            {"error": "Too many sign-in attempts. Please wait a few minutes and try again."}
-        ), 429
-
+        return jsonify({"error": "Too many sign-in attempts. Please wait a few minutes and try again."}), 429
     user, err = auth.authenticate_password_user(email, password)
     if err or not user:
-        auth.record_login_failure(f"fail:email:{email}")
-        auth.record_login_failure(f"fail:ip:{ip_h}")
-        return jsonify({"error": "Invalid email or password."}), 401
-
-    auth.clear_login_failures(f"fail:email:{email}")
-    next_raw = data.get("next")
-
-    # Optional admin step-up OTP (off by default: ADMIN_REQUIRE_OTP=0)
-    if user["role"] == "admin":
-        if not auth.admin_requires_otp():
-            return _issue_login_session(user["id"], "admin", next_raw)
-        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "admin_login", ip=ip)
-        if not ok_otp:
-            return jsonify(
-                {"error": otp_err or "Email verification is not available right now."}
-            ), 503 if retry_s == 0 else 429
-        flask_session["_otp_pending"] = {
-            "uid": user["id"],
-            "email": email,
-            "purpose": "admin_login",
-            "role": "admin",
-            "next": str(next_raw or ""),
-            "ts": time.time(),
-        }
-        return jsonify(
-            {
-                "ok": True,
-                "otp_required": True,
-                "purpose": "admin_login",
-                "cooldown": retry_s,
-                "message": "Enter the 6-digit verification code sent to your email to continue.",
-            }
-        )
-
-    # Unverified new sign-ups: send fresh code and open code-only verify view (no session until verified)
-    if not user["email_verified"]:
-        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
-        if not ok_otp:
-            return jsonify(
-                {"error": otp_err or "Email verification is not available right now."}
-            ), 503 if retry_s == 0 else 429
-        flask_session["_otp_pending"] = {
-            "uid": user["id"],
-            "email": email,
-            "purpose": "signup",
-            "role": "user",
-            "next": str(next_raw or "/analyze"),
-            "ts": time.time(),
-        }
-        return jsonify(
-            {
-                "ok": True,
-                "otp_required": True,
-                "purpose": "signup",
-                "masked_email": auth.mask_email(email),
-                "cooldown": retry_s,
-                "message": "Enter the 6-digit code sent to your email to verify your account.",
-            }
-        )
-
-    # Deactivated accounts reactivate directly upon valid email + password sign-in (no OTP)
-    if not user["is_active"]:
-        auth.reactivate_user_account(user["id"])
-
-    return _issue_login_session(user["id"], user["role"], next_raw)
-
-
-def _render_auth_error(msg: str, code: int = 400):
-    return (
-        render_template(
-            "auth.html", status=model_status(), mode="login", next_url="", auth_error=msg
-        ),
-        code,
+        return jsonify({"error": err or "Invalid email or password."}), 401
+    sid, _ = auth.create_session(user["id"])
+    resp = make_response(
+        jsonify({"ok": True, "email": user["email"], "redirect": _safe_next_url(data.get("next"))})
     )
+    return auth.set_session_cookie(resp, sid)
 
 
 @app.post("/auth/register")
-@auth.csrf_required
 def auth_register_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
     if not auth.verify_captcha_hook(request):
         return jsonify({"error": "Verification check failed."}), 400
     data = request.get_json(silent=True) or request.form
-    email = auth.normalize_email(str(data.get("email", "")))
+    email = str(data.get("email", ""))
     password = str(data.get("password", ""))
-    password_confirm = str(data.get("password_confirm", ""))
     ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"reg:ip:{auth.hash_ip(ip)}", limit=10, window_s=600.0):
+    if not auth.check_auth_rate_limit(f"reg:ip:{ip}", limit=10, window_s=600.0):
         return jsonify({"error": "Too many registration attempts. Please try again later."}), 429
-    if not password_confirm or password != password_confirm:
-        return jsonify({"error": "Passwords do not match."}), 400
-
-    # Reject syntax/MX/weak-password errors cleanly, then use non-enumerating generic response
-    uid, _legacy_tok, err = auth.register_password_user(email, password, check_mx=True)
-    if err:
-        return jsonify({"error": err}), 400
-
-    generic_msg = "If this email is eligible, a 6-digit verification code has been sent."
-    masked = auth.mask_email(email)
-    if uid is not None:
-        ok_otp, otp_err, retry_s = auth.issue_email_otp(email, "signup", ip=ip)
-        if not ok_otp:
-            code_status = 429 if retry_s > 0 else 503
-            return jsonify(
-                {"error": otp_err or "Email verification is not available right now."}
-            ), code_status
-        flask_session["_otp_pending"] = {
-            "uid": uid,
-            "email": email,
-            "purpose": "signup",
-            "role": "user",
-            "next": "/analyze",
-            "ts": time.time(),
-        }
+    uid, token, err = auth.register_password_user(email, password)
+    if err or not uid or not token:
+        return jsonify({"error": err or "Registration could not be completed."}), 400
+    verify_url = url_for("auth_verify_route", token=token, _external=True)
+    sent = auth.send_auth_email(
+        auth.normalize_email(email),
+        "Verify your EchoCount account",
+        f"Click this link to verify your EchoCount account (valid for 30 minutes):\n\n{verify_url}\n",
+    )
+    is_local_or_dev = (
+        (request.remote_addr in ("127.0.0.1", "::1", "localhost"))
+        or data_mod.is_dev_mode()
+        or os.getenv("ECHOCOUNT_TEST_VERIFY_LINK") == "1"
+    )
+    if not sent and not is_local_or_dev:
         return jsonify(
-            {
-                "ok": True,
-                "otp_required": True,
-                "purpose": "signup",
-                "masked_email": masked,
-                "cooldown": retry_s,
-                "message": generic_msg,
-            }
-        ), 201
-
-    # Existing verified account or admin email: no OTP created, generic reply + optional info notice
-    existing = auth.get_user_by_email(email)
-    if existing and existing["role"] != "admin" and existing["email_verified"]:
-        mail_mod.send_transactional_email(
-            email,
-            "Sign-up attempt on your EchoCount account",
-            "Someone tried to sign up for EchoCount with your address. Your existing account was not changed — please sign in instead.",
-            db_path=auth.DB_PATH,
-        )
-    return jsonify(
-        {
-            "ok": True,
-            "otp_required": True,
-            "purpose": "signup",
-            "masked_email": masked,
-            "cooldown": auth.OTP_RESEND_COOLDOWN,
-            "message": generic_msg,
-        }
-    ), 201
+            {"error": "Email verification service (SMTP_HOST) is not configured on this server."}
+        ), 503
+    payload: dict = {
+        "ok": True,
+        "verification_required": True,
+        "message": (
+            "Verification email sent. Check your inbox to activate your account."
+            if sent
+            else "Account created. Click Verify email now to activate your account."
+        ),
+    }
+    if not sent and is_local_or_dev:
+        payload["verify_url"] = verify_url
+    return jsonify(payload), 201
 
 
-@app.post("/auth/signup/cancel")
-@auth.csrf_required
-def auth_signup_cancel_route():
-    """Delete pending unverified account on 'Change email' and return the typed email."""
-    pending = flask_session.pop("_otp_pending", None) or {}
-    email = str(pending.get("email") or "")
-    uid = pending.get("uid")
-    deleted = bool(uid and email and auth.delete_unverified_signup(int(uid), email))
-    return jsonify({"ok": True, "deleted": deleted, "email": email})
-
-
-@app.post("/auth/otp/verify")
-@auth.csrf_required
-def auth_otp_verify_route():
-    data = request.get_json(silent=True) or request.form
-    purpose = str(data.get("purpose", "signup")).strip().lower()
-    code = str(data.get("code", "")).strip()
-    pending = flask_session.get("_otp_pending") or {}
-    email = auth.normalize_email(str(data.get("email", "") or pending.get("email", "")))
-    ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"otpver:ip:{auth.hash_ip(ip)}", limit=25, window_s=300.0):
-        return jsonify({"error": "Too many verification attempts. Please wait."}), 429
-
-    if purpose == "admin_login":
-        if (
-            not auth.admin_requires_otp()
-            or not pending
-            or pending.get("purpose") != "admin_login"
-            or (time.time() - float(pending.get("ts", 0))) > auth.OTP_TTL_SECONDS
-        ):
-            return jsonify({"error": "Verification session expired. Please sign in again."}), 400
-        email = pending["email"]
-    elif purpose not in ("signup", "forgot"):
-        return jsonify({"error": "Unsupported verification flow."}), 400
-
-    if purpose == "forgot":
-        new_pw = str(data.get("password", ""))
-        pw_conf = data.get("password_confirm")
-        if pw_conf is not None and str(pw_conf) != new_pw:
-            return jsonify({"error": "Passwords do not match."}), 400
-    ok, err = auth.verify_email_otp(email, purpose, code)
-    if not ok:
-        return jsonify({"error": err or "Invalid or expired verification code."}), 400
-
-    if purpose == "forgot":
-        ok_pw, pw_err = auth.update_password_by_email(email, new_pw)
-        if not ok_pw:
-            return jsonify({"error": pw_err or "Could not update password."}), 400
-        flask_session.pop("_otp_pending", None)
-        return jsonify(
-            {"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"}
-        )
-
-    if purpose == "signup":
-        user = auth.mark_email_verified(email)
-        if not user or user["role"] == "admin":
-            return jsonify({"error": "Invalid or expired verification code."}), 400
-        return _issue_login_session(
-            int(user["id"]), user["role"], pending.get("next") or "/analyze"
-        )
-
-    if purpose == "admin_login":
-        uid = int(pending["uid"])
-        return _issue_login_session(uid, "admin", pending.get("next") or "/admin")
-
-    return jsonify({"error": "Unsupported verification flow."}), 400
-
-
-@app.post("/auth/otp/resend")
-@auth.csrf_required
-def auth_otp_resend_route():
-    data = request.get_json(silent=True) or request.form
-    purpose = str(data.get("purpose", "signup")).strip().lower()
-    pending = flask_session.get("_otp_pending") or {}
-    email = auth.normalize_email(str(data.get("email", "") or pending.get("email", "")))
-    ip = request.remote_addr or "local"
-
-    if purpose not in ("signup", "forgot", "admin_login"):
-        return jsonify({"error": "Unsupported verification flow."}), 400
-
-    generic_msg = "If eligible, a new 6-digit verification code has been sent."
-    u = auth.get_user_by_email(email)
-    should_send = False
-    if purpose == "signup":
-        should_send = bool(u and not u["email_verified"] and u["role"] != "admin")
-    elif purpose == "forgot":
-        should_send = bool(u and u["role"] != "admin")
-    elif purpose == "admin_login" and auth.admin_requires_otp():
-        should_send = bool(
-            pending and pending.get("purpose") == "admin_login" and pending.get("email") == email
-        )
-
-    if should_send:
-        ok, err, retry_s = auth.issue_email_otp(email, purpose, ip=ip)
-        if not ok:
-            return jsonify(
-                {"error": err or "Could not resend code.", "cooldown": retry_s}
-            ), 429 if retry_s > 0 else 503
-        return jsonify({"ok": True, "cooldown": retry_s, "message": generic_msg})
-
-    return jsonify({"ok": True, "cooldown": auth.OTP_RESEND_COOLDOWN, "message": generic_msg})
+@app.get("/auth/verify")
+def auth_verify_route():
+    token = request.args.get("token", "")
+    uid = auth.consume_auth_token(token, "verify_email")
+    if not uid:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error="Verification link is invalid or expired. Please register or request a new link.",
+        ), 400
+    with auth._conn() as con:
+        con.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
+    sid, _ = auth.create_session(uid)
+    resp = make_response(redirect(url_for("analyze_page")))
+    return auth.set_session_cookie(resp, sid)
 
 
 @app.post("/auth/forgot")
-@auth.csrf_required
 def auth_forgot_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
     data = request.get_json(silent=True) or request.form
     email = auth.normalize_email(str(data.get("email", "")))
     ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"forgot:ip:{auth.hash_ip(ip)}", limit=6, window_s=600.0):
+    if not auth.check_auth_rate_limit(f"forgot:ip:{ip}", limit=6, window_s=600.0):
         return jsonify({"error": "Too many reset requests. Please wait a few minutes."}), 429
-    generic_msg = (
-        "If an eligible account exists for that email, a 6-digit reset code has been sent."
-    )
-    u = auth.get_user_by_email(email)
-    # Never allow password reset via website for the locked admin account (generic non-enumerating reply)
-    if u and u["role"] != "admin" and not auth.is_admin_email(email):
-        ok, err, retry_s = auth.issue_email_otp(email, "forgot", ip=ip)
-        if not ok and retry_s == 0:
-            return jsonify({"error": err or "Email verification is not available right now."}), 503
-        if not ok and retry_s > 0:
-            return jsonify({"error": err, "cooldown": retry_s}), 429
-    flask_session["_otp_pending"] = {"email": email, "purpose": "forgot", "ts": time.time()}
-    return jsonify(
-        {
-            "ok": True,
-            "otp_required": True,
-            "purpose": "forgot",
-            "masked_email": auth.mask_email(email),
-            "cooldown": auth.OTP_RESEND_COOLDOWN,
-            "message": generic_msg,
-        }
-    )
+    payload: dict = {
+        "ok": True,
+        "message": "If an eligible verified account exists for that email, a reset link has been prepared.",
+    }
+    with auth._conn() as con:
+        row = con.execute("SELECT id, email_verified FROM users WHERE email = ?", (email,)).fetchone()
+    if row and row["email_verified"]:
+        token = auth.create_auth_token(int(row["id"]), "reset_password")
+        reset_url = url_for("reset_password_page", token=token, _external=True)
+        sent = auth.send_auth_email(
+            email,
+            "Reset your EchoCount password",
+            f"Reset your EchoCount password (valid for 30 minutes):\n\n{reset_url}\n",
+        )
+        is_local_or_dev = (
+            (request.remote_addr in ("127.0.0.1", "::1", "localhost"))
+            or data_mod.is_dev_mode()
+            or os.getenv("ECHOCOUNT_TEST_VERIFY_LINK") == "1"
+        )
+        if not sent and is_local_or_dev:
+            payload["reset_url"] = reset_url
+    return jsonify(payload)
+
+
+@app.post("/auth/reset")
+def auth_reset_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
+    data = request.get_json(silent=True) or request.form
+    token = str(data.get("token", ""))
+    password = str(data.get("password", ""))
+    pw_err = auth.validate_password(password)
+    if pw_err:
+        return jsonify({"error": pw_err}), 400
+    uid = auth.consume_auth_token(token, "reset_password")
+    if not uid:
+        return jsonify({"error": "Reset link is invalid or expired."}), 400
+    pw_hash = auth.hash_password(password)
+    with auth._conn() as con:
+        con.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, uid))
+        con.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (uid,))
+    return jsonify({"ok": True, "message": "Password updated. You can now sign in.", "redirect": "/login"})
 
 
 @app.post("/auth/logout")
-@auth.csrf_required
 def auth_logout_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token."}), 403
     user = auth.get_current_user()
     if user:
-        auth.revoke_session(user["session_id"])
-    flask_session.pop("_otp_pending", None)
+        auth.revoke_session(user["sid"])
     resp = make_response(jsonify({"ok": True, "redirect": "/login"}))
     return auth.clear_session_cookie(resp)
 
 
 @app.get("/auth/oauth/<provider>")
 def oauth_start(provider: str):
-    if provider != "google":
+    if provider not in auth.SUPPORTED_PROVIDERS:
         return jsonify({"error": "Unsupported authentication provider."}), 404
-    if auth.google_auth_mode() == "firebase":
-        return redirect(url_for("login_page"))
-    client = auth.get_oauth_client("google")
+    client = auth._oauth.create_client(provider)
     if client is None:
-        return _render_auth_error("Google sign-in is not set up on this server yet.", 503)
-    next_raw = (request.args.get("next") or "").strip()
-    if next_raw.startswith("/") and not next_raw.startswith("//"):
-        flask_session["_oauth_next"] = next_raw
-    redirect_uri = url_for("oauth_callback", provider="google", _external=True)
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=f"{provider.title()} sign-in is not configured on this server yet.",
+        ), 503
+    redirect_uri = url_for("oauth_callback", provider=provider, _external=True)
     return client.authorize_redirect(redirect_uri)
 
 
 @app.get("/auth/oauth/<provider>/callback")
 def oauth_callback(provider: str):
-    if provider != "google":
+    if provider not in auth.SUPPORTED_PROVIDERS:
         return jsonify({"error": "Unsupported authentication provider."}), 404
-    client = auth.get_oauth_client("google")
+    client = auth._oauth.create_client(provider)
     if client is None:
         return redirect(url_for("login_page"))
     try:
         token = client.authorize_access_token()
         userinfo = token.get("userinfo") or client.userinfo()
-        sub = str(userinfo.get("sub") or "").strip()
-        raw_email = str(userinfo.get("email") or "").strip()
-        is_verified = bool(userinfo.get("email_verified") is True)
     except Exception:
-        auth.logger.warning("Google OAuth callback failed.")
-        return _render_auth_error("Google sign-in could not be verified. Please try again.", 400)
-    if not sub or not raw_email or not is_verified:
-        return _render_auth_error(
-            "Google did not return a verified identity and email address.", 400
-        )
-    user, err = auth.register_oauth_user("google", sub, raw_email, is_verified)
-    if err or not user:
-        return _render_auth_error(err or "Could not sign in with Google.", 403)
-    auth.mark_reauthenticated(int(user["id"]))
-    prev_sid = request.cookies.get(auth.SESSION_COOKIE)
-    sid, _ = auth.create_session(user["id"], rotate_from_sid=prev_sid)
-    next_target = flask_session.pop("_oauth_next", None)
-    resp = make_response(redirect(_safe_next_url(next_target, user.get("role"))))
-    return auth.set_session_cookie(resp, sid)
-
-
-@app.post("/auth/firebase/google")
-def firebase_google_signin_route():
-    """Optional Firebase Google ID-token verification endpoint (only when AUTH_GOOGLE_MODE=firebase)."""
-    if auth.google_auth_mode() != "firebase":
-        return jsonify({"error": "Firebase Google sign-in is not enabled."}), 404
-    if not auth.verify_csrf_request():
-        return jsonify({"error": "Invalid or expired security token."}), 403
-    ip = request.remote_addr or "local"
-    if not auth.check_auth_rate_limit(f"fb:ip:{auth.hash_ip(ip)}", limit=15, window_s=300.0):
-        return jsonify({"error": "Too many sign-in attempts. Please wait."}), 429
-    data = request.get_json(silent=True) or {}
-    claims, err = auth.verify_firebase_google_token(str(data.get("id_token", "")))
-    if err or not claims:
-        return jsonify({"error": err or "Google sign-in could not be verified."}), 401
-    user, uerr = auth.register_oauth_user("google", claims["sub"], claims["email"], True)
-    if uerr or not user:
-        return jsonify({"error": uerr or "Could not sign in with Google."}), 403
-    auth.mark_reauthenticated(int(user["id"]))
-    return _issue_login_session(int(user["id"]), user["role"], data.get("next"))
-
-
-# ---------------------------------------------------------------------------
-# Settings -> Account (Download My Data, Deactivate, Permanent Delete)
-# ---------------------------------------------------------------------------
-
-
-@app.get("/settings/account")
-@auth.login_required
-def account_settings_page():
-    return render_template("account.html", status=model_status())
-
-
-@app.get("/api/account/export")
-@auth.login_required
-def account_export_route():
-    """Export ONLY the authenticated user's own history as JSON or CSV."""
-    user = auth.get_current_user()
-    items = auth.list_user_jobs(user["id"], limit=1000)
-    fmt = (request.args.get("format") or "json").strip().lower()
-    if fmt == "csv":
-        return _history_csv_response(items, include_user=False, filename="my-echocount-data.csv")
-    payload = {
-        "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "account": {
-            "display_label": user["display_label"],
-            "role": user["role"],
-            "email_verified": user["email_verified"],
-            "created_at": user["created_at"],
-        },
-        "analyses": items,
-    }
-    resp = make_response(json.dumps(payload, indent=2))
-    resp.headers["Content-Type"] = "application/json; charset=utf-8"
-    resp.headers["Content-Disposition"] = 'attachment; filename="my-echocount-data.json"'
-    return resp
-
-
-@app.post("/api/account/deactivate")
-@auth.login_required
-@auth.csrf_required
-def account_deactivate_route():
-    user = auth.get_current_user()
-    if user["role"] == "admin":
-        return jsonify(
-            {"error": "Administrator accounts cannot be deactivated from the website."}
-        ), 403
-    ip_h = auth.hash_ip(request.remote_addr or "local")
-    if not auth.check_auth_rate_limit(
-        f"deact:u:{user['id']}", limit=5, window_s=3600.0
-    ) or not auth.check_auth_rate_limit(f"deact:ip:{ip_h}", limit=5, window_s=3600.0):
-        return jsonify({"error": "Too many attempts. Please try again later."}), 429
-    data = request.get_json(silent=True) or {}
-    pw = str(data.get("password", ""))
-
-    if user.get("has_password"):
-        u_ok, err = auth.authenticate_password_user(user["email"], pw)
-        if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
-            return jsonify({"error": "Invalid password confirmation."}), 401
-    elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
-        return jsonify(
-            {
-                "error": "Please re-authenticate with Google within the last 5 minutes before deactivating."
-            }
-        ), 401
-
-    ok, target_email, err = auth.deactivate_user_account(user["id"])
-    if not ok:
-        return jsonify({"error": err or "Could not deactivate account."}), 400
-    if target_email:
-        mail_mod.send_transactional_email(
-            target_email,
-            "Your EchoCount account was deactivated",
-            "Your EchoCount account has been deactivated and all active sessions have been signed out.\n"
-            "Sign in again with your email and password anytime to reactivate it.",
-            db_path=auth.DB_PATH,
-        )
-    resp = make_response(
-        jsonify({"ok": True, "status": "disabled", "redirect": "/login?deactivated=1"})
-    )
-    return auth.clear_session_cookie(resp)
-
-
-@app.delete("/api/account")
-@auth.login_required
-@auth.csrf_required
-def account_delete_self_route():
-    user = auth.get_current_user()
-    if user["role"] == "admin":
-        return jsonify({"error": "Administrator accounts cannot be deleted from the website."}), 403
-    ip_h = auth.hash_ip(request.remote_addr or "local")
-    if not auth.check_auth_rate_limit(
-        f"delacc:u:{user['id']}", limit=5, window_s=3600.0
-    ) or not auth.check_auth_rate_limit(f"delacc:ip:{ip_h}", limit=5, window_s=3600.0):
-        return jsonify({"error": "Too many deletion attempts. Please try again later."}), 429
-
-    data = request.get_json(silent=True) or {}
-    if str(data.get("confirmation", "")).strip() != "DELETE":
-        return jsonify(
-            {"error": 'Type "DELETE" exactly to confirm permanent account deletion.'}
+        auth.logger.exception("OAuth callback failed for %s", provider)
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=f"{provider.title()} sign-in could not be verified. Please try again.",
         ), 400
-
-    pw = str(data.get("password", ""))
-    if user.get("has_password"):
-        u_ok, err = auth.authenticate_password_user(user["email"], pw)
-        if err or not u_ok or int(u_ok["id"]) != int(user["id"]):
-            return jsonify(
-                {"error": "Current password confirmation is required before permanent deletion."}
-            ), 401
-    elif not auth.is_recently_reauthenticated(user["id"], window_s=300.0):
-        return jsonify(
-            {
-                "error": "Fresh Google sign-in within the last 5 minutes is required before permanent deletion."
-            }
-        ), 401
-
-    ok, deleted_job_ids, deleted_email, err = auth.delete_user_account(user["id"], self_delete=True)
-    if not ok:
-        return jsonify({"error": err or "Could not delete account."}), 400
-    removed_dirs, all_gone = _purge_job_files(deleted_job_ids)
-    if deleted_email:
-        mail_mod.send_transactional_email(
-            deleted_email,
-            "Your EchoCount account has been permanently deleted",
-            "Your EchoCount account, analysis history, sessions, and uploaded audio files have been permanently removed.\n"
-            "You may register again with this email address in the future if you wish.",
-            db_path=auth.DB_PATH,
-        )
-    resp = make_response(
-        jsonify(
-            {
-                "ok": True,
-                "deleted_jobs": len(deleted_job_ids),
-                "removed_job_dirs": removed_dirs,
-                "files_verified_removed": all_gone,
-                "redirect": "/login?deleted=1",
-            }
-        )
-    )
-    return auth.clear_session_cookie(resp)
+    sub = str(userinfo.get("sub") or userinfo.get("oid") or "").strip()
+    raw_email = str(userinfo.get("email") or userinfo.get("preferred_username") or "").strip()
+    verified = userinfo.get("email_verified")
+    # Microsoft v2 enterprise tokens may omit email_verified when email is verified in tenant
+    is_verified = bool(verified) if verified is not None else (provider == "microsoft" and bool(raw_email))
+    if not sub or not raw_email:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error="Provider did not return a verified identity and email address.",
+        ), 400
+    user, err = auth.register_oauth_user(provider, sub, raw_email, is_verified)
+    if err or not user:
+        return render_template(
+            "auth.html",
+            status=model_status(),
+            mode="login",
+            next_url="/analyze",
+            auth_error=err or "Could not sign in with provider.",
+        ), 403
+    sid, _ = auth.create_session(user["id"])
+    resp = make_response(redirect(url_for("analyze_page")))
+    return auth.set_session_cookie(resp, sid)
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -1186,23 +605,8 @@ def too_large(_error):
     ), 413
 
 
-@app.errorhandler(404)
-def not_found(_error):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Resource not found."}), 404
-    return _render_auth_error("Page not found.", 404)
-
-
-@app.errorhandler(500)
-def server_error(_error):
-    app.logger.exception("Unhandled server error on %s", request.path)
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "An internal error occurred. Please try again later."}), 500
-    return _render_auth_error("An unexpected error occurred. Please try again later.", 500)
-
-
 @app.get("/api/evaluation")
-@auth.role_required("developer", "admin")
+@auth.admin_required
 def evaluation():
     if not EVAL_PATH.is_file():
         return jsonify({"available": False, "reason": "No evaluation results yet."})
@@ -1220,183 +624,187 @@ def evaluation():
             payload["separation_eval"] = json.loads(sep_eval.read_text(encoding="utf-8"))
         except Exception:
             pass
-    pub = load_public_summary()
-    if pub:
-        payload["public_summary"] = pub
     return jsonify(payload)
 
 
-@app.get("/api/evaluation/export.csv")
-@auth.role_required("developer", "admin")
-def evaluation_export_csv():
-    """Export approved aggregate evaluation metrics from public_summary.json as CSV."""
-    pub = load_public_summary()
-    if not pub:
-        return jsonify({"error": "Public evaluation summary not available."}), 404
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["section", "slice", "n", "exact_accuracy", "within_one", "mae", "bias", "notes"])
-    c, t, sep = pub.get("counting", {}), pub.get("tagging", {}), pub.get("separation", {})
-    for key, label in (
-        ("overall", "Overall Test"),
-        ("speech", "Speech Test"),
-        ("fsd", "FSD Test"),
-        ("held_out_unseen_speakers", "Held-Out Unseen Speakers"),
-    ):
-        s = c.get(key) or {}
-        if s:
-            w.writerow(
-                [
-                    "counting_summary",
-                    label,
-                    s.get("n", ""),
-                    s.get("exact_accuracy", ""),
-                    s.get("within_one", ""),
-                    s.get("mae", ""),
-                    s.get("bias", ""),
-                    "",
-                ]
-            )
-    for row in c.get("per_count_overall") or []:
-        note = "unreliable (n<30)" if row.get("unreliable") else "reliable"
-        w.writerow(
-            [
-                "counting_per_k",
-                f"K={row.get('true_k')}",
-                row.get("n", ""),
-                row.get("exact_accuracy", ""),
-                row.get("within_one", ""),
-                row.get("mae", ""),
-                row.get("bias", ""),
-                note,
-            ]
-        )
-    for slc, n_key, val_key in (
-        ("Group Test Macro mAP", "", "group_test_macro_map"),
-        ("Fine-32 Test Macro mAP", "", "fine_32_test_macro_map"),
-        ("AST+CLAP Open-Vocab Macro AP", "open_vocab_held_out_clips", "ast_clap_macro_ap"),
-    ):
-        w.writerow(
-            ["tagging", slc, t.get(n_key, "") if n_key else "", t.get(val_key, ""), "", "", "", ""]
-        )
-    w.writerow(
-        [
-            "separation",
-            "Overall Synthetic Benchmark",
-            sep.get("total_stems_evaluated", ""),
-            sep.get("self_consistency_pass_rate", ""),
-            sep.get("energy_conservation_pass_rate", ""),
-            sep.get("overall_mean_sisdri_db", ""),
-            "",
-            "exact_accuracy=self_consistency_pass_rate; within_one=energy_pass_rate; mae=mean_sisdri_db",
-        ]
-    )
-    resp = make_response(buf.getvalue())
-    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
-    resp.headers["Content-Disposition"] = 'attachment; filename="echocount_evaluation_summary.csv"'
-    return resp
+# ---------------------------------------------------------------------------
+# Admin API (all routes: admin role + CSRF on mutations, enforced by auth.admin_required)
+# ---------------------------------------------------------------------------
+
+
+def _dir_size_bytes(p: Path) -> int:
+    try:
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    except OSError:
+        return 0
+
+
+def _admin_system_status() -> dict:
+    st = model_status()
+    gt_index = data_mod.INDEX_PATH
+    gt_files = None
+    if gt_index.is_file():
+        try:
+            gt_files = json.loads(gt_index.read_text(encoding="utf-8")).get("total_files")
+        except (OSError, ValueError):
+            gt_files = None
+    with _jobs_lock:
+        active_jobs = len(_jobs)
+        separating = sum(1 for j in _jobs.values() if j.get("sep_status") == "running")
+    ckpts = {
+        p.name: p.is_file()
+        for p in (MODEL_PATH, CHECKPOINTS_DIR / "tagger.pt", CHECKPOINTS_DIR / "separator_iterative.pt")
+    }
+    try:
+        ds_root = get_dataset_root()
+        ds_root_str, ds_root_found = str(ds_root), ds_root.is_dir()
+    except OSError:
+        ds_root_str, ds_root_found = str(data_mod.load_config().get("dataset_path", "")), False
+    return {
+        "uptime_s": round(time.time() - APP_STARTED_AT),
+        "dev_mode": data_mod.is_dev_mode(),
+        "model_trained": bool(st.get("trained")),
+        "checkpoints": ckpts,
+        "evaluation_results": EVAL_PATH.is_file(),
+        "ground_truth_index_files": gt_files,
+        "dataset_root": ds_root_str,
+        "dataset_root_found": ds_root_found,
+        "active_jobs": active_jobs,
+        "separations_running": separating,
+        "job_storage_mb": round(_dir_size_bytes(JOB_DIR) / 1048576, 1),
+        "db_size_mb": round(auth.DB_PATH.stat().st_size / 1048576, 2) if auth.DB_PATH.is_file() else 0,
+        "oauth_providers": auth.provider_availability(),
+        "smtp_configured": bool(os.getenv("SMTP_HOST", "").strip()),
+        "limits": {
+            "max_upload_mb": round(MAX_UPLOAD_BYTES / 1048576, 1),
+            "max_duration_s": MAX_DURATION_SECONDS,
+            "job_ttl_min": round(JOB_TTL_SECONDS / 60),
+        },
+    }
 
 
 @app.get("/api/admin/overview")
-@auth.role_required("admin")
-def admin_overview_api():
-    """Return user list, active/failed job telemetry, temp-file disk usage, and model health."""
-    sweep_jobs()
-    users = auth.list_users()
-    with _jobs_lock:
-        active_jobs = len(_jobs)
-        running_sep = sum(1 for j in _jobs.values() if j.get("sep_status") == "running")
-        failed_sep = sum(1 for j in _jobs.values() if j.get("sep_status") == "failed")
-        completed_sep = sum(1 for j in _jobs.values() if j.get("sep_status") == "completed")
-    job_dirs = [p for p in JOB_DIR.iterdir() if p.is_dir()] if JOB_DIR.is_dir() else []
-    disk_bytes = sum(f.stat().st_size for d in job_dirs for f in d.rglob("*") if f.is_file())
-    return jsonify(
-        {
-            "ok": True,
-            "users": users,
-            "counts": {
-                "total_users": len(users),
-                "admins": sum(1 for u in users if u["role"] == "admin"),
-                "developers": sum(1 for u in users if u["role"] == "developer"),
-                "regular_users": sum(1 for u in users if u["role"] == "user"),
-                "active_sessions": sum(u["active_sessions"] for u in users),
-            },
-            "system": {
-                "model": model_status(),
-                "active_jobs": active_jobs,
-                "running_separations": running_sep,
-                "completed_separations": completed_sep,
-                "failed_separations": failed_sep,
-                "temp_job_dirs": len(job_dirs),
-                "temp_disk_mb": round(disk_bytes / 1048576, 2),
-                "job_ttl_minutes": max(1, round(JOB_TTL_SECONDS / 60)),
-                "separation_workers": int(os.getenv("SEPARATION_WORKERS", "2")),
-                "oauth_providers": auth.provider_availability(),
-            },
-            "audit_log": auth.list_admin_audit(limit=50),
-        }
-    )
+@auth.admin_required
+def admin_overview_route():
+    return jsonify({**auth.admin_overview(), "system": _admin_system_status()})
 
 
-@app.post("/api/admin/users/<int:uid>/role")
-@auth.role_required("admin")
-@auth.csrf_required
-def admin_update_role_api(uid: int):
-    return jsonify(
-        {
-            "error": "Roles are locked and cannot be changed through the website. Edit ADMIN_EMAILS in .env and restart."
-        }
-    ), 403
+@app.get("/api/admin/users")
+@auth.admin_required
+def admin_users_route():
+    return jsonify({"users": auth.admin_list_users(), "invites": auth.admin_list_invites(), "me": auth.get_current_user()["id"]})
 
 
-@app.post("/api/admin/users/<int:uid>/status")
-@auth.role_required("admin")
-@auth.csrf_required
-def admin_update_status_api(uid: int):
-    actor = auth.get_current_user()
-    data = request.get_json(silent=True) or request.form
-    active = bool(data.get("is_active"))
-    ok, err = auth.set_user_active(uid, active, actor["id"])
-    if not ok:
-        return jsonify({"error": err}), 400
+@app.get("/api/admin/users.csv")
+@auth.admin_required
+def admin_users_csv_route():
+    import csv
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = ["id", "email", "role", "email_verified", "disabled", "sign_in_methods", "created_at", "last_login_at", "analyses", "active_sessions"]
+    w.writerow(cols)
+    fmt = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else ""  # noqa: E731
+    for u in auth.admin_list_users():
+        w.writerow([
+            u["id"], u["email"], u["role"], u["email_verified"], u["disabled"], "+".join(u["sign_in_methods"]),
+            fmt(u["created_at"]), fmt(u["last_login_at"]), u["analyses"], u["active_sessions"],
+        ])
+    auth.log_admin_action(auth.get_current_user(), "export_users_csv")
+    resp = make_response(buf.getvalue())
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = "attachment; filename=echocount_users.csv"
+    return resp
+
+
+def _admin_result(ok_msg: tuple[bool, str]):
+    ok, msg = ok_msg
+    return jsonify({"ok": ok, "message" if ok else "error": msg}), (200 if ok else 400)
+
+
+@app.post("/api/admin/users/<int:user_id>/role")
+@auth.admin_required
+def admin_set_role_route(user_id: int):
+    role = str((request.get_json(silent=True) or {}).get("role", ""))
+    return _admin_result(auth.admin_set_role(auth.get_current_user(), user_id, role))
+
+
+@app.post("/api/admin/users/<int:user_id>/disabled")
+@auth.admin_required
+def admin_set_disabled_route(user_id: int):
+    disabled = bool((request.get_json(silent=True) or {}).get("disabled"))
+    return _admin_result(auth.admin_set_disabled(auth.get_current_user(), user_id, disabled))
+
+
+@app.post("/api/admin/users/<int:user_id>/revoke-sessions")
+@auth.admin_required
+def admin_revoke_sessions_route(user_id: int):
+    return _admin_result(auth.admin_revoke_sessions(auth.get_current_user(), user_id))
+
+
+@app.delete("/api/admin/users/<int:user_id>")
+@auth.admin_required
+def admin_delete_user_route(user_id: int):
+    return _admin_result(auth.admin_delete_user(auth.get_current_user(), user_id))
+
+
+@app.post("/api/admin/invites")
+@auth.admin_required
+def admin_invite_route():
+    email = str((request.get_json(silent=True) or {}).get("email", ""))
+    return _admin_result(auth.admin_invite(auth.get_current_user(), email))
+
+
+@app.delete("/api/admin/invites/<path:email>")
+@auth.admin_required
+def admin_cancel_invite_route(email: str):
+    return _admin_result(auth.admin_cancel_invite(auth.get_current_user(), email))
+
+
+@app.get("/api/admin/analyses")
+@auth.admin_required
+def admin_analyses_route():
+    return jsonify({"analyses": auth.admin_recent_analyses(int(request.args.get("limit", 50)))})
+
+
+@app.get("/api/admin/audit")
+@auth.admin_required
+def admin_audit_route():
+    return jsonify({"audit": auth.admin_audit_log(int(request.args.get("limit", 100)))})
+
+
+# ---------------------------------------------------------------------------
+# Per-user History API (strictly scoped to the currently logged-in user)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/history")
+@auth.login_required
+def user_history_route():
+    user = auth.get_current_user()
+    limit = max(1, min(500, int(request.args.get("limit", 200))))
+    return jsonify({"items": auth.user_history(user["id"], limit=limit), "email": user["email"]})
+
+
+@app.delete("/api/history/<int:item_id>")
+@auth.login_required
+def delete_user_history_item_route(item_id: int):
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    user = auth.get_current_user()
+    if not auth.delete_user_history_item(user["id"], item_id):
+        return jsonify({"error": "History item not found."}), 404
     return jsonify({"ok": True})
 
 
-@app.post("/api/admin/users/<int:uid>/revoke")
-@auth.role_required("admin")
-@auth.csrf_required
-def admin_revoke_sessions_api(uid: int):
-    revoked = auth.revoke_user_sessions(uid)
-    return jsonify({"ok": True, "revoked": revoked})
-
-
-@app.delete("/api/admin/users/<int:uid>")
-@auth.role_required("admin")
-@auth.csrf_required
-def admin_delete_user_api(uid: int):
-    actor = auth.get_current_user()
-    ok, deleted_job_ids, _deleted_email, err = auth.delete_user_account(uid, actor["id"])
-    if not ok:
-        return jsonify({"error": err}), 400
-    removed_dirs, all_gone = _purge_job_files(deleted_job_ids)
-    return jsonify(
-        {
-            "ok": True,
-            "deleted_jobs": len(deleted_job_ids),
-            "removed_job_dirs": removed_dirs,
-            "files_verified_removed": all_gone,
-        }
-    )
-
-
-@app.post("/api/admin/cleanup")
-@auth.role_required("admin")
-@auth.csrf_required
-def admin_cleanup_api():
-    before = len([p for p in JOB_DIR.iterdir() if p.is_dir()]) if JOB_DIR.is_dir() else 0
-    sweep_jobs(startup=False)
-    after = len([p for p in JOB_DIR.iterdir() if p.is_dir()]) if JOB_DIR.is_dir() else 0
-    return jsonify({"ok": True, "removed": max(0, before - after), "remaining": after})
+@app.delete("/api/history")
+@auth.login_required
+def clear_user_history_route():
+    if not auth.verify_csrf_request():
+        return jsonify({"error": "Invalid or expired security token. Refresh the page and try again."}), 403
+    user = auth.get_current_user()
+    cleared = auth.clear_user_history(user["id"])
+    return jsonify({"ok": True, "cleared": cleared})
 
 
 def _separation_eligibility(
@@ -1419,21 +827,16 @@ def _separation_eligibility(
             "reason": "Too many overlapping sounds to separate reliably.",
         }
     if is_pure_speech:
-        # Keep baseline can_separate strictly aligned with existing speech-2 golden behavior;
-        # additive speech-3 and speech-recursive modes are exposed via extended_modes from capabilities.json.
-        supports_k = k == 2 and bool(speech_sep.get("has_2spk_model"))
-        ext_modes = capabilities.get_extended_speech_modes_for_k(k, is_pure_speech=True)
+        supports_k = (k == 2 and bool(speech_sep.get("has_2spk_model"))) or (
+            k == 3 and bool(speech_sep.get("has_3spk_model"))
+        )
         reason = (
             None
             if supports_k
             else (
                 f"Separation not available for this recording: only {k} source estimated."
                 if k < 2
-                else (
-                    f"Baseline speech separation supports 2 speakers; additive mode available ({ext_modes[0]['label']})."
-                    if ext_modes
-                    else f"Separation not available for this recording: Separation is supported for up to {max_spk} speakers with the installed model."
-                )
+                else f"Separation not available for this recording: Separation is supported for up to {max_spk} speakers with the installed model."
             )
         )
         return {
@@ -1442,7 +845,6 @@ def _separation_eligibility(
             "speech_mode": True,
             "speech_separator": speech_sep,
             "max_separable": max_spk,
-            "extended_modes": ext_modes,
             "reason": reason,
         }
     max_sep = min(last_reliable_k, separation.MAX_SEPARABLE)
@@ -1468,53 +870,6 @@ def _separation_eligibility(
         "max_separable": max_sep,
         "reason": reason,
     }
-
-
-def _can_see_ground_truth(user: dict | None) -> bool:
-    """Server-side gate for reference ground truth: admin always; non-admin only when GROUND_TRUTH_PUBLIC=1."""
-    if not user:
-        return False
-    return user.get("role") == "admin" or os.getenv("GROUND_TRUTH_PUBLIC", "0").strip() == "1"
-
-
-def _rank_and_cap_pairs(
-    named_sounds: list[dict], overlapping_sounds: list[dict], limit: int = 12
-) -> tuple[list[dict], list[dict], int]:
-    """Rank co-occurring pairs by overlap_duration * confidence and cap to top `limit`."""
-    if not overlapping_sounds:
-        return [], [], 0
-    conf_map = {
-        str(ns.get("name") or ns.get("friendly_name") or ns.get("class") or ""): float(
-            ns.get("confidence", ns.get("probability", 0.5))
-        )
-        for ns in named_sounds
-    }
-    scored = []
-    for o in overlapping_sounds:
-        sounds = o.get("sounds") or []
-        c1 = conf_map.get(str(sounds[0]), 0.5) if len(sounds) > 0 else 0.5
-        c2 = conf_map.get(str(sounds[1]), 0.5) if len(sounds) > 1 else 0.5
-        dur = float(o.get("total_overlap_seconds") or 0.0)
-        pair_conf = round((c1 + c2) * 0.5, 4)
-        score = round(dur * pair_conf, 4)
-        scored.append((score, dur, {**o, "confidence": pair_conf, "score": score}))
-    scored.sort(key=lambda x: (-x[0], -x[1]))
-    all_ranked = [item for _, _, item in scored]
-    return all_ranked[:limit], all_ranked, len(all_ranked)
-
-
-@app.get("/api/jobs/<job_id>/pairs")
-@auth.login_required
-def job_pairs_route(job_id: str):
-    """Return full ranked co-occurring pairs for an authorized job on demand."""
-    user = auth.get_current_user()
-    if not auth.can_access_job(job_id, user):
-        return jsonify({"error": "Job not found or expired."}), 404
-    job = get_job(job_id)
-    if not job:
-        return jsonify({"error": "Job not found or expired."}), 404
-    all_pairs = job.get("all_overlapping_sounds") or []
-    return jsonify({"pairs": all_pairs, "total": len(all_pairs)})
 
 
 @app.post("/api/analyze")
@@ -1553,11 +908,7 @@ def analyze():
         timings["count_ms"] = round((time.perf_counter() - t1) * 1000, 1)
 
         t2 = time.perf_counter()
-        gt = (
-            data_mod.lookup_ground_truth(original_path, allow_in_eval=True)
-            if _can_see_ground_truth(user)
-            else None
-        )
+        gt = data_mod.lookup_ground_truth(original_path, allow_in_eval=True)
         timings["gt_ms"] = round((time.perf_counter() - t2) * 1000, 1)
 
         t3 = time.perf_counter()
@@ -1587,13 +938,8 @@ def analyze():
             {"error": "Could not run the trained model. Check the checkpoint and server logs."}
         ), 503
 
-    named_sounds = sorted(
-        tags_open.get("named_sounds", []),
-        key=lambda x: -float(x.get("confidence", x.get("probability", 0.0))),
-    )
-    top_pairs, all_ranked_pairs, total_pairs = _rank_and_cap_pairs(
-        named_sounds, tags_open.get("overlapping_sounds", []), limit=12
-    )
+    named_sounds = tags_open.get("named_sounds", [])
+    overlapping_sounds = tags_open.get("overlapping_sounds", [])
     k = int(result["rounded_count"])
     last_reliable_k, _, _ = get_dense_thresholds()
     is_pure_speech = bool(
@@ -1619,7 +965,6 @@ def analyze():
             "count": result,
             "speech_detected": is_pure_speech,
             "named_sounds": named_sounds,
-            "all_overlapping_sounds": all_ranked_pairs,
             "speaker_clustering": speaker_clustering,
             "stems": None,
             "zip": None,
@@ -1628,18 +973,6 @@ def analyze():
         }
 
     spread = int(np.ceil(result["total_std"] - 1e-9)) if result["total_std"] >= 0.5 else 0
-    auth.update_user_job(
-        job_id,
-        "analyzed",
-        {
-            "rounded_count": k,
-            "display": f"≈{k} (±{spread})",
-            "confidence_percent": round(result["confidence_percent"], 1),
-            "duration_seconds": round(duration, 2),
-            "top_sounds": [s.get("name", "") for s in named_sounds[:4] if s.get("name")],
-            "active_groups": list(tags_open.get("active_groups", []))[:5],
-        },
-    )
     payload = {
         "trained": True,
         "job_id": job_id,
@@ -1670,15 +1003,13 @@ def analyze():
                 3,
             ),
             "mc_passes": result["passes"],
-            "display": f"≈{k} (±{spread})",
+            "display": f"≈{k}" if k <= 4 else f"≈{k} (±{spread})",
             "confidence_percent": round(result["confidence_percent"], 1),
             "min_sources": result["min_sources"],
             "max_sources": result["max_sources"],
         },
         "named_sounds": named_sounds,
-        "visible_default": 8,
-        "overlapping_sounds": top_pairs,
-        "overlapping_pairs_total": total_pairs,
+        "overlapping_sounds": overlapping_sounds,
         "speaker_clustering": speaker_clustering,
         "separation": sep_state,
         "tags": {
@@ -1687,8 +1018,8 @@ def analyze():
             "open_vocabulary": True,
             "groups": tags_open.get("groups", []),
             "active_groups": tags_open.get("active_groups", []),
-            "overlapping_sounds": top_pairs,
-            "overlapping_pairs_total": total_pairs,
+            "named_sounds": named_sounds,
+            "overlapping_sounds": overlapping_sounds,
             "max_simultaneous_sounds": tags_open.get("max_simultaneous_sounds", len(named_sounds)),
             "speech_detected": speech_detected,
             "tags": tags_open.get("tags", []),
@@ -1711,24 +1042,31 @@ def analyze():
             "match_method": "audio_hash",
             **({"sha256": gt["sha256"]} if data_mod.is_dev_mode() else {}),
         }
+    auth.record_analysis(
+        user["id"],
+        job_id,
+        name,
+        round(duration, 2),
+        k,
+        round(float(result["confidence_percent"]), 1),
+        int(gt["true_k"]) if gt else None,
+        gt["dataset"] if gt else None,
+        round(sum(v for v in timings.values() if isinstance(v, (int, float))), 1),
+    )
     return jsonify(payload)
 
 
-def _validate_separation_request(
-    k: int, speech_mode: bool, req_mode: str, sep: dict, speech_sep_st: dict
-) -> tuple[dict, int] | None:
-    """Validate separation capability policy and return an error tuple if disallowed."""
+def _execute_separation_job(job_id: str, job: dict) -> tuple[dict, int]:
+    count, k, speech_mode = (
+        job["count"],
+        int(job["count"]["rounded_count"]),
+        bool(job.get("speech_detected", False)),
+    )
+    sep = separation.separator_status()
+    speech_sep_st = separation.pretrained_speech_status()
     max_spk = int(speech_sep_st.get("max_supported_speakers") or 2)
     last_reliable_k, _, _ = get_dense_thresholds()
-    if req_mode in ("speech-3", "speech-recursive"):
-        allowed = {
-            m["mode"] for m in capabilities.get_extended_speech_modes_for_k(k, is_pure_speech=True)
-        }
-        if req_mode not in allowed:
-            return {
-                "error": f"Separation mode '{req_mode}' is not enabled for K={k} under the capability policy."
-            }, 409
-        return None
+
     if not sep.get("trained", False) and not (speech_mode and speech_sep_st.get("available")):
         return {
             "error": "Separation not available for this recording: no trained separation model is active."
@@ -1741,27 +1079,55 @@ def _validate_separation_request(
         return {
             "error": f"Separation is supported for up to {max_spk} speakers with the installed model."
         }, 409
-    return None
 
+    timings = {}
+    try:
+        t0 = time.perf_counter()
+        samples, _ = audio.decode_mono(job["original"], MAX_DURATION_SECONDS)
+        full_16k = audio.resample(samples, job["input_rate"], SAMPLE_RATE).astype(np.float32)
+        q_out = separation.separate_by_queries(
+            full_16k,
+            k=k,
+            named_sounds=job.get("named_sounds", []),
+            speech_mode=speech_mode,
+            sr=SAMPLE_RATE,
+        )
+        if not q_out.get("available") or not q_out.get("stems"):
+            return {
+                "error": q_out.get("reason") or "Separation not available for this recording."
+            }, 409
+        stems, residual_16k, queries, used_speech = (
+            q_out["stems"],
+            q_out["residual_stem"],
+            q_out["queries"],
+            bool(q_out.get("used_pretrained_speech", False)),
+        )
+        timings["separate_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    except Exception:
+        app.logger.exception("Separation failed")
+        return {"error": "Separation failed. Check the checkpoint and server logs."}, 503
 
-def _write_stems_and_zip(
-    job_id: str,
-    job: dict,
-    stems: list,
-    residual_16k,
-    queries: list,
-    q_out: dict,
-    sq: dict,
-    sc_gate: dict,
-    spk_ver: dict,
-) -> tuple[list[str], list[dict], bytes]:
-    """Export peak-normalised stem WAVs, residual, manifest.json, and compressed ZIP bundle."""
-    rate, job_dir, count = job["input_rate"], JOB_DIR / job_id, job["count"]
-    k = int(count["rounded_count"])
+    t_gate = time.perf_counter()
+    sq = quality_mod.compute_stem_quality(stems, full_16k, residual=residual_16k)
+    sc_gate = quality_mod.evaluate_stem_self_consistency(stems, queries)
+    spk_ver = separation.verify_separated_speaker_stems(
+        stems, sample_rate=SAMPLE_RATE, speech_mode=speech_mode
+    )
+    timings["quality_gate_ms"] = round((time.perf_counter() - t_gate) * 1000, 1)
+
+    quality_failed = bool(sq["failed"] or (speech_mode and spk_ver["could_not_separate_speakers"]))
+    quality_reason = sq["failure_reason"]
+    if speech_mode and spk_ver["could_not_separate_speakers"]:
+        quality_reason = (
+            f"{spk_ver['reason']} Also: {quality_reason}" if quality_reason else spk_ver["reason"]
+        )
+
+    rate, job_dir = job["input_rate"], JOB_DIR / job_id
     all_waves = list(stems) + ([residual_16k] if residual_16k is not None else [])
     energies = np.array([float(np.sum(np.square(s))) for s in all_waves])
     shares = (energies / (float(energies.sum()) or 1.0)).tolist()
 
+    t1 = time.perf_counter()
     stem_files, stem_entries = [], []
     for i, (stem, q_info, sc_info) in enumerate(zip(stems, queries, sc_gate["per_stem"]), 1):
         lbl = str(q_info.get("name") or q_info.get("friendly_name") or f"Sound {i}")
@@ -1834,15 +1200,12 @@ def _write_stems_and_zip(
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "stems": [
             {
-                fld: e[fld]
-                for fld in (
-                    "file",
-                    "label",
-                    "is_residual",
-                    "energy_share",
-                    "self_consistent",
-                    "low_confidence",
-                )
+                "file": e["file"],
+                "label": e["label"],
+                "is_residual": e["is_residual"],
+                "energy_share": e["energy_share"],
+                "self_consistent": e["self_consistent"],
+                "low_confidence": e["low_confidence"],
             }
             for e in stem_entries
         ],
@@ -1851,76 +1214,13 @@ def _write_stems_and_zip(
         "speaker_verification": spk_ver,
         "source_file": job["name"],
     }
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for fn in stem_files:
             archive.write(job_dir / fn, fn)
         archive.write(job["original"], f"original_mix{job['original'].suffix}")
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
-    return stem_files, stem_entries, buffer.getvalue()
-
-
-def _execute_separation_job(
-    job_id: str, job: dict, requested_mode: str | None = None
-) -> tuple[dict, int]:
-    """Run stem separation, evaluate 3 quality gates, and package downloadable WAV/ZIP artifacts."""
-    k = int(job["count"]["rounded_count"])
-    speech_mode = bool(job.get("speech_detected", False))
-    sep, speech_sep_st = separation.separator_status(), separation.pretrained_speech_status()
-    req_mode = (requested_mode or "").strip().lower()
-    err_resp = _validate_separation_request(k, speech_mode, req_mode, sep, speech_sep_st)
-    if err_resp:
-        return err_resp
-
-    timings: dict[str, float] = {}
-    try:
-        t0 = time.perf_counter()
-        samples, _ = audio.decode_mono(job["original"], MAX_DURATION_SECONDS)
-        full_16k = audio.resample(samples, job["input_rate"], SAMPLE_RATE).astype(np.float32)
-        if req_mode == "speech-recursive":
-            q_out = separation.separate_speech_recursive(full_16k, k=k, sample_rate=SAMPLE_RATE)
-        else:
-            q_out = separation.separate_by_queries(
-                full_16k,
-                k=k,
-                named_sounds=job.get("named_sounds", []),
-                speech_mode=(True if req_mode == "speech-3" else speech_mode),
-                sr=SAMPLE_RATE,
-            )
-        if not q_out.get("available") or not q_out.get("stems"):
-            return {
-                "error": q_out.get("reason") or "Separation not available for this recording."
-            }, 409
-        stems, residual_16k, queries, used_speech = (
-            q_out["stems"],
-            q_out["residual_stem"],
-            q_out["queries"],
-            bool(q_out.get("used_pretrained_speech", False)),
-        )
-        timings["separate_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-    except Exception:
-        app.logger.exception("Separation failed")
-        return {"error": "Separation failed. Check the checkpoint and server logs."}, 503
-
-    t_gate = time.perf_counter()
-    sq = quality_mod.compute_stem_quality(stems, full_16k, residual=residual_16k)
-    sc_gate = quality_mod.evaluate_stem_self_consistency(stems, queries)
-    spk_ver = separation.verify_separated_speaker_stems(
-        stems, sample_rate=SAMPLE_RATE, speech_mode=speech_mode
-    )
-    timings["quality_gate_ms"] = round((time.perf_counter() - t_gate) * 1000, 1)
-
-    quality_failed = bool(sq["failed"] or (speech_mode and spk_ver["could_not_separate_speakers"]))
-    quality_reason = sq["failure_reason"]
-    if speech_mode and spk_ver["could_not_separate_speakers"]:
-        quality_reason = (
-            f"{spk_ver['reason']} Also: {quality_reason}" if quality_reason else spk_ver["reason"]
-        )
-
-    t1 = time.perf_counter()
-    stem_files, stem_entries, zip_bytes = _write_stems_and_zip(
-        job_id, job, stems, residual_16k, queries, q_out, sq, sc_gate, spk_ver
-    )
     timings["zip_ms"] = round((time.perf_counter() - t1) * 1000, 1)
 
     result_payload = {
@@ -1944,7 +1244,7 @@ def _execute_separation_job(
         job.update(
             {
                 "stems": stem_files,
-                "zip": zip_bytes,
+                "zip": buffer.getvalue(),
                 "used_pretrained_speech": used_speech,
                 "sep_status": "completed",
                 "sep_result": result_payload,
@@ -1961,20 +1261,19 @@ def separate_route():
         return jsonify({"error": "Rate limit exceeded. Please wait a moment and try again."}), 429
     payload = request.get_json(silent=True) or {}
     job_id = str(payload.get("job_id", ""))
-    if not auth.can_access_job(job_id, user):
+    if not auth.user_owns_job(job_id, user["id"]):
         return jsonify({"error": "That analysis expired or does not exist."}), 404
     job = get_job(job_id)
     if job is None:
         return jsonify(
             {"error": "That analysis expired or does not exist. Analyze the file again."}
         ), 404
-    req_mode = str(payload.get("mode", "")).strip() or None
     if payload.get("async"):
         with _jobs_lock:
             job["sep_status"] = "running"
 
         def _bg():
-            res, code = _execute_separation_job(job_id, job, requested_mode=req_mode)
+            res, code = _execute_separation_job(job_id, job)
             if code != 200:
                 with _jobs_lock:
                     job["sep_status"], job["sep_result"] = "failed", res
@@ -1983,7 +1282,7 @@ def separate_route():
         return jsonify(
             {"job_id": job_id, "status": "running", "poll_url": f"/api/separate/{job_id}"}
         ), 202
-    res, code = _execute_separation_job(job_id, job, requested_mode=req_mode)
+    res, code = _execute_separation_job(job_id, job)
     return jsonify(res), code
 
 
@@ -1991,7 +1290,7 @@ def separate_route():
 @auth.login_required
 def separate_status_route(job_id: str):
     user = auth.get_current_user()
-    if not auth.can_access_job(job_id, user):
+    if not auth.user_owns_job(job_id, user["id"]):
         return jsonify({"error": "Job expired or does not exist."}), 404
     job = get_job(job_id)
     if job is None:
@@ -2008,19 +1307,14 @@ def separate_status_route(job_id: str):
 @auth.login_required
 def stem_preview(job_id: str, filename: str):
     user = auth.get_current_user()
-    if not auth.can_access_job(job_id, user):
+    if not auth.user_owns_job(job_id, user["id"]):
         return jsonify({"error": "Stem not found or expired."}), 404
     job = get_job(job_id)
     if job is None or not job["stems"] or filename not in job["stems"]:
         return jsonify({"error": "Stem not found or expired."}), 404
-    if Path(filename).name != filename:
-        return jsonify({"error": "Stem not found or expired."}), 404
-    stem_path = (JOB_DIR / job_id / filename).resolve()
-    if not stem_path.is_relative_to(JOB_DIR.resolve()):
-        return jsonify({"error": "Stem not found or expired."}), 404
     as_dl = request.args.get("download") == "1"
     return send_file(
-        stem_path,
+        JOB_DIR / job_id / filename,
         mimetype="audio/wav",
         as_attachment=as_dl,
         download_name=filename if as_dl else None,
@@ -2032,7 +1326,7 @@ def stem_preview(job_id: str, filename: str):
 @auth.login_required
 def download(job_id: str):
     user = auth.get_current_user()
-    if not auth.can_access_job(job_id, user):
+    if not auth.user_owns_job(job_id, user["id"]):
         return jsonify({"error": "This download has expired or was never created."}), 404
     job = get_job(job_id)
     if job is None or not job["zip"]:
@@ -2130,51 +1424,5 @@ def predict():
             temp_path.unlink(missing_ok=True)
 
 
-def _bootstrap_first_run() -> None:
-    """Zero-config first-run setup: dev .env, folders, DB, and missing model/checkpoint download."""
-    env_path = BASE_DIR / ".env"
-    is_prod = (
-        os.getenv("ECHOCOUNT_ENV", "").strip().lower() == "production"
-        or os.getenv("FLASK_ENV", "").strip().lower() == "production"
-    )
-    if not env_path.is_file() and not is_prod:
-        import secrets
-
-        key = secrets.token_hex(32)
-        env_path.write_text(
-            f"# Auto-generated local development config (never commit .env)\n"
-            f"SECRET_KEY={key}\n"
-            f"# Optional: comma-separated emails that become admin on sign-up/restart\n"
-            f"# ADMIN_EMAILS=you@example.com\n",
-            encoding="utf-8",
-        )
-        os.environ.setdefault("SECRET_KEY", key)
-        app.secret_key = key
-        print("[EchoCount] Created local .env with a fresh random SECRET_KEY.")
-        print(
-            "[EchoCount] Nobody is admin by default. To promote an admin, set ADMIN_EMAILS=you@example.com in .env."
-        )
-
-    (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
-    JOB_DIR.mkdir(parents=True, exist_ok=True)
-    auth.init_db()
-
-    if os.getenv("ECHOCOUNT_SKIP_AUTO_DOWNLOAD", "0") != "1":
-        try:
-            from scripts.download_models import ensure_assets
-
-            failures = ensure_assets()
-            if failures:
-                print(
-                    "[EchoCount] Some assets could not be downloaded (offline or unavailable); "
-                    "the app will still start with reduced functionality:"
-                )
-                for f in failures:
-                    print(f"  - {f}")
-        except Exception as exc:
-            app.logger.warning("First-run asset check skipped: %s", exc)
-
-
 if __name__ == "__main__":
-    _bootstrap_first_run()
     app.run(debug=False, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "5000")))

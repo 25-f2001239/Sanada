@@ -78,9 +78,10 @@ def eval_counter(smoke: bool = False) -> dict[str, Any]:
         errs.append(err)
         exacts.append(int(err == 0))
         w1s.append(int(err <= 1))
-    e_arr, ex_arr = (
+    e_arr, ex_arr, w_arr = (
         np.array(errs, dtype=np.float64),
         np.array(exacts, dtype=np.float64),
+        np.array(w1s, dtype=np.float64),
     )
     summary = {
         "n_test": len(test_recs),
@@ -251,22 +252,20 @@ def _clean_per_count(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for r in rows:
         if int(r.get("n", 0)) <= 0:
             continue
-        out.append(
-            {
-                "true_k": int(r["true_k"]),
-                "n": int(r["n"]),
-                "unreliable": bool(r.get("unreliable", int(r["n"]) < 30)),
-                "exact_accuracy": round(float(r.get("exact_accuracy", 0.0)), 4),
-                "exact_ci_95": r.get("exact_ci_95"),
-                "within_one": round(float(r.get("within_one", 0.0)), 4),
-                "within1_ci_95": r.get("within1_ci_95"),
-                "mae": round(float(r.get("mae", 0.0)), 4),
-                "mae_ci_95": r.get("mae_ci_95"),
-                "rmse": round(float(r.get("rmse", 0.0)), 4),
-                "bias": round(float(r.get("bias", 0.0)), 4),
-                "mean_pred": round(float(r.get("mean_pred", 0.0)), 3),
-            }
-        )
+        out.append({
+            "true_k": int(r["true_k"]),
+            "n": int(r["n"]),
+            "unreliable": bool(r.get("unreliable", int(r["n"]) < 30)),
+            "exact_accuracy": round(float(r.get("exact_accuracy", 0.0)), 4),
+            "exact_ci_95": r.get("exact_ci_95"),
+            "within_one": round(float(r.get("within_one", 0.0)), 4),
+            "within1_ci_95": r.get("within1_ci_95"),
+            "mae": round(float(r.get("mae", 0.0)), 4),
+            "mae_ci_95": r.get("mae_ci_95"),
+            "rmse": round(float(r.get("rmse", 0.0)), 4),
+            "bias": round(float(r.get("bias", 0.0)), 4),
+            "mean_pred": round(float(r.get("mean_pred", 0.0)), 3),
+        })
     return out
 
 
@@ -290,14 +289,7 @@ def export_public_summary() -> dict[str, Any]:
         fs = aud.get("family_split", {})
     except Exception:
         aud = {"total_all": 16455, "total_dedup": 15559}
-        fs = {
-            "fsd_train": 5980,
-            "fsd_val": 600,
-            "fsd_test": 590,
-            "speech_train": 6998,
-            "speech_val": 696,
-            "speech_test": 695,
-        }
+        fs = {"fsd_train": 5980, "fsd_val": 600, "fsd_test": 590, "speech_train": 6998, "speech_val": 696, "speech_test": 695}
 
     general_params = sum(p.numel() for p in SourceCountCNN(2, 31).parameters())
     specialist_params = sum(p.numel() for p in SourceCountCNN(2, 8).parameters())
@@ -323,9 +315,7 @@ def export_public_summary() -> dict[str, Any]:
 
     p1 = pb.get("phase1_tagger_comparison", {})
     p1_classes = p1.get("per_class", {})
-    dom_vocab = set(
-        tag_ckpt_meta.get("vocabulary") or res.get("tagger_summary", {}).get("vocabulary", [])
-    )
+    dom_vocab = set(tag_ckpt_meta.get("vocabulary") or res.get("tagger_summary", {}).get("vocabulary", []))
 
     validated_sounds = []
     for key, spec in tax.get("target_12_sounds", {}).items():
@@ -333,16 +323,14 @@ def export_public_summary() -> dict[str, Any]:
         fsd_c = spec["fsd_class"]
         in_dom = fsd_c in dom_vocab
         c_metrics = p1_classes.get(fn, {})
-        validated_sounds.append(
-            {
-                "key": key,
-                "friendly_name": fn,
-                "group": spec["group"],
-                "mode": "domain_plus_open" if in_dom else "open_vocabulary",
-                "held_out_ap": c_metrics.get("ast_clap_ap"),
-                "combined_ap": c_metrics.get("combined_open_tagger_ap"),
-            }
-        )
+        validated_sounds.append({
+            "key": key,
+            "friendly_name": fn,
+            "group": spec["group"],
+            "mode": "domain_plus_open" if in_dom else "open_vocabulary",
+            "held_out_ap": c_metrics.get("ast_clap_ap"),
+            "combined_ap": c_metrics.get("combined_open_tagger_ap"),
+        })
 
     p4_lat = pb.get("phase4_latency_profile", {})
     eff_stages = eff.get("stages_seconds", {})
@@ -359,17 +347,14 @@ def export_public_summary() -> dict[str, Any]:
     }
 
     summary = {
-        "generated_at": pb.get("generated_at")
-        or res.get("generated_at")
-        or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "generated_at": pb.get("generated_at") or res.get("generated_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "release_version": "v1.0.0",
         "hardware_label": hw_label,
         "dataset": {
             "name": "SANADA Combined Acoustic & Speech Mixtures + FSD50K Isolated Subset",
             "total_mixtures_raw": int(aud.get("total_all", 16455)),
             "total_mixtures_active": int(aud.get("total_dedup", 15559)),
-            "duplicate_mixtures_excluded": int(aud.get("total_all", 16455))
-            - int(aud.get("total_dedup", 15559)),
+            "duplicate_mixtures_excluded": int(aud.get("total_all", 16455)) - int(aud.get("total_dedup", 15559)),
             "num_source_folders_active": 13,
             "num_duplicate_folders_excluded": 1,
             "source_counts_min": 2,
@@ -388,17 +373,13 @@ def export_public_summary() -> dict[str, Any]:
                     "train": int(fs.get("fsd_train", 5980)),
                     "val": int(fs.get("fsd_val", 600)),
                     "test": int(fs.get("fsd_test", 590)),
-                    "total": int(fs.get("fsd_train", 5980))
-                    + int(fs.get("fsd_val", 600))
-                    + int(fs.get("fsd_test", 590)),
+                    "total": int(fs.get("fsd_train", 5980)) + int(fs.get("fsd_val", 600)) + int(fs.get("fsd_test", 590)),
                 },
                 "speech": {
                     "train": int(fs.get("speech_train", 6998)),
                     "val": int(fs.get("speech_val", 696)),
                     "test": int(fs.get("speech_test", 695)),
-                    "total": int(fs.get("speech_train", 6998))
-                    + int(fs.get("speech_val", 696))
-                    + int(fs.get("speech_test", 695)),
+                    "total": int(fs.get("speech_train", 6998)) + int(fs.get("speech_val", 696)) + int(fs.get("speech_test", 695)),
                 },
             },
         },
@@ -418,9 +399,7 @@ def export_public_summary() -> dict[str, Any]:
         },
         "models": {
             "counter": {
-                "architecture": str(
-                    ckpt_meta.get("architecture") or "SourceCountCNN-v3-speech-fsd-specialist"
-                ),
+                "architecture": str(ckpt_meta.get("architecture") or "SourceCountCNN-v3-speech-fsd-specialist"),
                 "general_parameters": general_params,
                 "sparse_specialist_parameters": specialist_params,
                 "total_parameters": general_params + specialist_params,
@@ -432,9 +411,7 @@ def export_public_summary() -> dict[str, Any]:
                 "dropout_p": 0.4,
                 "decision_rule": str(ckpt_meta.get("decision_rule") or "calibrated_isotonic"),
                 "val_mae": round(float(ckpt_meta.get("val_mae") or 1.6047), 4),
-                "val_exact_accuracy": round(
-                    float(ckpt_meta.get("val_exact_accuracy") or 0.4498), 4
-                ),
+                "val_exact_accuracy": round(float(ckpt_meta.get("val_exact_accuracy") or 0.4498), 4),
                 "val_within_one": round(float(ckpt_meta.get("val_within_one") or 0.6591), 4),
                 "seed": int(cfg.get("seed", 42)),
             },
@@ -469,12 +446,8 @@ def export_public_summary() -> dict[str, Any]:
         },
         "counting": {
             "overall": res.get("overall", {}),
-            "speech": ((res.get("by_family") or {}).get("speech") or {})
-            .get("after_test", {})
-            .get("overall", {}),
-            "fsd": ((res.get("by_family") or {}).get("fsd") or {})
-            .get("after_test", {})
-            .get("overall", {}),
+            "speech": ((res.get("by_family") or {}).get("speech") or {}).get("after_test", {}).get("overall", {}),
+            "fsd": ((res.get("by_family") or {}).get("fsd") or {}).get("after_test", {}).get("overall", {}),
             "held_out_unseen_speakers": {
                 "n": int(ho_eval.get("n", 352)),
                 "held_out_speakers_count": 3,
@@ -485,45 +458,25 @@ def export_public_summary() -> dict[str, Any]:
             },
             "per_count_overall": _clean_per_count(res.get("per_count", [])),
             "per_count_speech": _clean_per_count(
-                (((res.get("by_family") or {}).get("speech") or {}).get("after_test") or {}).get(
-                    "per_count", []
-                )
+                (((res.get("by_family") or {}).get("speech") or {}).get("after_test") or {}).get("per_count", [])
             ),
             "per_count_fsd": _clean_per_count(
-                (((res.get("by_family") or {}).get("fsd") or {}).get("after_test") or {}).get(
-                    "per_count", []
-                )
+                (((res.get("by_family") or {}).get("fsd") or {}).get("after_test") or {}).get("per_count", [])
             ),
             "confusion_matrix": res.get("confusion_matrix", {}),
         },
         "tagging": {
-            "group_val_macro_map": round(
-                float((res.get("tagger_summary") or {}).get("val_group_macro_map", 0.9948)), 4
-            ),
-            "group_test_macro_map": round(
-                float((res.get("tagger_summary") or {}).get("test_group_macro_map", 0.9926)), 4
-            ),
-            "fine_32_val_macro_map": round(
-                float((res.get("tagger_summary") or {}).get("val_macro_map", 0.7214)), 4
-            ),
-            "fine_32_test_macro_map": round(
-                float((res.get("tagger_summary") or {}).get("test_macro_map", 0.8052)), 4
-            ),
-            "fine_32_val_macro_f1": round(
-                float((res.get("tagger_summary") or {}).get("val_macro_f1", 0.7361)), 4
-            ),
-            "fine_32_test_macro_f1": round(
-                float((res.get("tagger_summary") or {}).get("test_macro_f1", 0.7612)), 4
-            ),
+            "group_val_macro_map": round(float((res.get("tagger_summary") or {}).get("val_group_macro_map", 0.9948)), 4),
+            "group_test_macro_map": round(float((res.get("tagger_summary") or {}).get("test_group_macro_map", 0.9926)), 4),
+            "fine_32_val_macro_map": round(float((res.get("tagger_summary") or {}).get("val_macro_map", 0.7214)), 4),
+            "fine_32_test_macro_map": round(float((res.get("tagger_summary") or {}).get("test_macro_map", 0.8052)), 4),
+            "fine_32_val_macro_f1": round(float((res.get("tagger_summary") or {}).get("val_macro_f1", 0.7361)), 4),
+            "fine_32_test_macro_f1": round(float((res.get("tagger_summary") or {}).get("test_macro_f1", 0.7612)), 4),
             "open_vocab_held_out_clips": int(p1.get("num_held_out_test_clips", 96)),
             "open_vocab_classes_evaluated": int(p1.get("num_classes_evaluated", 16)),
             "ast_clap_macro_ap": round(float(p1.get("macro_ast_clap_ap", 0.9068)), 4),
-            "combined_open_tagger_macro_ap": round(
-                float(p1.get("macro_combined_open_tagger_ap", 0.6979)), 4
-            ),
-            "combined_open_tagger_macro_f1": round(
-                float(p1.get("macro_combined_open_tagger_f1", 0.4317)), 4
-            ),
+            "combined_open_tagger_macro_ap": round(float(p1.get("macro_combined_open_tagger_ap", 0.6979)), 4),
+            "combined_open_tagger_macro_f1": round(float(p1.get("macro_combined_open_tagger_f1", 0.4317)), 4),
             "validated_everyday_sounds": validated_sounds,
             "per_class_held_out": {
                 k: {
@@ -538,12 +491,8 @@ def export_public_summary() -> dict[str, Any]:
             "num_synthetic_mixtures": int(sep.get("num_mixtures", 32)),
             "total_stems_evaluated": int(sep.get("total_stems_evaluated", 112)),
             "overall_mean_sisdri_db": round(float(sep.get("overall_mean_sisdri_db", 2.51)), 2),
-            "self_consistency_pass_rate": round(
-                float(sep.get("self_consistency_pass_rate", 0.3929)), 4
-            ),
-            "energy_conservation_pass_rate": round(
-                float(sep.get("energy_conservation_pass_rate", 1.0)), 4
-            ),
+            "self_consistency_pass_rate": round(float(sep.get("self_consistency_pass_rate", 0.3929)), 4),
+            "energy_conservation_pass_rate": round(float(sep.get("energy_conservation_pass_rate", 1.0)), 4),
             "by_k": sep.get("by_k", {}),
             "per_class_sisdri": sep.get("per_class_sisdri", {}),
             "real_2spk_speech": {
@@ -560,15 +509,11 @@ def export_public_summary() -> dict[str, Any]:
         },
         "latency": {
             "clip_8s": {
-                "decode_ms": round(
-                    float((eff_stages.get("decode") or {}).get("after_ms", 11.7)), 1
-                ),
+                "decode_ms": round(float((eff_stages.get("decode") or {}).get("after_ms", 11.7)), 1),
                 "feature_ms": round(float(clip8_lat.get("feature_s", 0.037)) * 1000, 1),
                 "count_ms": round(float(clip8_lat.get("count_s", 0.009)) * 1000, 1),
                 "open_tagger_s": round(float(clip8_lat.get("open_tagger_s", 1.264)), 3),
-                "speaker_clustering_s": round(
-                    float(clip8_lat.get("speaker_clustering_s", 0.323)), 3
-                ),
+                "speaker_clustering_s": round(float(clip8_lat.get("speaker_clustering_s", 0.323)), 3),
                 "total_analyze_s": round(float(clip8_lat.get("total_analyze_s", 1.739)), 3),
                 "query_separation_s": round(float(clip8_lat.get("query_separation_s", 1.065)), 3),
                 "zip_ms": round(float((eff_stages.get("zip_on_demand") or {}).get("ms", 20.7)), 1),
@@ -589,9 +534,7 @@ def export_public_summary() -> dict[str, Any]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--export-public", action="store_true", help="Export evaluation/public_summary.json"
-    )
+    p.add_argument("--export-public", action="store_true", help="Export evaluation/public_summary.json")
     sub = p.add_subparsers(dest="target", required=False)
     for name in ("counter", "benchmarks", "profile", "public", "all"):
         sp = sub.add_parser(name)
@@ -602,9 +545,7 @@ def main() -> None:
         export_public_summary()
         return
     if not args.target:
-        p.error(
-            "Specify a subcommand (counter, benchmarks, profile, public, all) or --export-public"
-        )
+        p.error("Specify a subcommand (counter, benchmarks, profile, public, all) or --export-public")
     smoke = bool(getattr(args, "smoke", False) and not getattr(args, "full", False))
     if args.target in ("counter", "all"):
         eval_counter(smoke=smoke)

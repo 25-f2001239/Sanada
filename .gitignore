@@ -2,9 +2,8 @@
 .venv/
 venv/
 env/
-ENV/
 
-# Python caches, test & lint caches
+# Python caches & coverage
 __pycache__/
 *.py[cod]
 *$py.class
@@ -15,28 +14,22 @@ __pycache__/
 htmlcov/
 .pip-cache/
 .pip-tmp/
-*.egg-info/
 
 # Node & IDEs
 node_modules/
 .idea/
 .vscode/
-*.swp
-*.swo
 
 # OS & logs
 .DS_Store
 Thumbs.db
-Desktop.ini
 *.log
-logs/
 
-# Secrets, environment & local config (keep .env.example)
+# Secrets & environment
 .env
 .env.*
 !.env.example
 !.env.template
-config.local.json
 *.pem
 *.key
 *.p12
@@ -44,24 +37,8 @@ config.local.json
 *.jks
 credentials.json
 secrets.json
-service-account*.json
 
-# Databases, SQL dumps & backups
-*.db
-*.sqlite
-*.sqlite3
-*.db-*
-*.sqlite-*
-*.sqlite3-*
-*.sql
-*.dump
-*.bak
-*.orig
-instance/
-data/.secret_key
-data/ground_truth_index.json
-
-# Runtime uploads, temp, work, outputs, screenshots & archives
+# Runtime uploads, temp, work, archives & local DBs
 uploads/
 user_uploads/
 jobs/
@@ -73,52 +50,49 @@ deliverables/
 dist/
 build/
 .cache/
-outputs/
-screenshots/
-playwright-report/
-test-results/
-backup-*/
-cleanup-trash/
-expo-demo-frozen/
 *.zip
 *.7z
-*.rar
-*.tar
-*.tar.gz
-*.tgz
+*.bak
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite3-journal
+instance/
+data/.secret_key
 
-# Audio files & binary weights (keep single synthetic test tone fixture)
-*.wav
-*.flac
-*.mp3
-*.m4a
-*.ogg
-*.aac
-!tests/fixtures/two_tone_test.wav
+# Downloaded pretrained models & trained checkpoints
+models/
+checkpoints/*
+!checkpoints/.gitkeep
 *.pt
 *.pth
 *.ckpt
 *.bin
 *.safetensors
 *.onnx
+*.h5
+*.keras
+*.tflite
+!checkpoints/source_count_clip.pt
+!checkpoints/tagger.pt
+!checkpoints/separator_iterative.pt
 
-# Pretrained models & trained binary checkpoints (downloaded automatically on first run)
-models/*
-!models/.gitkeep
-checkpoints/*
-!checkpoints/.gitkeep
-
-# Datasets & local recordings (keep schema/docs without audio)
+# Datasets, generated indexes, private/eval audio & large generated JSON
 data/*
 !data/.gitkeep
+!data/ground_truth_index.json
 !data/real_eval/
-data/real_eval/*
+data/real_eval/*.wav
+data/real_eval/*.flac
+data/real_eval/*.mp3
 !data/real_eval/RECORDING_GUIDE.md
 !data/real_eval/manifest.json
+!data/isolated_sources/
+data/isolated_sources/*
+!data/isolated_sources/manifest.json
 
-# Large generated evaluation output (keep committed aggregate summaries)
-evaluation/results.json
+# Keep evaluation results and public summary JSONs so /evaluation and /how work out of the box
+!evaluation/results.json
 !evaluation/public_summary.json
-!evaluation/product_benchmarks.json
-!evaluation/separation_results.json
-!evaluation/efficiency_profile.json

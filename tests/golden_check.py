@@ -51,11 +51,12 @@ def _get_10_clips() -> list[dict[str, Any]]:
     ]
     out = []
     for cid, p, run_sep in candidates:
-        if not p.is_file() and p.parent.is_dir():
+        if not p.is_file():
             # Fallback to first .wav in same directory if specific filename differs
-            wavs = sorted(p.parent.glob("*.wav"))
-            if wavs:
-                p = wavs[0]
+            if p.parent.is_dir():
+                wavs = sorted(p.parent.glob("*.wav"))
+                if wavs:
+                    p = wavs[0]
         if p.is_file():
             out.append({"id": cid, "path": p, "run_sep": run_sep})
     return out
@@ -89,19 +90,12 @@ def run_capture_or_verify(verify: bool = False) -> None:
     auth_mod.init_db()
     with auth_mod._conn() as con:
         row = con.execute("SELECT id FROM users WHERE email = ?", ("golden@gmail.com",)).fetchone()
-        if row:
-            uid = int(row["id"])
+        uid = int(row["id"]) if row else int(
             con.execute(
-                "UPDATE users SET email_verified = 1, role = 'admin', is_active = 1 WHERE id = ?",
-                (uid,),
-            )
-        else:
-            uid = int(
-                con.execute(
-                    "INSERT INTO users (email, password_hash, email_verified, role, is_active, created_at) VALUES (?, ?, 1, 'admin', 1, ?)",
-                    ("golden@gmail.com", auth_mod.hash_password("GoldenCheck123!"), time.time()),
-                ).lastrowid
-            )
+                "INSERT INTO users (email, password_hash, email_verified, created_at) VALUES (?, ?, 1, ?)",
+                ("golden@gmail.com", auth_mod.hash_password("GoldenCheck123!"), time.time()),
+            ).lastrowid
+        )
     sid, _ = auth_mod.create_session(uid)
     client.set_cookie(auth_mod.SESSION_COOKIE, sid)
 

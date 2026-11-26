@@ -107,6 +107,7 @@
     if (!keepInput) {
       el.input.value = "";
       show("empty");
+      window.dispatchEvent(new CustomEvent("ec:reset"));
     }
   }
   function info() {
@@ -142,6 +143,18 @@
         if (m > mx) mx = m;
       }
       peaks = p.map((v) => v / (mx || 1));
+      window.dispatchEvent(
+        new CustomEvent("ec:file", {
+          detail: {
+            filename: f.name,
+            size: f.size,
+            duration: buf.duration,
+            sampleRate: buf.sampleRate,
+            peaks,
+            samples: d,
+          },
+        }),
+      );
     } catch {
       peaks = null;
       toast(
@@ -363,6 +376,9 @@
     el.bar.style.width = "0%";
     el.loadTxt.textContent = "Uploading";
     setStages({ decode: "active" });
+    window.dispatchEvent(
+      new CustomEvent("ec:run-start", { detail: { filename: file.name } }),
+    );
     const fd = new FormData();
     fd.append("audio", file);
     const x = new XMLHttpRequest();
@@ -383,6 +399,7 @@
       el.loadTxt.textContent = "Decoding, counting and naming sounds";
       el.bar.classList.add("indet");
       setStages({ decode: "done", count: "active", tag: "active" });
+      window.dispatchEvent(new CustomEvent("ec:run-stage", { detail: { stage: "infer" } }));
     };
     x.onload = () => {
       if (id !== runId) return;
@@ -392,7 +409,6 @@
       } catch {}
       done();
       if (x.status === 401 || data.auth_required) {
-        window.EC.clearHistoryCache?.();
         fail("Please sign in to analyze recordings. Redirecting to sign in…");
         setTimeout(() => (location.href = "/login?next=/analyze"), 900);
         return;
@@ -429,32 +445,280 @@
   function fail(msg) {
     el.errTxt.textContent = msg;
     show("err");
+    window.dispatchEvent(new CustomEvent("ec:run-error", { detail: { error: msg } }));
   }
   el.go.addEventListener("click", run);
   el.retry.addEventListener("click", run);
 
-  /* ---------- compact tabbed results ---------- */
-  const tip = (t) =>
-    `<span class="q-tip" tabindex="0" role="note" aria-label="${esc(t)}" title="${esc(t)}">?</span>`;
-  const metricTile = (l, v, help) =>
-    `<div class="metric res-tile"><small>${esc(l)} ${help ? tip(help) : ""}</small><b>${esc(v ?? "—")}</b></div>`;
+  /* ---------- results ---------- */
+  const metric = (l, v) =>
+    `<div class="metric"><small>${l}</small><b>${esc(v ?? "—")}</b></div>`;
   const fmtRange = (r) => `${fmtTime(r.start || 0)}–${fmtTime(r.end || 0)}`;
-  const soundRowHtml = (ns, winSec) => {
-    const pct = Math.min(100, Math.max(0, (ns.confidence ?? ns.probability ?? 0) * 100));
-    const trs = Array.isArray(ns.time_ranges) && ns.time_ranges.length
-      ? ns.time_ranges.slice(0, 2).map((r) => `<button type="button" class="time-pill" data-start="${r.start}" data-end="${r.end}">${esc(fmtRange(r))}</button>`).join("")
-      : `<span class="fine">0:00–${fmtTime(winSec || 8)}</span>`;
-    return `<div class="snd-row">
-      <div class="snd-meta"><strong>${esc(ns.name || ns.friendly_name || ns.class)}</strong><span class="snd-grp">${esc(ns.group || "")}</span></div>
-      <div class="snd-times">${trs}</div>
-      <div class="snd-conf"><span class="snd-bar"><i style="width:${pct.toFixed(0)}%"></i></span><code>${pct.toFixed(1)}%</code></div>
-    </div>`;
-  };
 
-  function wireTimePills(root) {
-    root.querySelectorAll(".time-pill").forEach((btn) => {
+  function render(data) {
+    window.dispatchEvent(new CustomEvent("ec:run-result", { detail: data }));
+    if (!data.trained || !data.count) {
+      el.res.innerHTML = `<div class="result"><div><h3>No counting model available</h3><p>${esc(data.message || "The counting checkpoint is missing or incompatible.")}</p></div>
+        ${data.model_error ? `<div class="notice">${esc(data.model_error)}</div>` : ""}
+        <div class="notice info">Add a compatible checkpoint (see <code>retrain_counter.py</code>). No value is shown without real model inference.</div></div>`;
+      show("res");
+      return;
+    }
+    const c = data.count,
+      a = data.audio || {},
+      s = data.separation || {},
+      tg = data.tags || {},
+      sc = data.speaker_clustering || null;
+    const namedSounds = Array.isArray(data.named_sounds)
+      ? data.named_sounds
+      : Array.isArray(tg.named_sounds)
+        ? tg.named_sounds
+        : [];
+    const overlaps = Array.isArray(data.overlapping_sounds)
+      ? data.overlapping_sounds
+      : Array.isArray(tg.overlapping_sounds)
+        ? tg.overlapping_sounds
+        : [];
+    lastNamedSounds = namedSounds;
+    jobId = data.job_id;
+    tagDoneState = tg.available ? "done" : "idle";
+    const spread =
+      c.uncertainty_std >= 0.5 ? Math.ceil(c.uncertainty_std - 1e-9) : 0;
+    const mcStd = typeof c.mc_dropout_std === "number" ? c.mc_dropout_std : 0;
+    const smStd =
+      typeof c.softmax_std === "number"
+        ? c.softmax_std
+        : Math.sqrt(
+            Math.max(0, c.uncertainty_std * c.uncertainty_std - mcStd * mcStd),
+          );
+    const dominantFactor =
+      smStd >= mcStd
+        ? "softmax distribution spread"
+        : "MC-dropout pass variance";
+    let warn = "";
+    if (a.duration_seconds > a.analysed_window_seconds + 0.05) {
+      warn += `<div class="notice info">Count &amp; sound tagging used the central ${a.analysed_window_seconds} s window (${fmtTime(a.crop_start_seconds)} to ${fmtTime(a.crop_start_seconds + a.analysed_window_seconds)}). Full-length separation processes the entire ${fmtTime(a.duration_seconds)} recording in overlapping 8 s windows with 2 s cross-fade.</div>`;
+    }
+    if (c.dense_warning) {
+      warn += `<div class="notice warn" role="alert"><strong>${esc(c.dense_warning)}</strong></div>`;
+    }
+    if (c.out_of_range || c.rounded_count < c.min_sources) {
+      warn += `<div class="notice warn"><strong>Input outside model range:</strong> ${esc(c.range_warning || `Model calibrated for ${c.min_sources}–${c.max_sources} overlapping sources.`)}</div>`;
+    } else if (c.sparse_regime && !c.dense_warning) {
+      warn += `<div class="notice info"><strong>Sparse regime active (K ≤ 8):</strong> Validation-calibrated mapping applied to distinguish sparse mixtures (e.g., K=2 vs K=3).</div>`;
+    }
+    const calibText = c.calibrated
+      ? `Raw model output <code>${c.raw_regression_value.toFixed(2)}</code> calibrated to <code>${c.calibrated_value.toFixed(2)}</code> (rounds to <strong>${c.rounded_count}</strong>).`
+      : `Raw model output <code>${c.raw_regression_value.toFixed(2)}</code> rounds to <strong>${c.rounded_count}</strong>.`;
+
+    // Distinct-voices card (shown only when sc.show_card is true: K<=3, non-contradictory)
+    let spkClusterHtml = "";
+    if (sc && sc.show_card) {
+      const methodBadge = sc.using_ecapa
+        ? `<code>ECAPA-TDNN speaker embeddings</code>`
+        : `<code>Approximate (not real speaker embeddings)</code>`;
+      const labelsTxt =
+        Array.isArray(sc.labels) && sc.labels.length
+          ? ` (${sc.labels.map((l) => esc(l)).join(", ")})`
+          : "";
+      spkClusterHtml = `<div class="notice info" role="status" aria-label="Distinct speaker clustering">
+        <div><strong>Distinct voices: ${esc(sc.distinct_speakers)}</strong>${labelsTxt} · ${methodBadge}</div>
+        <small>${esc(sc.limit_explanation || "Windowed speaker clustering is only reliable for non-overlapping speech or sparse mixtures (K ≤ 3).")}</small>
+      </div>`;
+    }
+
+    // Named Sounds section (friendly name, confidence, coarse group, and frame-level time ranges)
+    let namedSoundsHtml = "";
+    if (namedSounds.length > 0) {
+      const rows = namedSounds
+        .map((ns) => {
+          const confPct =
+            ((ns.confidence ?? ns.probability ?? 0) * 100).toFixed(1) + "%";
+          const trs =
+            Array.isArray(ns.time_ranges) && ns.time_ranges.length
+              ? ns.time_ranges
+                  .map(
+                    (r) =>
+                      `<button type="button" class="btn sm time-pill" data-start="${r.start}" data-end="${r.end}" style="padding:2px 8px;font-size:.78rem">${esc(fmtRange(r))}</button>`,
+                  )
+                  .join(" ")
+              : `<span class="fine">0:00–${fmtTime(a.analysed_window_seconds || 8)}</span>`;
+          return `<div class="named-sound-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid rgba(255,255,255,.1);border-radius:8px;margin-bottom:6px">
+          <div>
+            <strong>${esc(ns.name || ns.friendly_name || ns.class)}</strong>
+            <small style="margin-left:8px;opacity:.75">${esc(ns.group || "")}</small>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>${trs}</span>
+            <span class="tag-chip above" style="margin:0"><strong>${confPct}</strong></span>
+          </div>
+        </div>`;
+        })
+        .join("");
+
+      namedSoundsHtml = `<section class="tag-section" aria-labelledby="namedH">
+        <h3 id="namedH" class="sub">Detected sounds <small>${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} with time ranges</small></h3>
+        <div class="named-sounds-list">${rows}</div>
+      </section>`;
+    }
+
+    // Sound groups & compatible fine classes section
+    let tagsHtml = "";
+    if (
+      tg &&
+      tg.available &&
+      ((Array.isArray(tg.groups) && tg.groups.length > 0) ||
+        (Array.isArray(tg.tags) && tg.tags.length > 0))
+    ) {
+      const groups = Array.isArray(tg.groups) ? tg.groups : [];
+      const aboveGroups = groups.filter((g) => g.above_threshold);
+      const visibleGroups = groups.filter(
+        (g) => g.above_threshold || g.probability * 100 >= 0.5,
+      );
+      const zeroGroups = groups.filter(
+        (g) => !g.above_threshold && g.probability * 100 < 0.5,
+      );
+
+      const groupChips = visibleGroups
+        .map((g) => {
+          const isUncertain = !g.above_threshold;
+          const pct = (g.probability * 100).toFixed(1) + "%";
+          return `<span class="tag-chip ${isUncertain ? "uncertain" : "above"}" title="Validation threshold: ${(g.threshold * 100).toFixed(0)}%"><strong>${esc(g.group)}</strong> <small>${pct}${isUncertain ? " · uncertain" : ""}</small></span>`;
+        })
+        .join("");
+
+      const collapsedZeroHtml =
+        zeroGroups.length > 0
+          ? `<p class="fine" style="margin-top:6px">Other groups (not detected): ${zeroGroups.map((g) => esc(g.group)).join(", ")}</p>`
+          : "";
+
+      const fineTags = Array.isArray(tg.tags) ? tg.tags : [];
+      const aboveFine = fineTags.filter((t) => t.above_threshold);
+
+      let fineBlock = "";
+      if (aboveFine.length > 0) {
+        const fineChips = aboveFine
+          .map((t) => {
+            const pct =
+              ((t.probability ?? t.confidence ?? 0) * 100).toFixed(1) + "%";
+            const dispName =
+              t.friendly_name || t.name || t.class.replace(/_/g, " ");
+            return `<span class="tag-chip above" title="Group: ${esc(t.group || "")} · Threshold: ${(t.threshold * 100).toFixed(0)}%">${esc(dispName)} <small>${pct}</small></span>`;
+          })
+          .join("");
+        fineBlock = `<h4 class="sub" style="margin-top:12px;font-size:.9rem">Compatible fine classes <small>${aboveFine.length} above threshold</small></h4><div class="tag-chips">${fineChips}</div>`;
+      } else {
+        fineBlock = `<p class="fine" style="margin-top:10px"><strong>Compatible fine classes:</strong> No fine class above threshold.</p>`;
+      }
+
+      tagsHtml = `<section class="tag-section" aria-labelledby="tagsH">
+        <h3 id="tagsH" class="sub">Sound groups (primary) <small>${aboveGroups.length} active above validation threshold</small></h3>
+        <div class="tag-chips">${groupChips || '<span class="fine">No group above threshold</span>'}</div>
+        ${collapsedZeroHtml}
+        ${fineBlock}
+        <p class="fine">${esc(tg.caveat || "Coarse sound groups are shown first. Fine classes are secondary details and never contradict active groups.")}</p>
+      </section>`;
+    } else {
+      tagsHtml = `<section class="tag-section" aria-labelledby="tagsH">
+        <h3 id="tagsH" class="sub">Sound groups &amp; classes</h3>
+        <div class="state-inline" role="status"><strong>Tagger not available</strong><p>${esc((tg && tg.reason) || "No trained tagger checkpoint found.")}</p></div>
+      </section>`;
+    }
+
+    const spkMetric =
+      sc && sc.show_card && typeof sc.distinct_speakers === "number"
+        ? metric(
+            sc.using_ecapa
+              ? "Distinct voices (ECAPA)"
+              : "Distinct voices (Approx.)",
+            sc.distinct_speakers,
+          )
+        : "";
+
+    const gt = data.ground_truth;
+    let groundTruthHtml = "";
+    if (gt && gt.available) {
+      const delta = c.rounded_count - gt.true_k;
+      const deltaBadge =
+        delta === 0
+          ? `<span class="gt-badge ok">Exact count match</span>`
+          : `<span class="gt-badge diff">Delta ${delta > 0 ? "+" + delta : delta}</span>`;
+      const gtLabels =
+        Array.isArray(gt.true_labels) && gt.true_labels.length
+          ? gt.true_labels.map((l) => `<span class="tag-chip">${esc(l)}</span>`).join("")
+          : '<span class="fine">No reference labels</span>';
+      const predLabels =
+        namedSounds.length > 0
+          ? namedSounds
+              .map(
+                (ns) =>
+                  `<span class="tag-chip above">${esc(ns.name || ns.friendly_name || ns.class)} <small>${((ns.confidence ?? 0) * 100).toFixed(0)}%</small></span>`,
+              )
+              .join("")
+          : '<span class="fine">No named sounds above threshold</span>';
+      const gtGroups =
+        Array.isArray(gt.true_groups) && gt.true_groups.length
+          ? gt.true_groups.map((g) => esc(g)).join(", ")
+          : "—";
+      const predGroups =
+        Array.isArray(tg.active_groups) && tg.active_groups.length
+          ? tg.active_groups.map((g) => esc(g)).join(", ")
+          : "None above threshold";
+      groundTruthHtml = `<details open class="gt-panel" aria-label="Ground Truth vs Model Prediction">
+        <summary class="gt-summary">
+          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>Matched by audio content hash (${esc(gt.dataset || "corpus")} · ${esc(gt.split || "split")})</small></span>
+          ${deltaBadge}
+        </summary>
+        <div class="gt-compare-grid">
+          <div class="gt-col">
+            <div class="gt-col-head">GROUND TRUTH — REFERENCE DATA</div>
+            <div class="gt-stat"><span>Reference count</span><strong>${esc(gt.true_k)}</strong></div>
+            <div class="gt-stat"><span>Acoustic groups</span><span>${gtGroups}</span></div>
+            <div class="gt-stat-block"><span>Reference labels</span><div class="tag-chips">${gtLabels}</div></div>
+          </div>
+          <div class="gt-col">
+            <div class="gt-col-head pred">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
+            <div class="gt-stat"><span>Estimated count</span><strong>≈${esc(c.rounded_count)}</strong></div>
+            <div class="gt-stat"><span>Active groups</span><span>${predGroups}</span></div>
+            <div class="gt-stat-block"><span>Detected sounds</span><div class="tag-chips">${predLabels}</div></div>
+          </div>
+        </div>
+        <p class="fine" style="margin-top:8px">Reference data provides verified source counts, acoustic groups, and event labels; word-level transcripts are not part of this acoustic corpus.</p>
+      </details>`;
+    } else {
+      groundTruthHtml = `<details class="gt-panel gt-empty" aria-label="Ground Truth status">
+        <summary class="gt-summary">
+          <span><strong>GROUND TRUTH — REFERENCE DATA</strong> <small>No reference match for this recording</small></span>
+        </summary>
+        <p class="fine" style="margin-top:8px">No verified reference entry matched this recording's audio content hash. Showing <strong>MODEL PREDICTION — ECHOCOUNT OUTPUT</strong> only.</p>
+      </details>`;
+    }
+
+    const pmHtml =
+      c.rounded_count > 4 ? `<span class="count-pm">(±${spread})</span>` : "";
+
+    el.res.innerHTML = `<div class="result">
+      <div id="resStages" class="res-stages">${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "idle", zip: "idle" })}</div>
+      <div class="count-card" role="group" aria-label="Model prediction">
+        <div class="gt-col-head pred" style="margin-bottom:2px">MODEL PREDICTION — ECHOCOUNT OUTPUT</div>
+        <div class="count-main"><b id="bigN">≈${c.rounded_count}</b> ${pmHtml}<span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
+        <p>${calibText} Uncertainty band decomposition (${c.mc_passes} MC-dropout passes): MC-dropout std <code>±${mcStd.toFixed(2)}</code> + softmax spread <code>±${smStd.toFixed(2)}</code> → combined std <code>±${c.uncertainty_std.toFixed(2)}</code> (dominated by ${dominantFactor}).</p>
+      </div>
+      ${groundTruthHtml}
+      ${spkClusterHtml}
+      ${namedSoundsHtml}
+      <div class="metrics">${metric("Raw value", c.raw_regression_value.toFixed(2))}${c.calibrated ? metric("Calibrated", c.calibrated_value.toFixed(2)) : ""}${metric("Rounded count", c.rounded_count)}${spkMetric}${metric("MC-dropout std", "±" + mcStd.toFixed(2))}${metric("Softmax spread", "±" + smStd.toFixed(2))}${metric("Total std", "±" + c.uncertainty_std.toFixed(2))}${metric("Class confidence", c.confidence_percent.toFixed(1) + "%")}</div>
+      ${warn}
+      ${tagsHtml}
+      <div class="notice info">Known behaviour: the counter is least reliable on dense mixtures. See the ${document.body.dataset.admin === "true" ? '<a href="/evaluation">Evaluation</a> tab' : '<a href="/how#findings">How it works</a> page'} for measured error by source count.</div>
+      <section class="stems" aria-labelledby="stemsH"><h3 id="stemsH" class="sub">Separated stems</h3><div id="stemsBody"></div></section>
+    </div>`;
+
+    // Interactive time-range pills highlight the waveform and seek audio
+    el.res.querySelectorAll(".time-pill").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const s0 = parseFloat(btn.dataset.start || "0"), s1 = parseFloat(btn.dataset.end || "0");
+        const s0 = parseFloat(btn.dataset.start || "0"),
+          s1 = parseFloat(btn.dataset.end || "0");
         hl = { start: s0, end: s1 };
         if (audio && isFinite(s0)) {
           audio.currentTime = Math.min(dur || s0, s0);
@@ -463,311 +727,8 @@
         draw();
       });
     });
-  }
 
-  function render(data) {
-    window.dispatchEvent(new CustomEvent("ec:analysis-result", { detail: data }));
-    if (!data.trained || !data.count) {
-      el.res.innerHTML = `<div class="result"><h3>No counting model available</h3><p class="fine">${esc(data.message || "The counting checkpoint is missing or incompatible.")}</p></div>`;
-      show("res");
-      return;
-    }
-    const c = data.count, a = data.audio || {}, s = data.separation || {}, tg = data.tags || {}, sc = data.speaker_clustering || null;
-    const namedSounds = (Array.isArray(data.named_sounds) ? data.named_sounds : Array.isArray(tg.named_sounds) ? tg.named_sounds : [])
-      .slice().sort((x, y) => (y.confidence ?? y.probability ?? 0) - (x.confidence ?? x.probability ?? 0));
-    const topPairs = Array.isArray(data.overlapping_sounds) ? data.overlapping_sounds : Array.isArray(tg.overlapping_sounds) ? tg.overlapping_sounds : [];
-    const totalPairs = Number(data.overlapping_pairs_total ?? tg.overlapping_pairs_total ?? topPairs.length);
-    const visDef = Number(data.visible_default || 8);
-    const winSec = a.analysed_window_seconds || 8;
-    const gt = data.ground_truth && data.ground_truth.available ? data.ground_truth : null;
-    lastNamedSounds = namedSounds;
-    jobId = data.job_id;
-    tagDoneState = tg.available ? "done" : "idle";
-
-    const spread = c.uncertainty_std >= 0.5 ? Math.ceil(c.uncertainty_std - 1e-9) : 0;
-    const mcStd = typeof c.mc_dropout_std === "number" ? c.mc_dropout_std : 0;
-    const smStd = typeof c.softmax_std === "number" ? c.softmax_std : Math.sqrt(Math.max(0, c.uncertainty_std * c.uncertainty_std - mcStd * mcStd));
-    const domFactor = smStd >= mcStd ? "softmax spread" : "MC-dropout variance";
-
-    // Persistent verdict & 3-5 key chips
-    let verdictHtml = "";
-    if (gt) {
-      const d = c.rounded_count - gt.true_k;
-      verdictHtml = d === 0
-        ? `<span class="gt-badge ok">Exact count match</span>`
-        : `<span class="gt-badge diff">Off by ${Math.abs(d)} (${d > 0 ? "+" + d : d})</span>`;
-    } else if (c.rounded_count > 20 || namedSounds.length > 20) {
-      verdictHtml = `<span class="gt-badge diff">${c.rounded_count} sources detected; counts above 6 are unreliable</span>`;
-    }
-    const groups = Array.isArray(tg.groups) ? tg.groups : [];
-    const activeGroups = groups.filter((g) => g.above_threshold);
-    const keyChips = [
-      `<span class="res-chip">Conf <b>${c.confidence_percent.toFixed(0)}%</b></span>`,
-      `<span class="res-chip"><b>${namedSounds.length}</b> sound${namedSounds.length === 1 ? "" : "s"}</span>`,
-      `<span class="res-chip"><b>${activeGroups.length}</b> group${activeGroups.length === 1 ? "" : "s"}</span>`,
-      `<span class="res-chip">${fmtTime(a.duration_seconds || dur || 0)}</span>`,
-      c.dense_warning ? `<span class="res-chip warn" title="${esc(c.dense_warning)}">Dense · unreliable ${tip(c.dense_warning)}</span>` : "",
-      sc && sc.show_card ? `<span class="res-chip"><b>${esc(sc.distinct_speakers)}</b> voices</span>` : "",
-    ].filter(Boolean).slice(0, 5).join("");
-
-    // Tab 1: Overview (top 8 sounds, active groups, main separation CTA)
-    const topSoundsHtml = namedSounds.length
-      ? namedSounds.slice(0, visDef).map((ns) => soundRowHtml(ns, winSec)).join("")
-      : `<p class="fine">No individual sound crossed the detection threshold.</p>`;
-    const moreSoundsBtn = namedSounds.length > visDef
-      ? `<button type="button" class="link-btn" id="jumpSoundsBtn">View all ${namedSounds.length} sounds →</button>`
-      : "";
-    const groupChipsHtml = activeGroups.length
-      ? activeGroups.map((g) => `<span class="tag-chip above" title="Threshold ${(g.threshold * 100).toFixed(0)}%"><strong>${esc(g.group)}</strong> <small>${(g.probability * 100).toFixed(0)}%</small></span>`).join("")
-      : `<span class="fine">No coarse group above threshold</span>`;
-    const canSepNow = Boolean((s.can_separate && s.trained) || (Array.isArray(s.extended_modes) && s.extended_modes.length));
-    const ovSepBtn = canSepNow
-      ? `<button type="button" class="btn primary sm" id="ovSepBtn">Separate into ${s.speech_mode ? `${c.rounded_count} speakers` : `${Math.min(namedSounds.length || c.rounded_count, c.rounded_count)} stems`}</button>`
-      : `<button type="button" class="btn sm" id="ovStemsTabBtn">Separation status →</button>`;
-
-    // Tab 2: Sounds (full list in <=420px scroll box with search, sort, group filter, pagination >40, & pairs table)
-    const uniqGroups = [...new Set(namedSounds.map((ns) => ns.group).filter(Boolean))];
-    const grpFilters = [`<button type="button" class="flt-chip active" data-grp="">All (${namedSounds.length})</button>`]
-      .concat(uniqGroups.map((g) => `<button type="button" class="flt-chip" data-grp="${esc(g)}">${esc(g)}</button>`))
-      .join("");
-    const renderPairRows = (pairs) => pairs.map((o) => {
-      const pn = (o.sounds || []).map(esc).join(" + ");
-      const ivs = (o.intervals || []).slice(0, 2).map((iv) => esc(fmtRange(iv))).join(", ");
-      const durS = typeof o.total_overlap_seconds === "number" ? `${o.total_overlap_seconds.toFixed(1)}s` : "—";
-      const cf = typeof o.confidence === "number" ? `${(o.confidence * 100).toFixed(0)}%` : "—";
-      return `<tr><td><strong>${pn}</strong></td><td>${ivs || "—"}</td><td>${durS}</td><td>${cf}</td></tr>`;
-    }).join("");
-    const pairsSection = totalPairs > 0
-      ? `<div class="res-subhead"><strong>Co-occurring pairs</strong><span class="fine">Top ${topPairs.length} of ${totalPairs}</span>${totalPairs > topPairs.length ? `<button type="button" class="link-btn" id="showAllPairsBtn">Show all ${totalPairs} pairs</button>` : ""}</div>
-         <div class="pairs-scroll"><table class="kv pairs-tbl"><thead><tr><th>Pair</th><th>Intervals</th><th>Overlap</th><th>Conf</th></tr></thead><tbody id="pairsBody">${renderPairRows(topPairs)}</tbody></table></div>`
-      : "";
-    const fineAbove = (Array.isArray(tg.tags) ? tg.tags : []).filter((t) => t.above_threshold);
-    const fineDisclosure = fineAbove.length
-      ? `<details class="res-help"><summary>Compatible fine classes (${fineAbove.length})</summary><div class="tag-chips" style="margin-top:6px">${fineAbove.map((t) => `<span class="tag-chip above">${esc(t.friendly_name || t.name || t.class)} <small>${((t.probability ?? t.confidence ?? 0) * 100).toFixed(0)}%</small></span>`).join("")}</div></details>`
-      : "";
-
-    // Tab 3: Numbers (all raw/calibrated/uncertainty tiles with "?" tooltips + regime chips)
-    const numTiles = [
-      metricTile("Raw value", c.raw_regression_value.toFixed(2), "Direct SourceCountCNN regression estimate before calibration."),
-      c.calibrated ? metricTile("Calibrated", c.calibrated_value.toFixed(2), "Validation-calibrated regression estimate.") : "",
-      metricTile("Rounded count", c.rounded_count, "Nearest integer count from calibrated output."),
-      sc && sc.show_card && typeof sc.distinct_speakers === "number"
-        ? metricTile(sc.using_ecapa ? "Distinct voices" : "Voices (approx.)", sc.distinct_speakers, sc.limit_explanation || "Speaker clustering estimate (reliable for K<=3).")
-        : "",
-      metricTile("MC-dropout std", `±${mcStd.toFixed(2)}`, `Epistemic spread across ${c.mc_passes} stochastic forward passes.`),
-      metricTile("Softmax spread", `±${smStd.toFixed(2)}`, "Aleatoric spread from the discrete class distribution."),
-      metricTile("Total std", `±${c.uncertainty_std.toFixed(2)}`, `Combined uncertainty (dominated by ${domFactor}).`),
-      metricTile("Class confidence", `${c.confidence_percent.toFixed(1)}%`, "Peak probability of the rounded count class."),
-    ].join("");
-    const infoChips = [
-      c.sparse_regime && !c.dense_warning ? `<span class="res-chip">Sparse regime (K ≤ 8) ${tip("Validation-calibrated sparse specialist mapping active.")}</span>` : "",
-      c.dense_warning ? `<span class="res-chip warn">Dense mixture limit ${tip(`${c.dense_warning} See /evaluation for error by K.`)}</span>` : "",
-      c.out_of_range || c.rounded_count < c.min_sources ? `<span class="res-chip warn">Outside range ${tip(c.range_warning || `Calibrated for ${c.min_sources}–${c.max_sources} sources.`)}</span>` : "",
-      a.duration_seconds > winSec + 0.05 ? `<span class="res-chip">Central ${winSec}s window ${tip(`Count/tags use ${fmtTime(a.crop_start_seconds)}–${fmtTime(a.crop_start_seconds + winSec)}; separation processes full ${fmtTime(a.duration_seconds)}.`)}</span>` : "",
-    ].filter(Boolean).join("");
-
-    // Tab 4: Reference (ground truth) — ONLY rendered when server explicitly includes ground_truth
-    let refPanelHtml = "";
-    if (gt) {
-      const gtL = Array.isArray(gt.true_labels) ? gt.true_labels : [];
-      const prL = namedSounds.map((ns) => `${ns.name || ns.friendly_name || ns.class} (${((ns.confidence ?? 0) * 100).toFixed(0)}%)`);
-      const chipBox = (arr, idPrefix) => {
-        if (!arr.length) return `<span class="fine">None</span>`;
-        const init = arr.slice(0, 12).map((x) => `<span class="tag-chip">${esc(x)}</span>`).join("");
-        const more = arr.length > 12 ? `<button type="button" class="link-btn" data-expand-chips="${idPrefix}">+${arr.length - 12} more</button>` : "";
-        return `<div class="chip-scroll" id="${idPrefix}Box">${init}</div>${more}`;
-      };
-      refPanelHtml = `<div class="res-pane" id="pane-reference" role="tabpanel" aria-labelledby="rtab-reference" hidden>
-        <div class="res-subhead">
-          <span class="fine">Matched by audio hash (${esc(gt.dataset || "corpus")} · ${esc(gt.split || "split")})</span>
-          <button type="button" class="btn sm" id="copyGtBtn">Copy labels</button>
-        </div>
-        <div class="gt-compare-grid">
-          <div class="gt-col">
-            <div class="gt-col-head">REFERENCE</div>
-            <div class="gt-stat"><span>Count</span><strong>${esc(gt.true_k)}</strong></div>
-            <div class="gt-stat"><span>Groups</span><span>${(gt.true_groups || []).map(esc).join(", ") || "—"}</span></div>
-            <div class="gt-stat-block"><span>Labels (${gtL.length})</span>${chipBox(gtL, "gtRef")}</div>
-          </div>
-          <div class="gt-col">
-            <div class="gt-col-head pred">MODEL</div>
-            <div class="gt-stat"><span>Count</span><strong>≈${esc(c.rounded_count)}</strong></div>
-            <div class="gt-stat"><span>Groups</span><span>${(tg.active_groups || []).map(esc).join(", ") || "None"}</span></div>
-            <div class="gt-stat-block"><span>Detected (${prL.length})</span>${chipBox(prL, "gtMod")}</div>
-          </div>
-        </div>
-      </div>`;
-    }
-
-    const tabsMeta = [
-      ["overview", "Overview"],
-      ["sounds", `Sounds (${namedSounds.length})`],
-      ["numbers", "Numbers"],
-      ...(gt ? [["reference", "Reference"]] : []),
-      ["stems", "Stems"],
-    ];
-
-    el.res.innerHTML = `<div class="result res-compact">
-      <header class="res-head">
-        <div class="res-head-top">
-          <div class="count-main"><b id="bigN" class="count-ripple">≈${c.rounded_count}</b><span class="count-pm">(±${spread})</span><span class="count-unit">${c.rounded_count === 1 ? "source" : "sources"}</span></div>
-          ${verdictHtml}
-        </div>
-        <div class="res-chips">${keyChips}</div>
-        <details class="res-help"><summary>How to read this</summary><p class="fine">Raw <code>${c.raw_regression_value.toFixed(2)}</code>${c.calibrated ? ` → calibrated <code>${c.calibrated_value.toFixed(2)}</code>` : ""} (${c.mc_passes} MC passes, total std ±${c.uncertainty_std.toFixed(2)}, dominated by ${domFactor}). Click any time pill to highlight &amp; seek.</p></details>
-      </header>
-
-      <div class="res-tabs" role="tablist" aria-label="Analysis result sections">
-        ${tabsMeta.map(([id, lbl], i) => `<button type="button" role="tab" id="rtab-${id}" data-rtab="${id}" aria-controls="pane-${id}" aria-selected="${i === 0 ? "true" : "false"}" tabindex="${i === 0 ? "0" : "-1"}">${esc(lbl)}</button>`).join("")}
-      </div>
-
-      <div class="res-pane" id="pane-overview" role="tabpanel" aria-labelledby="rtab-overview">
-        <div class="res-subhead"><strong>Top detected sounds</strong>${moreSoundsBtn}</div>
-        <div class="snd-list">${topSoundsHtml}</div>
-        <div class="res-subhead" style="margin-top:10px"><strong>Active sound groups</strong></div>
-        <div class="tag-chips">${groupChipsHtml}</div>
-        <div class="res-ov-cta">${ovSepBtn}</div>
-      </div>
-
-      <div class="res-pane" id="pane-sounds" role="tabpanel" aria-labelledby="rtab-sounds" hidden>
-        <div class="snd-toolbar">
-          <input type="search" id="sndSearch" class="search" placeholder="Filter sounds…" aria-label="Filter detected sounds">
-          <select id="sndSort" class="admin-select" aria-label="Sort detected sounds"><option value="conf">Sort: Confidence</option><option value="time">Sort: Start time</option></select>
-        </div>
-        <div class="flt-bar" id="sndGrpBar" role="group" aria-label="Filter by group">${grpFilters}</div>
-        <div class="snd-scroll" id="sndFullList"></div>
-        ${pairsSection}
-        ${fineDisclosure}
-      </div>
-
-      <div class="res-pane" id="pane-numbers" role="tabpanel" aria-labelledby="rtab-numbers" hidden>
-        <div class="metrics res-num-grid">${numTiles}</div>
-        ${infoChips ? `<div class="res-chips" style="margin-top:10px">${infoChips}</div>` : ""}
-      </div>
-
-      ${refPanelHtml}
-
-      <div class="res-pane" id="pane-stems" role="tabpanel" aria-labelledby="rtab-stems" hidden>
-        <div id="stemsBody"></div>
-      </div>
-    </div>`;
-
-    // Tab switching + arrow-key navigation + URL hash persistence
-    const tabBtns = [...el.res.querySelectorAll("[data-rtab]")];
-    const activateTab = (id, setHash = true) => {
-      if (!tabBtns.some((b) => b.dataset.rtab === id)) id = "overview";
-      tabBtns.forEach((b) => {
-        const on = b.dataset.rtab === id;
-        b.setAttribute("aria-selected", on ? "true" : "false");
-        b.tabIndex = on ? 0 : -1;
-        const pane = $(`#pane-${b.dataset.rtab}`);
-        if (pane) pane.hidden = !on;
-      });
-      if (setHash) {
-        try { history.replaceState(null, "", `#tab=${id}`); } catch {}
-      }
-    };
-    tabBtns.forEach((b, idx) => {
-      b.addEventListener("click", () => activateTab(b.dataset.rtab));
-      b.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-          e.preventDefault();
-          const next = tabBtns[(idx + (e.key === "ArrowRight" ? 1 : tabBtns.length - 1)) % tabBtns.length];
-          next.focus();
-          activateTab(next.dataset.rtab);
-        }
-      });
-    });
-    const hashMatch = /^#tab=([a-z]+)$/.exec(location.hash || "");
-    if (hashMatch) activateTab(hashMatch[1], false);
-
-    $("#jumpSoundsBtn")?.addEventListener("click", () => activateTab("sounds"));
-    $("#ovStemsTabBtn")?.addEventListener("click", () => activateTab("stems"));
-    $("#ovSepBtn")?.addEventListener("click", () => {
-      activateTab("stems");
-      if (s.can_separate && s.trained) separate(null);
-      else if (Array.isArray(s.extended_modes) && s.extended_modes.length) separate(s.extended_modes[0].mode);
-    });
-
-    // Sounds tab: live filter + sort + pagination (>40 rows)
-    let activeGrp = "", pageSize = 40;
-    const renderFullSounds = () => {
-      const box = $("#sndFullList");
-      if (!box) return;
-      const q = ($("#sndSearch")?.value || "").trim().toLowerCase();
-      const sortBy = $("#sndSort")?.value || "conf";
-      let list = namedSounds.filter((ns) => {
-        if (activeGrp && ns.group !== activeGrp) return false;
-        if (q && !(ns.name || ns.friendly_name || ns.class || "").toLowerCase().includes(q) && !(ns.group || "").toLowerCase().includes(q)) return false;
-        return true;
-      });
-      if (sortBy === "time") {
-        list = list.slice().sort((x, y) => (x.time_ranges?.[0]?.start ?? 999) - (y.time_ranges?.[0]?.start ?? 999));
-      }
-      if (!list.length) {
-        box.innerHTML = `<p class="fine">No matching sounds.</p>`;
-        return;
-      }
-      const shown = list.slice(0, pageSize);
-      box.innerHTML = shown.map((ns) => soundRowHtml(ns, winSec)).join("") +
-        (list.length > shown.length ? `<button type="button" class="btn sm block" id="loadMoreSndBtn">Show more (${shown.length} of ${list.length})</button>` : "");
-      wireTimePills(box);
-      $("#loadMoreSndBtn")?.addEventListener("click", () => { pageSize += 40; renderFullSounds(); });
-    };
-    renderFullSounds();
-    $("#sndSearch")?.addEventListener("input", () => { pageSize = 40; renderFullSounds(); });
-    $("#sndSort")?.addEventListener("change", renderFullSounds);
-    $("#sndGrpBar")?.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-grp]");
-      if (!b) return;
-      activeGrp = b.dataset.grp || "";
-      el.res.querySelectorAll("#sndGrpBar .flt-chip").forEach((x) => x.classList.toggle("active", x === b));
-      pageSize = 40;
-      renderFullSounds();
-    });
-
-    // Co-occurring pairs "Show all N pairs" on-demand fetch
-    $("#showAllPairsBtn")?.addEventListener("click", async (e) => {
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      btn.textContent = "Loading…";
-      try {
-        const r = await fetch(`/api/jobs/${jobId}/pairs`, { credentials: "same-origin" });
-        const d = await r.json();
-        if (r.ok && Array.isArray(d.pairs)) {
-          $("#pairsBody").innerHTML = renderPairRows(d.pairs);
-          btn.remove();
-        } else {
-          btn.textContent = "Unavailable";
-        }
-      } catch {
-        btn.disabled = false;
-        btn.textContent = `Show all ${totalPairs} pairs`;
-      }
-    });
-
-    // Reference tab expand chips & copy labels
-    if (gt) {
-      const refMap = {
-        gtRef: Array.isArray(gt.true_labels) ? gt.true_labels : [],
-        gtMod: namedSounds.map((ns) => `${ns.name || ns.friendly_name || ns.class} (${((ns.confidence ?? 0) * 100).toFixed(0)}%)`),
-      };
-      el.res.querySelectorAll("[data-expand-chips]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const k = btn.dataset.expandChips;
-          const bx = $(`#${k}Box`);
-          if (bx) bx.innerHTML = (refMap[k] || []).map((x) => `<span class="tag-chip">${esc(x)}</span>`).join("");
-          btn.remove();
-        });
-      });
-      $("#copyGtBtn")?.addEventListener("click", () => {
-        navigator.clipboard?.writeText((gt.true_labels || []).join(", ")).then(() => toast("Reference labels copied.")).catch(() => {});
-      });
-    }
-
-    wireTimePills($("#pane-overview"));
     show("res");
-    window.__ecWave_analyzeHeaderWave?.pulse?.(0.5, 0.5);
     sepState = s;
     stemsEmpty(s, c.rounded_count, namedSounds);
   }
@@ -789,46 +750,28 @@
     }
 
     // Phase 0.2 & Phase 2: Enable Separate button ONLY when a real trained separator supports the request.
-    const extModes = Array.isArray(s.extended_modes) ? s.extended_modes : [];
-    const extBtnsHtml = extModes
-      .map((m) => {
-        const expTag = m.status === "experimental" ? " [Experimental]" : "";
-        const metricTxt =
-          typeof m.mean_sisdri_db === "number"
-            ? ` (held-out ${m.mean_sisdri_db >= 0 ? "+" : ""}${m.mean_sisdri_db} dB SI-SDRi)`
-            : "";
-        return `<button class="btn ${m.status === "enabled" ? "primary" : ""}" data-sep-mode="${esc(m.mode)}" type="button">${esc(m.label)}${esc(expTag)}${esc(metricTxt)}</button>`;
-      })
-      .join(" ");
-
-    if ((s.can_separate && s.trained) || extModes.length > 0) {
-      let btnHtml = "";
-      if (s.can_separate && s.trained) {
-        let btnLabel = `Separate into ${roundedCount} stems`;
-        if (s.speech_mode) {
-          btnLabel = `Separate into ${roundedCount} speaker stems (Human 1, Human 2)`;
-        } else if (Array.isArray(namedSounds) && namedSounds.length > 0) {
-          const namesPreview = namedSounds
-            .slice(0, 3)
-            .map((x) => x.name || x.friendly_name)
-            .join(", ");
-          btnLabel = `Separate ${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} (${namesPreview}) + Residual`;
-        }
-        btnHtml = `<button class="btn primary" id="sepBtn" type="button">${esc(btnLabel)}</button> `;
+    // Otherwise hide the Separate button and show a plain "Separation not available for this recording" message.
+    if (s.can_separate && s.trained) {
+      let btnLabel = `Separate into ${roundedCount} stems`;
+      if (s.speech_mode) {
+        btnLabel = `Separate into ${roundedCount} speaker stems (Human 1, Human 2)`;
+      } else if (Array.isArray(namedSounds) && namedSounds.length > 0) {
+        const namesPreview = namedSounds
+          .slice(0, 3)
+          .map((x) => x.name || x.friendly_name)
+          .join(", ");
+        btnLabel = `Separate ${namedSounds.length} named sound${namedSounds.length === 1 ? "" : "s"} (${namesPreview}) + Residual`;
       }
-      body.innerHTML = `${speechOfflineHtml}<p class="fine">Extracts one audio stem per detected sound plus an <strong>Everything else (Residual)</strong> stem so nothing is lost. Runs in the background with quality-gate verification.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${btnHtml}${extBtnsHtml}</div>`;
-      $("#sepBtn")?.addEventListener("click", () => separate(null));
-      body.querySelectorAll("[data-sep-mode]").forEach((btn) =>
-        btn.addEventListener("click", () => separate(btn.dataset.sepMode)),
-      );
+      body.innerHTML = `${speechOfflineHtml}<p class="fine">Extracts one audio stem per detected sound plus an <strong>Everything else (Residual)</strong> stem so nothing is lost.</p>
+        <button class="btn primary" id="sepBtn" type="button">${esc(btnLabel)}</button>`;
+      $("#sepBtn").addEventListener("click", separate);
     } else {
       const msg = s.reason || "Separation not available for this recording.";
       body.innerHTML = `${speechOfflineHtml}<div class="state-inline" role="status"><strong>Separation not available for this recording</strong><p>${esc(msg)}</p></div>`;
     }
   }
 
-  function separate(requestedMode = null) {
+  function separate() {
     const body = $("#stemsBody"),
       my = runId;
     setStages({
@@ -837,45 +780,16 @@
       tag: tagDoneState,
       separate: "active",
     });
-    const modeNote = requestedMode ? ` (${esc(requestedMode)})` : "";
-    body.innerHTML = `<div role="status" aria-live="polite"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Running background separation${modeNote} &amp; verifying stem quality gates…</p></div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
-
-    const payload = { job_id: jobId, async: true };
-    if (requestedMode) payload.mode = requestedMode;
-
-    const fetchAuthJson = (url, opts) =>
-      fetch(url, { credentials: "same-origin", cache: "no-store", ...opts }).then((r) => {
-        if (r.status === 401) {
-          window.EC?.clearHistoryCache?.();
-          location.href = "/login?next=/analyze";
-          throw new Error("Session expired.");
-        }
-        return r.json().then((d) => ({ ok: r.ok, status: r.status, d }));
-      });
-
-    const pollJob = (pollUrl) =>
-      fetchAuthJson(pollUrl).then(({ ok, d }) => {
-        if (my !== runId) return null;
-        if (!ok || d.status === "failed") throw new Error(d.error || "Separation failed.");
-        if (d.status === "running" || d.status === "idle") {
-          return new Promise((res) => setTimeout(res, 650)).then(() => pollJob(pollUrl));
-        }
-        return d;
-      });
-
-    fetchAuthJson("/api/separate", {
+    body.innerHTML = `<div role="status" aria-live="polite"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Separating named sounds &amp; verifying stem quality gates…</p></div>${stageHtml({ decode: "done", count: "done", tag: tagDoneState, separate: "active" })}`;
+    fetch("/api/separate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ job_id: jobId }),
     })
-      .then(({ ok, status, d }) => {
-        if (my !== runId) return null;
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (my !== runId) return;
         if (!ok) throw new Error(d.error || "Separation failed.");
-        if (status === 202 && d.poll_url) return pollJob(d.poll_url);
-        return d;
-      })
-      .then((d) => {
-        if (!d || my !== runId) return;
         const qFail = Boolean(d.quality_failed);
         const qc = d.quality_check || {};
         const sv = d.speaker_verification || {};
